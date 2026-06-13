@@ -1,0 +1,1 @@
+Драйвер CP2102 https://myrobot.ru/downloads/driver-cp2102-esp32.php
