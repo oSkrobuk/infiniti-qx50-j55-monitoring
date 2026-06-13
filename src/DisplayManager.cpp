@@ -1,30 +1,51 @@
 #include "DisplayManager.h"
 
-DisplayManager::DisplayManager(int ledPin, int ledChannel, int ledFreq, int ledResolution)
-    : _ledPin(ledPin), _ledChannel(ledChannel), _ledFreq(ledFreq), _ledResolution(ledResolution) {}
+DisplayManager::DisplayManager() : tft(TFT_eSPI()) {}
 
 void DisplayManager::init() {
-    // Настройка аппаратного ШИМ подсветки на ESP32
-    ledcAttachChannel(_ledPin, _ledFreq, _ledResolution, _ledChannel);
-    ledcWrite(_ledPin, 0); // Держим экран темным при старте
-
-    // Инициализация матрицы дисплея
     tft.init();
     tft.setRotation(0);
     tft.fillScreen(TFT_BLACK);
-}
-
-void DisplayManager::setBrightness(uint8_t brightness) {
-    ledcWrite(_ledPin, brightness);
-}
-
-void DisplayManager::showDemoText(const char* title, const char* subtitle) {
-    tft.fillScreen(TFT_BLACK);
     
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.setTextSize(2);
-    tft.drawString(title, 20, 100);
+    //tft.drawRect(0, 0, 240, 240, TFT_DARKGREY);
     
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawString(subtitle, 50, 130);
+    tft.drawString("INFINITI QX50 J55", 30, 6, 4);
+    tft.setTextColor(TFT_GOLD, TFT_BLACK);
+    tft.drawString("MONITORING", 75, 31, 4);
+    
+    //tft.drawFastHLine(0, 56, 240, TFT_DARKGREY);
+    
+    tft.setTextColor(TFT_SILVER, TFT_BLACK);
+    tft.drawString("Engine Oil", 5, 55, 2);
+    tft.drawString("E Coolant", 88, 55, 2);
+    tft.drawString("R Coolant", 166, 55, 2);
+
+    tft.drawString("Battery", 5, 110, 2);
+}
+
+void DisplayManager::updateMetrics(float coolant, float oil, float voltage, float boost) {
+    char buf[12];
+    
+    // Форматирование строк с пробелами справа (затирает старые цифры)
+    // Используем крупный шрифт №4 для вывода значений параметров
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    
+    // 1. Температура антифриза
+    sprintf(buf, "%-5.0f", coolant);
+    tft.drawString(buf, 15, 90, 4);
+    
+    // 2. Температура масла
+    sprintf(buf, "%-5.0f", oil);
+    tft.drawString(buf, 130, 90, 4);
+    
+    // 3. Вольтаж бортовой сети
+    tft.setTextColor(TFT_CYAN, TFT_BLACK);
+    sprintf(buf, "%-5.1f", voltage);
+    tft.drawString(buf, 15, 170, 4);
+    
+    // 4. Давление наддува (турбина)
+    tft.setTextColor(TFT_ORANGE, TFT_BLACK);
+    sprintf(buf, "%-5.2f", boost);
+    tft.drawString(buf, 130, 170, 4);
 }
