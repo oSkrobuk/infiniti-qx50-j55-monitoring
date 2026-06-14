@@ -8,9 +8,10 @@ ConfigManager config;
 // Конструктор: жестко прописываем заводские значения по умолчанию
 ConfigManager::ConfigManager()
 {
-    oil = {50.0f, 90.0f, 110.0f};
-    coolant = {50.0f, 90.0f, 105.0f};
-    radiator = {-50.0f, 20.0f, 90.0f};
+    oil = {50.0f, 90.0f, 98.0f};
+    coolant = {50.0f, 90.0f, 100.0f};
+    radiator = {0.0f, 50.0f, 90.0f};
+    transmission = {50.0f, 80.0f, 100.0f};
 }
 
 bool ConfigManager::init()
@@ -79,6 +80,10 @@ bool ConfigManager::saveToFile()
     doc["radiator"]["min"] = radiator.min;
     doc["radiator"]["target"] = radiator.target;
     doc["radiator"]["max"] = radiator.max;
+
+    doc["transmission"]["min"] = transmission.min;
+    doc["transmission"]["target"] = transmission.target;
+    doc["transmission"]["max"] = transmission.max;
 
     if (serializeJson(doc, configFile) == 0)
     {

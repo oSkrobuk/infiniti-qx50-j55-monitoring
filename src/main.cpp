@@ -19,12 +19,13 @@ void setup()
 void loop()
 {
     // Имитация данных с датчиков автомобиля Infiniti для проверки отображения
-    float mockCoolant = 88.0 + sin(millis() / 5000.0) * 5.0;
-    float mockOil = 95.0 + sin(millis() / 8000.0) * 3.0;
-    float mockCoolantR = 88.0 + sin(millis() / 3000.0) * 5.0;
+    float mockCoolant = 85.0 + sin(millis() / 10000.0) * 20.0;
+    float mockOil = 90.0 + sin(millis() / 10000.0) * 20.0;
+    float mockCoolantR = 50.0 + sin(millis() / 10000.0) * 70.0;
+    float mockTransmission = 80 + sin(millis() / 10000.0) * 40.0;
 
     // Обновляем параметры на дисплее (работает плавно, без единого моргания)
-    display.updateMetrics(mockCoolant, mockOil, mockCoolantR);
+    display.updateMetrics(mockCoolant, mockOil, mockCoolantR, mockTransmission);
 
     delay(100); // Частота обновления экрана 10 раз в секунду
 }

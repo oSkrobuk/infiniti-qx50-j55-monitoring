@@ -16,6 +16,7 @@ public:
     TempConfig oil;
     TempConfig coolant;
     TempConfig radiator;
+    TempConfig transmission;
 
     // Конструктор по умолчанию (задаст базовые значения)
     ConfigManager();

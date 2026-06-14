@@ -9,36 +9,40 @@ void DisplayManager::init()
     tft.setRotation(0);
     tft.fillScreen(TFT_BLACK);
 
-    // tft.drawRect(0, 0, 240, 240, TFT_DARKGREY);
-
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.drawString("INFINITI QX50 J55", 30, 5, 4);
-    tft.setTextColor(TFT_GOLD, TFT_BLACK);
+    tft.setTextColor(0xCE70, TFT_BLACK);
     tft.drawString("MONITORING", 75, 28, 4);
 
-    tft.drawFastHLine(5, 59, 240, TFT_SILVER);
-    tft.setTextColor(TFT_SILVER, TFT_BLACK);
-    tft.drawString("Temperature, C", 5, 51, 2);
+    tft.drawFastHLine(115, 59, 240, 0x5AEB);
+    tft.setTextColor(0x5AEB, TFT_BLACK);
+    tft.drawString("TEMPERATURE, C", 5, 51, 2);
 
-    tft.drawString("E-Oil", 15, 69, 2);
-    tft.drawString("E-Cool", 75, 69, 2);
-    tft.drawString("R-Cool", 135, 69, 2);
+    tft.setTextColor(0x9CD3, TFT_BLACK);
+    tft.drawString("E-OIL", 10, 69, 2);
+    tft.drawString("E-COOL", 70, 69, 2);
+    tft.drawString("R-COOL", 130, 69, 2);
+    tft.drawString("T-OIL", 190, 69, 2);
 }
 
 uint16_t DisplayManager::getTemperatureColor(float value, float minTemp, float targetTemp, float maxTemp)
 {
+    // ЖЕСТКИЙ СТОПОР: Если температура равна или выше максимума — строго чистый КРАСНЫЙ цвет дисплея (RGB565)
+    if (value >= maxTemp)
+    {
+        return 0xF800; // Чистый красный цвет в формате RGB565 (11111 000000 00000)
+    }
+
+    // ЖЕСТКИЙ СТОПОР: Если температура ниже или равна минимуму — строго чистый СИНИЙ цвет
+    if (value <= minTemp)
+    {
+        return 0x001F; // Чистый синий цвет в формате RGB565 (00000 000000 11111)
+    }
+
     float factor = 0.0f;
     float hue = 120.0f; // По умолчанию чистый зеленый (120 градусов в HSV)
 
-    if (value <= minTemp)
-    {
-        hue = 240.0f; // Синий для совсем холодного
-    }
-    else if (value >= maxTemp)
-    {
-        hue = 0.0f; // Красный для перегрева
-    }
-    else if (value < targetTemp)
+    if (value < targetTemp)
     {
         // Отрезок 1: от Синего (240) до Зеленого (120)
         factor = (value - minTemp) / (targetTemp - minTemp);
@@ -51,7 +55,7 @@ uint16_t DisplayManager::getTemperatureColor(float value, float minTemp, float t
         hue = 120.0f - (factor * 120.0f);
     }
 
-    // Быстрая конвертация Hue в RGB565 (на полной скорости с флагом -O3)
+    // Быстрая конвертация Hue в формат RGB565 для дисплея
     float h = hue / 60.0f;
     float x = 1.0f - fabsf(fmodf(h, 2.0f) - 1.0f);
     float r = 0, g = 0, b = 0;
@@ -79,31 +83,37 @@ uint16_t DisplayManager::getTemperatureColor(float value, float minTemp, float t
         r = 0;
         g = x;
         b = 1;
-    } // Для диапазона 0-240 градусов другие условия не нужны
+    }
 
     uint16_t r565 = (((uint16_t)(r * 31)) << 11) | (((uint16_t)(g * 63)) << 5) | ((uint16_t)(b * 31));
     return r565;
 }
 
-void DisplayManager::updateMetrics(float coolant, float oil, float coolantR)
+void DisplayManager::updateMetrics(float coolant, float oil, float coolantR, float transmission)
 {
     char buf[12];
 
-    // 1. Моторное масло: читаем пороги из config.oil
+    // Моторное масло: читаем пороги из config.oil
     uint16_t oilColor = getTemperatureColor(oil, config.oil.min, config.oil.target, config.oil.max);
     tft.setTextColor(oilColor, TFT_BLACK);
     sprintf(buf, "%-5.0f", oil);
-    tft.drawString(buf, 15, 87, 4);
+    tft.drawString(buf, 10, 87, 4);
 
-    // 2. Антифриз ДВС: читаем пороги из config.coolant
+    // Антифриз ДВС: читаем пороги из config.coolant
     uint16_t coolantColor = getTemperatureColor(coolant, config.coolant.min, config.coolant.target, config.coolant.max);
     tft.setTextColor(coolantColor, TFT_BLACK);
     sprintf(buf, "%-5.0f", coolant);
-    tft.drawString(buf, 75, 87, 4);
+    tft.drawString(buf, 70, 87, 4);
 
-    // 3. Антифриз радиатора: читаем пороги из config.radiator
+    // Антифриз радиатора: читаем пороги из config.radiator
     uint16_t radiatorColor = getTemperatureColor(coolantR, config.radiator.min, config.radiator.target, config.radiator.max);
     tft.setTextColor(radiatorColor, TFT_BLACK);
     sprintf(buf, "%-5.0f", coolantR);
-    tft.drawString(buf, 135, 87, 4);
+    tft.drawString(buf, 130, 87, 4);
+
+    // Масло коробки: читаем пороги из config.transmission
+    uint16_t transmissionColor = getTemperatureColor(transmission, config.transmission.min, config.transmission.target, config.transmission.max);
+    tft.setTextColor(transmissionColor, TFT_BLACK);
+    sprintf(buf, "%-5.0f", transmission);
+    tft.drawString(buf, 190, 87, 4);
 }
