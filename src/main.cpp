@@ -5,8 +5,8 @@
 
 // Имя и пароль точки доступа ESP32
 // Подключитесь к этой сети, затем откройте http://192.168.4.1
-static const char *AP_SSID     = "Infiniti-QX50";
-static const char *AP_PASSWORD = "infiniti123";
+static const char *AP_SSID     = "QX50Monitoring";
+static const char *AP_PASSWORD = "infiniti";
 
 DisplayManager display;
 WebManager     web(AP_SSID, AP_PASSWORD);
