@@ -8,7 +8,11 @@ void setup()
 {
     Serial.begin(115200);
 
-    if (config.init())
+    if (!config.init())
+    {
+        Serial.println("КРИТИЧЕСКАЯ ОШИБКА: конфигурация не загружена, используются значения по умолчанию.");
+    }
+    else
     {
         Serial.println("Конфигурация успешно загружена!");
     }

@@ -59,6 +59,10 @@ bool ConfigManager::loadFromFile()
     radiator.target = doc["radiator"]["target"] | radiator.target;
     radiator.max = doc["radiator"]["max"] | radiator.max;
 
+    transmission.min = doc["transmission"]["min"] | transmission.min;
+    transmission.target = doc["transmission"]["target"] | transmission.target;
+    transmission.max = doc["transmission"]["max"] | transmission.max;
+
     return true;
 }
 

@@ -39,6 +39,10 @@ uint16_t DisplayManager::getTemperatureColor(float value, float minTemp, float t
         return 0x001F; // Чистый синий цвет в формате RGB565 (00000 000000 11111)
     }
 
+    // Защита от деления на ноль при некорректном конфиге
+    if (targetTemp <= minTemp || maxTemp <= targetTemp)
+        return 0xFFFF; // белый — сигнал ошибки конфига
+
     float factor = 0.0f;
     float hue = 120.0f; // По умолчанию чистый зеленый (120 градусов в HSV)
 
@@ -96,24 +100,24 @@ void DisplayManager::updateMetrics(float coolant, float oil, float coolantR, flo
     // Моторное масло: читаем пороги из config.oil
     uint16_t oilColor = getTemperatureColor(oil, config.oil.min, config.oil.target, config.oil.max);
     tft.setTextColor(oilColor, TFT_BLACK);
-    sprintf(buf, "%-5.0f", oil);
+    snprintf(buf, sizeof(buf), "%-5.0f", oil);
     tft.drawString(buf, 10, 87, 4);
 
     // Антифриз ДВС: читаем пороги из config.coolant
     uint16_t coolantColor = getTemperatureColor(coolant, config.coolant.min, config.coolant.target, config.coolant.max);
     tft.setTextColor(coolantColor, TFT_BLACK);
-    sprintf(buf, "%-5.0f", coolant);
+    snprintf(buf, sizeof(buf), "%-5.0f", coolant);
     tft.drawString(buf, 70, 87, 4);
 
     // Антифриз радиатора: читаем пороги из config.radiator
     uint16_t radiatorColor = getTemperatureColor(coolantR, config.radiator.min, config.radiator.target, config.radiator.max);
     tft.setTextColor(radiatorColor, TFT_BLACK);
-    sprintf(buf, "%-5.0f", coolantR);
+    snprintf(buf, sizeof(buf), "%-5.0f", coolantR);
     tft.drawString(buf, 130, 87, 4);
 
     // Масло коробки: читаем пороги из config.transmission
     uint16_t transmissionColor = getTemperatureColor(transmission, config.transmission.min, config.transmission.target, config.transmission.max);
     tft.setTextColor(transmissionColor, TFT_BLACK);
-    sprintf(buf, "%-5.0f", transmission);
+    snprintf(buf, sizeof(buf), "%-5.0f", transmission);
     tft.drawString(buf, 190, 87, 4);
 }
