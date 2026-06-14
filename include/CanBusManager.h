@@ -3,9 +3,11 @@
 #include <driver/twai.h>
 
 // Пин TX модуля SN65HVD230 (WVCMCU-230) → GPIO ESP32
-static constexpr gpio_num_t CAN_TX_PIN = GPIO_NUM_5;
+// GPIO32 — стоит рядом с GPIO34 на плате, удобно для прокладки проводов CAN
+static constexpr gpio_num_t CAN_TX_PIN = GPIO_NUM_32;
 // Пин RX модуля SN65HVD230 (WVCMCU-230) → GPIO ESP32
-static constexpr gpio_num_t CAN_RX_PIN = GPIO_NUM_4;
+// GPIO34 — только вход, не конфликтует с дисплеем (TFT_RST=GPIO4)
+static constexpr gpio_num_t CAN_RX_PIN = GPIO_NUM_34;
 
 // Скорость шины CAN (500 кбит/с — стандарт для большинства автомобилей)
 static constexpr twai_timing_config_t CAN_TIMING = TWAI_TIMING_CONFIG_500KBITS();
