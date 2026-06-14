@@ -129,7 +129,7 @@ bool ConfigManager::loadFromFile()
 
     if (err)
     {
-        Serial.printf("[Config] ОШИБКА парсинга JSON: %s\n", err.c_str());
+        Serial.printf("[Config] ОШИБКА парсинга JSON: %s\r\n", err.c_str());
         return false;
     }
 
@@ -140,7 +140,7 @@ bool ConfigManager::loadFromFile()
 
     if (fileHash != currentHash)
     {
-        Serial.printf("[Config] Значения по умолчанию изменились (hash %08X → %08X), сбрасываем конфиг.\n",
+        Serial.printf("[Config] Значения по умолчанию изменились (hash %08X -> %08X), сбрасываем конфиг.\r\n",
                       fileHash, currentHash);
         return saveToFile();
     }
@@ -205,7 +205,7 @@ bool ConfigManager::fromJson(const String &json)
     DeserializationError err = deserializeJson(doc, json);
     if (err)
     {
-        Serial.printf("[Config] ОШИБКА парсинга входящего JSON: %s\n", err.c_str());
+        Serial.printf("[Config] ОШИБКА парсинга входящего JSON: %s\r\n", err.c_str());
         return false;
     }
 

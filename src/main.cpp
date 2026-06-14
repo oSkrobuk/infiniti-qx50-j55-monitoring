@@ -25,7 +25,7 @@ static void onCanFrame(const CanFrame &frame)
 void setup()
 {
     Serial.begin(115200);
-    Serial.println("\n=== Infiniti QX50 J55 Monitoring ===");
+    Serial.println("=== Infiniti QX50 J55 Monitoring ===");
 
     config.init();  // логирование внутри ConfigManager
 
@@ -36,8 +36,8 @@ void setup()
     canBus.onFrame(onCanFrame);
     canBus.init();
 
-    Serial.printf("[Web] Адрес веб-интерфейса: http://%s\n", web.getIP().c_str());
-    Serial.println("=====================================\n");
+    Serial.printf("[Web] Адрес веб-интерфейса: http://%s\r\n", web.getIP().c_str());
+    Serial.println("=====================================");
 }
 
 void loop()

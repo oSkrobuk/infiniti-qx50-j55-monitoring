@@ -379,7 +379,7 @@ WebManager::WebManager(const char *ssid, const char *password)
 void WebManager::begin()
 {
     WiFi.softAP(_ssid, _password);
-    Serial.printf("[WiFi] AP запущен  SSID: %s\n", _ssid);
+    Serial.printf("[WiFi] AP запущен  SSID: %s\r\n", _ssid);
 
     _server.on("/",            HTTP_GET,  [this]() { handleRoot(); });
     _server.on("/config",      HTTP_GET,  [this]() { handleGetConfig(); });
@@ -439,7 +439,7 @@ void WebManager::handlePostConfig()
     }
 
     body.trim();
-    Serial.printf("[Web] POST /config  %d байт\n", body.length());
+    Serial.printf("[Web] POST /config  %d байт\r\n", body.length());
 
     if (body.isEmpty())
     {
@@ -464,7 +464,7 @@ void WebManager::handleReset()
 
 void WebManager::handleNotFound()
 {
-    Serial.printf("[Web] 404 %s %s\n",
+    Serial.printf("[Web] 404 %s %s\r\n",
         _server.method() == HTTP_GET ? "GET" : "POST",
         _server.uri().c_str());
     _server.send(404, "text/plain", "Not found");

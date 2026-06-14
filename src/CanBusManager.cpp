@@ -29,7 +29,7 @@ bool CanBusManager::init()
     esp_err_t err = twai_driver_install(&gConfig, &tConfig, &fConfig);
     if (err != ESP_OK)
     {
-        Serial.printf("[CAN] Ошибка установки драйвера: %s\n", esp_err_to_name(err));
+        Serial.printf("[CAN] Ошибка установки драйвера: %s\r\n", esp_err_to_name(err));
         return false;
     }
 
@@ -37,7 +37,7 @@ bool CanBusManager::init()
     err = twai_start();
     if (err != ESP_OK)
     {
-        Serial.printf("[CAN] Ошибка запуска TWAI: %s\n", esp_err_to_name(err));
+        Serial.printf("[CAN] Ошибка запуска TWAI: %s\r\n", esp_err_to_name(err));
         twai_driver_uninstall();
         return false;
     }
@@ -46,7 +46,7 @@ bool CanBusManager::init()
     _rxCount  = 0;
     _errCount = 0;
 
-    Serial.printf("[CAN] Шина запущена. TX=GPIO%d, RX=GPIO%d, 500 кбит/с, режим: только приём\n",
+    Serial.printf("[CAN] Шина запущена. TX=GPIO%d, RX=GPIO%d, 500 кбит/с, режим: только приём\r\n",
                   (int)CAN_TX_PIN, (int)CAN_RX_PIN);
     return true;
 }
