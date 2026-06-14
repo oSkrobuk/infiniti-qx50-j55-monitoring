@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 
-// Структура для порогов температур
+// Структура для порогов температур одного датчика
 struct TempConfig
 {
     float min;
@@ -12,20 +12,28 @@ struct TempConfig
 class ConfigManager
 {
 public:
-    // Переменные конфигурации
     TempConfig oil;
     TempConfig coolant;
     TempConfig radiator;
     TempConfig transmission;
 
-    // Конструктор по умолчанию (задаст базовые значения)
     ConfigManager();
 
-    // Методы управления файлами
+    // Монтирует LittleFS и загружает конфиг
     bool init();
+
+    // Загрузить конфиг из /config.json
     bool loadFromFile();
+
+    // Сохранить конфиг в /config.json
     bool saveToFile();
+
+    // Сериализовать текущий конфиг в JSON-строку (для HTTP ответа)
+    String toJson() const;
+
+    // Применить конфиг из JSON-строки (из HTTP запроса), вернуть true если успешно
+    bool fromJson(const String &json);
 };
 
-// Делаем объект доступным для других файлов проекта (например, для DisplayManager)
+// Глобальный объект конфига, доступен из всех файлов
 extern ConfigManager config;
