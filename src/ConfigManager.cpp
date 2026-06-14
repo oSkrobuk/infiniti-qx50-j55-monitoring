@@ -1,28 +1,45 @@
 #include "ConfigManager.h"
 #include <LittleFS.h>
-#include <ArduinoJson.h>
 
 ConfigManager config;
 
 static bool _fsMounted = false;
 
-// ── Вспомогательные функции ──────────────────
-
-static void writeSection(JsonVariant doc, const char *key, const TempConfig &cfg)
+// ── Значения по умолчанию ────────────────────────────────────────────────────
+//
+// Добавить новый датчик/секцию с любой структурой полей — одна лямбда ниже.
+// Температурные датчики: min / target / max
+// Другие типы могут иметь любые поля: warn, crit, idle, ...
+//
+static void buildDefaults(JsonDocument &doc)
 {
-    doc[key]["min"]    = cfg.min;
-    doc[key]["target"] = cfg.target;
-    doc[key]["max"]    = cfg.max;
+    // Температурные датчики
+    doc["oil"]["min"]            = 50.0f;
+    doc["oil"]["target"]         = 90.0f;
+    doc["oil"]["max"]            = 98.0f;
+
+    doc["coolant"]["min"]        = 50.0f;
+    doc["coolant"]["target"]     = 90.0f;
+    doc["coolant"]["max"]        = 100.0f;
+
+    doc["radiator"]["min"]       =  0.0f;
+    doc["radiator"]["target"]    = 50.0f;
+    doc["radiator"]["max"]       = 90.0f;
+
+    doc["transmission"]["min"]   = 50.0f;
+    doc["transmission"]["target"]= 80.0f;
+    doc["transmission"]["max"]   = 100.0f;
+
+    // Пример: датчик давления масла (другая структура полей)
+    // doc["oil_pressure"]["warn"] = 1.5f;
+    // doc["oil_pressure"]["crit"] = 0.8f;
+
+    // Пример: обороты двигателя
+    // doc["rpm"]["idle"]  = 800.0f;
+    // doc["rpm"]["max"]   = 7000.0f;
 }
 
-static TempConfig readSection(JsonVariantConst doc, const char *key, const TempConfig &fallback)
-{
-    return {
-        doc[key]["min"]    | fallback.min,
-        doc[key]["target"] | fallback.target,
-        doc[key]["max"]    | fallback.max,
-    };
-}
+// ── Вспомогательные функции ──────────────────────────────────────────────────
 
 // CRC32 от строки — используется для автоматического определения
 // изменения значений по умолчанию без ручного версионирования
@@ -38,14 +55,10 @@ static uint32_t crc32(const String &s)
     return ~crc;
 }
 
-// Формирует JSON только из дефолтных значений и возвращает его CRC32
 static uint32_t defaultsHash()
 {
     JsonDocument doc;
-    writeSection(doc, "oil",          Defaults::OIL);
-    writeSection(doc, "coolant",      Defaults::COOLANT);
-    writeSection(doc, "radiator",     Defaults::RADIATOR);
-    writeSection(doc, "transmission", Defaults::TRANSMISSION);
+    buildDefaults(doc);
     String s;
     serializeJson(doc, s);
     return crc32(s);
@@ -69,14 +82,22 @@ static bool ensureMounted()
     return true;
 }
 
-// ── ConfigManager ────────────────────────────
+// ── ConfigManager ────────────────────────────────────────────────────────────
 
 ConfigManager::ConfigManager()
 {
-    oil          = Defaults::OIL;
-    coolant      = Defaults::COOLANT;
-    radiator     = Defaults::RADIATOR;
-    transmission = Defaults::TRANSMISSION;
+    _applyDefaults();
+}
+
+void ConfigManager::_applyDefaults()
+{
+    _data.clear();
+    buildDefaults(_data);
+}
+
+float ConfigManager::get(const char *section, const char *field) const
+{
+    return _data[section][field] | 0.0f;
 }
 
 bool ConfigManager::init()
@@ -124,10 +145,14 @@ bool ConfigManager::loadFromFile()
         return saveToFile();
     }
 
-    oil          = readSection(doc["params"], "oil",          oil);
-    coolant      = readSection(doc["params"], "coolant",      coolant);
-    radiator     = readSection(doc["params"], "radiator",     radiator);
-    transmission = readSection(doc["params"], "transmission", transmission);
+    // Загружаем params поверх дефолтов: неизвестные поля просто игнорируются
+    JsonObjectConst params = doc["params"].as<JsonObjectConst>();
+    for (JsonPairConst section : params)
+    {
+        JsonObjectConst fields = section.value().as<JsonObjectConst>();
+        for (JsonPairConst field : fields)
+            _data[section.key()][field.key()] = field.value().as<float>();
+    }
 
     Serial.println("[Config] Конфигурация загружена.");
     return true;
@@ -144,18 +169,9 @@ bool ConfigManager::saveToFile()
         return false;
     }
 
-    // Формируем params отдельно чтобы посчитать хеш от них
-    JsonDocument params;
-    writeSection(params, "oil",          oil);
-    writeSection(params, "coolant",      coolant);
-    writeSection(params, "radiator",     radiator);
-    writeSection(params, "transmission", transmission);
-
-    // Хеш считается от дефолтных значений (не от текущих params)
-    // — это позволяет обнаружить изменение дефолтов при следующей прошивке
     JsonDocument doc;
     doc["version"] = defaultsHash();
-    doc["params"]  = params;
+    doc["params"]  = _data;
 
     if (serializeJson(doc, f) == 0)
     {
@@ -171,24 +187,15 @@ bool ConfigManager::saveToFile()
 
 bool ConfigManager::resetToDefaults()
 {
-    oil          = Defaults::OIL;
-    coolant      = Defaults::COOLANT;
-    radiator     = Defaults::RADIATOR;
-    transmission = Defaults::TRANSMISSION;
+    _applyDefaults();
     Serial.println("[Config] Сброс к значениям по умолчанию.");
     return saveToFile();
 }
 
 String ConfigManager::toJson() const
 {
-    JsonDocument doc;
-    writeSection(doc, "oil",          oil);
-    writeSection(doc, "coolant",      coolant);
-    writeSection(doc, "radiator",     radiator);
-    writeSection(doc, "transmission", transmission);
-
     String out;
-    serializeJson(doc, out);
+    serializeJson(_data, out);
     return out;
 }
 
@@ -202,10 +209,14 @@ bool ConfigManager::fromJson(const String &json)
         return false;
     }
 
-    oil          = readSection(doc, "oil",          oil);
-    coolant      = readSection(doc, "coolant",      coolant);
-    radiator     = readSection(doc, "radiator",     radiator);
-    transmission = readSection(doc, "transmission", transmission);
+    // Обновляем только те поля, которые пришли; остальные остаются как есть
+    JsonObjectConst root = doc.as<JsonObjectConst>();
+    for (JsonPairConst section : root)
+    {
+        JsonObjectConst fields = section.value().as<JsonObjectConst>();
+        for (JsonPairConst field : fields)
+            _data[section.key()][field.key()] = field.value().as<float>();
+    }
 
     return saveToFile();
 }

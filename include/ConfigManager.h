@@ -1,31 +1,10 @@
 #pragma once
 #include <Arduino.h>
-
-// Структура для порогов температур одного датчика
-struct TempConfig
-{
-    float min;
-    float target;
-    float max;
-};
-
-// Значения по умолчанию — единственное место в проекте
-namespace Defaults
-{
-    constexpr TempConfig OIL          = {50.0f, 90.0f,  98.0f};
-    constexpr TempConfig COOLANT      = {50.0f, 90.0f, 100.0f};
-    constexpr TempConfig RADIATOR     = { 0.0f, 50.0f,  90.0f};
-    constexpr TempConfig TRANSMISSION = {50.0f, 80.0f, 100.0f};
-}
+#include <ArduinoJson.h>
 
 class ConfigManager
 {
 public:
-    TempConfig oil;
-    TempConfig coolant;
-    TempConfig radiator;
-    TempConfig transmission;
-
     ConfigManager();
 
     // Монтирует LittleFS и загружает конфиг (вызывать в setup())
@@ -45,6 +24,18 @@ public:
 
     // Применить конфиг из JSON-строки, сохранить и вернуть true если успешно
     bool fromJson(const String &json);
+
+    // Получить числовое значение поля для любого датчика/секции.
+    // config.get("oil", "min"), config.get("rpm", "max"), etc.
+    // Если ключ или поле не найдены — возвращает 0.0f.
+    float get(const char *section, const char *field) const;
+
+private:
+    // Все текущие значения конфига — произвольная вложенная структура
+    JsonDocument _data;
+
+    // Применить значения по умолчанию в _data (не перезаписывает существующие)
+    void _applyDefaults();
 };
 
 // Глобальный объект конфига, доступен из всех файлов

@@ -381,11 +381,12 @@ void WebManager::begin()
     WiFi.softAP(_ssid, _password);
     Serial.printf("[WiFi] AP запущен  SSID: %s\n", _ssid);
 
-    _server.on("/",       HTTP_GET,  [this]() { handleRoot(); });
-    _server.on("/config", HTTP_GET,  [this]() { handleGetConfig(); });
-    _server.on("/config", HTTP_POST, [this]() { handlePostConfig(); });
-    _server.on("/reset",  HTTP_POST, [this]() { handleReset(); });
-    _server.onNotFound(             [this]() { handleNotFound(); });
+    _server.on("/",            HTTP_GET,  [this]() { handleRoot(); });
+    _server.on("/config",      HTTP_GET,  [this]() { handleGetConfig(); });
+    _server.on("/config",      HTTP_POST, [this]() { handlePostConfig(); });
+    _server.on("/reset",       HTTP_POST, [this]() { handleReset(); });
+    _server.on("/favicon.ico", HTTP_GET,  [this]() { _server.send(204); });
+    _server.onNotFound(                   [this]() { handleNotFound(); });
 
     const char *headers[] = {"Content-Length", "Content-Type"};
     _server.collectHeaders(headers, 2);
@@ -463,5 +464,8 @@ void WebManager::handleReset()
 
 void WebManager::handleNotFound()
 {
+    Serial.printf("[Web] 404 %s %s\n",
+        _server.method() == HTTP_GET ? "GET" : "POST",
+        _server.uri().c_str());
     _server.send(404, "text/plain", "Not found");
 }

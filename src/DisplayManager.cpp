@@ -97,26 +97,30 @@ void DisplayManager::updateMetrics(float coolant, float oil, float coolantR, flo
 {
     char buf[12];
 
-    // Моторное масло: читаем пороги из config.oil
-    uint16_t oilColor = getTemperatureColor(oil, config.oil.min, config.oil.target, config.oil.max);
+    // Моторное масло
+    uint16_t oilColor = getTemperatureColor(oil,
+        config.get("oil", "min"), config.get("oil", "target"), config.get("oil", "max"));
     tft.setTextColor(oilColor, TFT_BLACK);
     snprintf(buf, sizeof(buf), "%-5.0f", oil);
     tft.drawString(buf, 10, 87, 4);
 
-    // Антифриз ДВС: читаем пороги из config.coolant
-    uint16_t coolantColor = getTemperatureColor(coolant, config.coolant.min, config.coolant.target, config.coolant.max);
+    // Антифриз ДВС
+    uint16_t coolantColor = getTemperatureColor(coolant,
+        config.get("coolant", "min"), config.get("coolant", "target"), config.get("coolant", "max"));
     tft.setTextColor(coolantColor, TFT_BLACK);
     snprintf(buf, sizeof(buf), "%-5.0f", coolant);
     tft.drawString(buf, 70, 87, 4);
 
-    // Антифриз радиатора: читаем пороги из config.radiator
-    uint16_t radiatorColor = getTemperatureColor(coolantR, config.radiator.min, config.radiator.target, config.radiator.max);
+    // Антифриз радиатора
+    uint16_t radiatorColor = getTemperatureColor(coolantR,
+        config.get("radiator", "min"), config.get("radiator", "target"), config.get("radiator", "max"));
     tft.setTextColor(radiatorColor, TFT_BLACK);
     snprintf(buf, sizeof(buf), "%-5.0f", coolantR);
     tft.drawString(buf, 130, 87, 4);
 
-    // Масло коробки: читаем пороги из config.transmission
-    uint16_t transmissionColor = getTemperatureColor(transmission, config.transmission.min, config.transmission.target, config.transmission.max);
+    // Масло коробки
+    uint16_t transmissionColor = getTemperatureColor(transmission,
+        config.get("transmission", "min"), config.get("transmission", "target"), config.get("transmission", "max"));
     tft.setTextColor(transmissionColor, TFT_BLACK);
     snprintf(buf, sizeof(buf), "%-5.0f", transmission);
     tft.drawString(buf, 190, 87, 4);
