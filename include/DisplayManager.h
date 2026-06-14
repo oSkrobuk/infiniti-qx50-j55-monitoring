@@ -2,18 +2,19 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 
-class DisplayManager {
+class DisplayManager
+{
 private:
     TFT_eSPI tft;
 
 public:
     DisplayManager();
-    
-    // Первоначальная отрисовка меню и рамок
+
     void init();
-    
-    // Обновление конкретных данных на экране (без мерцания)
-    void updateMetrics(float coolant, float oil, float voltage, float boost);
-    
-    TFT_eSPI& getTft() { return tft; }
+
+    uint16_t getTemperatureColor(float value, float minTemp, float targetTemp, float maxTemp);
+
+    void updateMetrics(float coolant, float oil, float coolantR);
+
+    TFT_eSPI &getTft() { return tft; }
 };
