@@ -8,20 +8,47 @@ static bool _fsMounted = false;
 
 // ── Вспомогательные функции ──────────────────
 
-static void writeSection(JsonDocument &doc, const char *key, const TempConfig &cfg)
+static void writeSection(JsonVariant doc, const char *key, const TempConfig &cfg)
 {
     doc[key]["min"]    = cfg.min;
     doc[key]["target"] = cfg.target;
     doc[key]["max"]    = cfg.max;
 }
 
-static TempConfig readSection(const JsonDocument &doc, const char *key, const TempConfig &fallback)
+static TempConfig readSection(JsonVariantConst doc, const char *key, const TempConfig &fallback)
 {
     return {
         doc[key]["min"]    | fallback.min,
         doc[key]["target"] | fallback.target,
         doc[key]["max"]    | fallback.max,
     };
+}
+
+// CRC32 от строки — используется для автоматического определения
+// изменения значений по умолчанию без ручного версионирования
+static uint32_t crc32(const String &s)
+{
+    uint32_t crc = 0xFFFFFFFFu;
+    for (char c : s)
+    {
+        crc ^= (uint8_t)c;
+        for (int b = 0; b < 8; ++b)
+            crc = (crc >> 1) ^ (0xEDB88320u & -(crc & 1));
+    }
+    return ~crc;
+}
+
+// Формирует JSON только из дефолтных значений и возвращает его CRC32
+static uint32_t defaultsHash()
+{
+    JsonDocument doc;
+    writeSection(doc, "oil",          Defaults::OIL);
+    writeSection(doc, "coolant",      Defaults::COOLANT);
+    writeSection(doc, "radiator",     Defaults::RADIATOR);
+    writeSection(doc, "transmission", Defaults::TRANSMISSION);
+    String s;
+    serializeJson(doc, s);
+    return crc32(s);
 }
 
 static bool ensureMounted()
@@ -85,10 +112,22 @@ bool ConfigManager::loadFromFile()
         return false;
     }
 
-    oil          = readSection(doc, "oil",          oil);
-    coolant      = readSection(doc, "coolant",      coolant);
-    radiator     = readSection(doc, "radiator",     radiator);
-    transmission = readSection(doc, "transmission", transmission);
+    // Сравниваем хеш дефолтов из файла с текущим хешем дефолтов в коде.
+    // Если значения по умолчанию изменились — перезаписываем файл.
+    uint32_t fileHash    = doc["version"] | 0u;
+    uint32_t currentHash = defaultsHash();
+
+    if (fileHash != currentHash)
+    {
+        Serial.printf("[Config] Значения по умолчанию изменились (hash %08X → %08X), сбрасываем конфиг.\n",
+                      fileHash, currentHash);
+        return saveToFile();
+    }
+
+    oil          = readSection(doc["params"], "oil",          oil);
+    coolant      = readSection(doc["params"], "coolant",      coolant);
+    radiator     = readSection(doc["params"], "radiator",     radiator);
+    transmission = readSection(doc["params"], "transmission", transmission);
 
     Serial.println("[Config] Конфигурация загружена.");
     return true;
@@ -105,11 +144,18 @@ bool ConfigManager::saveToFile()
         return false;
     }
 
+    // Формируем params отдельно чтобы посчитать хеш от них
+    JsonDocument params;
+    writeSection(params, "oil",          oil);
+    writeSection(params, "coolant",      coolant);
+    writeSection(params, "radiator",     radiator);
+    writeSection(params, "transmission", transmission);
+
+    // Хеш считается от дефолтных значений (не от текущих params)
+    // — это позволяет обнаружить изменение дефолтов при следующей прошивке
     JsonDocument doc;
-    writeSection(doc, "oil",          oil);
-    writeSection(doc, "coolant",      coolant);
-    writeSection(doc, "radiator",     radiator);
-    writeSection(doc, "transmission", transmission);
+    doc["version"] = defaultsHash();
+    doc["params"]  = params;
 
     if (serializeJson(doc, f) == 0)
     {

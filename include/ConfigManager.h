@@ -9,7 +9,7 @@ struct TempConfig
     float max;
 };
 
-// Заводские значения по умолчанию — единственное место в проекте
+// Значения по умолчанию — единственное место в проекте
 namespace Defaults
 {
     constexpr TempConfig OIL          = {50.0f, 90.0f,  98.0f};
