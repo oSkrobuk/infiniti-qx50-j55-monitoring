@@ -14,20 +14,15 @@ WebManager     web(AP_SSID, AP_PASSWORD);
 void setup()
 {
     Serial.begin(115200);
+    Serial.println("\n=== Infiniti QX50 J55 Monitoring ===");
 
-    if (!config.init())
-    {
-        Serial.println("ПРЕДУПРЕЖДЕНИЕ: конфигурация не загружена, используются значения по умолчанию.");
-    }
-    else
-    {
-        Serial.println("Конфигурация успешно загружена!");
-    }
+    config.init();  // логирование внутри ConfigManager
 
     display.init();
     web.begin();
 
-    Serial.printf("Веб-интерфейс доступен по адресу: http://%s\n", web.getIP().c_str());
+    Serial.printf("[Web] Адрес веб-интерфейса: http://%s\n", web.getIP().c_str());
+    Serial.println("=====================================\n");
 }
 
 void loop()

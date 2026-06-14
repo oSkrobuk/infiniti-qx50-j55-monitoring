@@ -25,5 +25,6 @@ private:
     void handleRoot();
     void handleGetConfig();
     void handlePostConfig();
+    void handleReset();
     void handleNotFound();
 };
