@@ -66,3 +66,12 @@ private:
 
 // Глобальный объект, доступен из всех файлов
 extern CanBusManager canBus;
+
+// Вывести содержимое фрейма в Serial в читаемом виде:
+// HEX, DEC, u16/i16 BE+LE, u32 BE+LE, f32 LE для каждого смещения.
+// Используется как колбэк по умолчанию для анализа шины.
+void canPrintFrame(const CanFrame &frame);
+
+// Декодировать известные CAN-фреймы Infiniti QX50 J55 и вывести
+// человекочитаемые значения в Serial (обороты, температуры, передача, наддув).
+void canParseKnownFrames(const CanFrame &frame);

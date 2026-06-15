@@ -12,16 +12,6 @@ static const char *AP_PASSWORD = "infiniti";
 DisplayManager display;
 WebManager     web(AP_SSID, AP_PASSWORD);
 
-// Колбэк: вызывается для каждого принятого CAN-фрейма
-static void onCanFrame(const CanFrame &frame)
-{
-    // Выводим фрейм в Serial для отладки
-    Serial.printf("[CAN] ID=0x%03X DLC=%d DATA:", frame.id, frame.dlc);
-    for (uint8_t i = 0; i < frame.dlc; i++)
-        Serial.printf(" %02X", frame.data[i]);
-    Serial.println();
-}
-
 void setup()
 {
     Serial.begin(115200);
@@ -33,7 +23,7 @@ void setup()
     web.begin();
 
     // Инициализация CAN-шины (SN65HVD230 / WVCMCU-230)
-    canBus.onFrame(onCanFrame);
+    canBus.onFrame(canPrintFrame);
     canBus.init();
 
     Serial.printf("[Web] Адрес веб-интерфейса: http://%s\r\n", web.getIP().c_str());
@@ -45,17 +35,22 @@ void loop()
     // Обрабатываем HTTP запросы
     web.handle();
 
-    // Читаем фреймы с CAN-шины автомобиля
+    // Читаем фреймы с CAN-шины автомобиля (без delay — чтобы не терять фреймы)
     canBus.handle();
 
-    // Имитация данных с датчиков автомобиля Infiniti для проверки отображения
-    float mockCoolant      = 85.0f + sinf(millis() / 10000.0f) * 20.0f;
-    float mockOil          = 90.0f + sinf(millis() / 10000.0f) * 20.0f;
-    float mockCoolantR     = 50.0f + sinf(millis() / 10000.0f) * 70.0f;
-    float mockTransmission = 80.0f + sinf(millis() / 10000.0f) * 40.0f;
+    // Обновляем дисплей не чаще 10 раз в секунду, без блокирующего delay
+    static uint32_t lastDisplay = 0;
+    if (millis() - lastDisplay >= 100)
+    {
+        lastDisplay = millis();
 
-    // Обновляем параметры на дисплее (работает плавно, без единого моргания)
-    display.updateMetrics(mockCoolant, mockOil, mockCoolantR, mockTransmission);
+        // Имитация данных с датчиков автомобиля Infiniti для проверки отображения
+        float mockCoolant      = 85.0f + sinf(millis() / 10000.0f) * 20.0f;
+        float mockOil          = 90.0f + sinf(millis() / 10000.0f) * 20.0f;
+        float mockCoolantR     = 50.0f + sinf(millis() / 10000.0f) * 70.0f;
+        float mockTransmission = 80.0f + sinf(millis() / 10000.0f) * 40.0f;
 
-    delay(100); // Частота обновления экрана 10 раз в секунду
+        // Обновляем параметры на дисплее (работает плавно, без единого моргания)
+        display.updateMetrics(mockCoolant, mockOil, mockCoolantR, mockTransmission);
+    }
 }
