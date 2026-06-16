@@ -1,7 +1,8 @@
-# Кастомная таблица разделов без OTA для ESP32 4MB Flash
-# Освобождает ~1.25MB за счёт удаления OTA-раздела
+# Таблица разделов с OTA для ESP32 4MB Flash
+# Два слота OTA по 1.75MB + SPIFFS 448KB
 # Name,   Type, SubType,  Offset,   Size,    Flags
 nvs,      data, nvs,      0x9000,   0x5000,
-phy_init, data, phy,      0xF000,   0x1000,
-app0,     app,  factory,  0x10000,  0x300000,
-spiffs,   data, spiffs,   0x310000, 0xF0000,
+otadata,  data, ota,      0xE000,   0x2000,
+ota_0,    app,  ota_0,    0x10000,  0x1C0000,
+ota_1,    app,  ota_1,    0x1D0000, 0x1C0000,
+spiffs,   data, spiffs,   0x390000, 0x70000,
