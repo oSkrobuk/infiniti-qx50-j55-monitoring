@@ -19,7 +19,7 @@ void DisplayManager::init()
     tft.drawString("TEMPERATURE, C", 5, 51, 2);
 
     tft.setTextColor(0x9CD3, TFT_BLACK);
-    tft.drawString("E-OIL", 10, 69, 2);
+    tft.drawString("E-OILx", 10, 69, 2);
     tft.drawString("E-COOL", 70, 69, 2);
     tft.drawString("R-COOL", 130, 69, 2);
     tft.drawString("T-OIL", 190, 69, 2);

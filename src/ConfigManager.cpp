@@ -20,7 +20,7 @@ static void buildDefaults(JsonDocument &doc)
 
     doc["coolant"]["min"]        = 50.0f;
     doc["coolant"]["target"]     = 90.0f;
-    doc["coolant"]["max"]        = 100.0f;
+    doc["coolant"]["max"]        = 93.0f;
 
     doc["radiator"]["min"]       =  0.0f;
     doc["radiator"]["target"]    = 50.0f;

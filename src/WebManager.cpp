@@ -1,6 +1,7 @@
 #include "WebManager.h"
 #include "ConfigManager.h"
 #include <WiFi.h>
+#include <Update.h>
 
 // HTML страница хранится во флеш-памяти (PROGMEM), не занимает RAM
 static const char INDEX_HTML[] PROGMEM = R"rawhtml(
@@ -142,6 +143,68 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   .btn-save    { background: var(--accent); color: #000; }
   .btn-default { background: var(--border); color: var(--muted); border: 1px solid #444; }
+  /* OTA styles */
+  .ota-wrap {
+    max-width: 960px;
+    margin: 20px auto 0;
+  }
+  .ota-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .btn-ota-label {
+    display: inline-block;
+    padding: 10px 18px;
+    background: var(--border);
+    border: 1px solid #444;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    letter-spacing: 1px;
+    cursor: pointer;
+    color: var(--muted);
+    transition: opacity 0.2s;
+    white-space: nowrap;
+  }
+  .btn-ota-label:hover { opacity: 0.8; }
+  .ota-filename {
+    flex: 1;
+    font-size: 0.85rem;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .btn-ota-upload {
+    background: #1565c0;
+    color: #fff;
+    min-width: 140px;
+    flex: 0 0 auto;
+  }
+  .ota-progress { display: none; margin-top: 14px; }
+  .ota-bar-bg {
+    background: #111;
+    border-radius: 4px;
+    height: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .ota-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    border-radius: 4px;
+    transition: width 0.25s;
+  }
+  .ota-status {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-top: 7px;
+    text-align: center;
+    letter-spacing: 0.5px;
+  }
   .toast {
     position: fixed;
     bottom: 24px;
@@ -264,6 +327,25 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 </div>
 </form>
 
+<!-- OTA Firmware Update -->
+<div class="ota-wrap">
+  <div class="card">
+    <div class="card-title">&#8593; OTA — Обновление прошивки</div>
+    <div class="ota-row">
+      <label class="btn-ota-label" for="otaFile">&#128190; Выбрать .bin</label>
+      <input type="file" id="otaFile" accept=".bin" style="display:none">
+      <span class="ota-filename" id="otaFileName">файл не выбран</span>
+      <button type="button" class="btn-ota-upload" id="btnOta" disabled>&#8593; Загрузить</button>
+    </div>
+    <div class="ota-progress" id="otaProgress">
+      <div class="ota-bar-bg">
+        <div class="ota-bar-fill" id="otaBar"></div>
+      </div>
+      <div class="ota-status" id="otaStatus"></div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <footer>Infiniti QX50 J55 Monitoring &mdash; ESP32</footer>
@@ -363,6 +445,73 @@ document.getElementById('btnDefault').addEventListener('click', async () => {
   }
 });
 
+// ── OTA ──────────────────────────────────────────────────
+const otaFile     = document.getElementById('otaFile');
+const otaFileName = document.getElementById('otaFileName');
+const btnOta      = document.getElementById('btnOta');
+const otaProgress = document.getElementById('otaProgress');
+const otaBar      = document.getElementById('otaBar');
+const otaStatus   = document.getElementById('otaStatus');
+
+otaFile.addEventListener('change', () => {
+  if (otaFile.files.length) {
+    const f = otaFile.files[0];
+    otaFileName.textContent = f.name + '  (' + Math.round(f.size / 1024) + ' KB)';
+    btnOta.disabled = false;
+  } else {
+    otaFileName.textContent = 'файл не выбран';
+    btnOta.disabled = true;
+  }
+});
+
+btnOta.addEventListener('click', () => {
+  if (!otaFile.files.length) return;
+  if (!confirm('Загрузить новую прошивку?\nУстройство перезагрузится после прошивки.')) return;
+
+  const formData = new FormData();
+  formData.append('firmware', otaFile.files[0], otaFile.files[0].name);
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/update');
+
+  btnOta.disabled = true;
+  otaBar.style.background = 'var(--accent)';
+  otaBar.style.width = '0%';
+  otaStatus.textContent = 'Подготовка...';
+  otaProgress.style.display = 'block';
+
+  xhr.upload.addEventListener('progress', (e) => {
+    if (e.lengthComputable) {
+      const pct = Math.round(e.loaded / e.total * 100);
+      otaBar.style.width = pct + '%';
+      otaStatus.textContent =
+        'Загрузка: ' + pct + '%  (' +
+        Math.round(e.loaded / 1024) + ' / ' +
+        Math.round(e.total  / 1024) + ' KB)';
+    }
+  });
+
+  xhr.addEventListener('load', () => {
+    if (xhr.status === 200) {
+      otaBar.style.width = '100%';
+      otaBar.style.background = 'var(--green)';
+      otaStatus.textContent = '✓ Прошивка записана. Перезагрузка...';
+    } else {
+      otaBar.style.background = 'var(--red)';
+      otaStatus.textContent = '✗ Ошибка: ' + xhr.responseText;
+      btnOta.disabled = false;
+    }
+  });
+
+  xhr.addEventListener('error', () => {
+    otaBar.style.background = 'var(--red)';
+    otaStatus.textContent = '✗ Сетевая ошибка';
+    btnOta.disabled = false;
+  });
+
+  xhr.send(formData);
+});
+
 loadConfig();
 </script>
 </body>
@@ -386,7 +535,31 @@ void WebManager::begin()
     _server.on("/config",      HTTP_POST, [this]() { handlePostConfig(); });
     _server.on("/reset",       HTTP_POST, [this]() { handleReset(); });
     _server.on("/favicon.ico", HTTP_GET,  [this]() { _server.send(204); });
-    _server.onNotFound(                   [this]() { handleNotFound(); });
+
+    // GET /update — та же страница, что и корень
+    _server.on("/update",      HTTP_GET,  [this]() { handleUpdatePage(); });
+
+    // POST /update — загрузка .bin (два обработчика: завершение + чанки данных)
+    _server.on("/update", HTTP_POST,
+        [this]() { // вызывается ПОСЛЕ завершения загрузки файла
+            bool ok = !Update.hasError();
+            _server.sendHeader("Connection", "close");
+            if (ok) {
+                _server.send(200, "application/json", "{\"ok\":true}");
+                Serial.println("[OTA] Успех — перезагрузка...");
+                delay(300);
+                ESP.restart();
+            } else {
+                String err = Update.errorString();
+                _server.send(500, "application/json",
+                    "{\"error\":\"" + err + "\"}");
+                Serial.printf("[OTA] Ошибка: %s\r\n", err.c_str());
+            }
+        },
+        [this]() { handleUpdateUpload(); } // вызывается для каждого чанка
+    );
+
+    _server.onNotFound([this]() { handleNotFound(); });
 
     const char *headers[] = {"Content-Length", "Content-Type"};
     _server.collectHeaders(headers, 2);
@@ -468,4 +641,60 @@ void WebManager::handleNotFound()
         _server.method() == HTTP_GET ? "GET" : "POST",
         _server.uri().c_str());
     _server.send(404, "text/plain", "Not found");
+}
+
+// ── OTA ──────────────────────────────────────────────────────────────────────
+
+void WebManager::handleUpdatePage()
+{
+    // OTA форма встроена в главную страницу — просто редиректим
+    _server.sendHeader("Location", "/");
+    _server.send(302);
+}
+
+void WebManager::handleUpdateUpload()
+{
+    HTTPUpload &upload = _server.upload();
+
+    switch (upload.status)
+    {
+    case UPLOAD_FILE_START:
+        Serial.printf("[OTA] Начало: %s  (размер неизвестен)\r\n",
+                      upload.filename.c_str());
+        // UPDATE_SIZE_UNKNOWN — Update сам определит конец по закрытию соединения
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN))
+        {
+            Serial.printf("[OTA] begin() ошибка: %s\r\n",
+                          Update.errorString());
+        }
+        break;
+
+    case UPLOAD_FILE_WRITE:
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize)
+        {
+            Serial.printf("[OTA] write() ошибка: %s\r\n",
+                          Update.errorString());
+        }
+        break;
+
+    case UPLOAD_FILE_END:
+        if (Update.end(true)) // true = финализировать (проверить MD5/размер)
+        {
+            Serial.printf("[OTA] Завершено: %u байт\r\n", upload.totalSize);
+        }
+        else
+        {
+            Serial.printf("[OTA] end() ошибка: %s\r\n",
+                          Update.errorString());
+        }
+        break;
+
+    case UPLOAD_FILE_ABORTED:
+        Update.abort();
+        Serial.println("[OTA] Загрузка прервана");
+        break;
+
+    default:
+        break;
+    }
 }

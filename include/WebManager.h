@@ -27,4 +27,8 @@ private:
     void handlePostConfig();
     void handleReset();
     void handleNotFound();
+    // OTA: GET /update — страница загрузки прошивки
+    void handleUpdatePage();
+    // OTA: POST /update — приём .bin файла (chunked multipart upload)
+    void handleUpdateUpload();
 };
