@@ -1,9 +1,10 @@
 #include "WebManager.h"
-#include "ConfigManager.h"
-#include <WiFi.h>
-#include <Update.h>
 
-// HTML страница хранится во флеш-памяти (PROGMEM), не занимает RAM
+#include "ConfigManager.h"
+#include <Update.h>
+#include <WiFi.h>
+
+// HTML страница хранится во флеш-памяти (PROGMEM), не занимает RAM.
 static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 <!DOCTYPE html>
 <html lang="ru">
@@ -209,17 +210,24 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     position: fixed;
     bottom: 24px;
     left: 50%;
-    transform: translateX(-50%) translateY(80px);
+    transform: translateX(-50%) translateY(120px);
     background: #222;
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 12px 24px;
     font-size: 0.9rem;
-    transition: transform 0.3s ease;
+    transition: transform 0.4s ease, visibility 0s linear 0.4s;
     z-index: 100;
-    white-space: nowrap;
+    white-space: normal;
+    max-width: calc(100vw - 48px);
+    text-align: center;
+    visibility: hidden;
   }
-  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast.show {
+    transform: translateX(-50%) translateY(0);
+    visibility: visible;
+    transition: transform 0.4s ease, visibility 0s linear 0s;
+  }
   .toast.ok   { border-color: var(--green); color: var(--green); }
   .toast.err  { border-color: var(--red);   color: var(--red); }
   footer {
@@ -319,6 +327,60 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     </div>
   </div>
 
+  <div class="card">
+    <div class="card-title">&#9889; RPM — Обороты двигателя</div>
+    <div class="row3">
+      <div class="field">
+        <label>Нач. зелёной</label>
+        <input class="f-min" type="number" step="50" name="rpm_green_start" required>
+      </div>
+      <div class="field">
+        <label>Кон. зелёной</label>
+        <input class="f-target" type="number" step="50" name="rpm_green_end" required>
+      </div>
+      <div class="field">
+        <label>Нач. красной</label>
+        <input class="f-max" type="number" step="50" name="rpm_red_start" required>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">&#128167; EOP — Давление масла</div>
+    <div class="row3">
+      <div class="field">
+        <label>Порог RPM</label>
+        <input class="f-target" type="number" step="100" name="oil_pressure_rpm_threshold" required>
+      </div>
+      <div class="field">
+        <label>Мин &lt;порога, бар</label>
+        <input class="f-min" type="number" step="0.1" name="oil_pressure_min_low" required>
+      </div>
+      <div class="field">
+        <label>Мин &ge;порога, бар</label>
+        <input class="f-max" type="number" step="0.1" name="oil_pressure_min_high" required>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">&#128168; BOOST — Давление наддува</div>
+    <div class="row3">
+      <div class="field">
+        <label>Синий до, бар</label>
+        <input class="f-min" type="number" step="0.05" name="boost_blue_max" required>
+      </div>
+      <div class="field">
+        <label>Зелёный от, бар</label>
+        <input class="f-target" type="number" step="0.05" name="boost_green_min" required>
+      </div>
+      <div class="field">
+        <label style="color:var(--muted);font-style:italic;">&nbsp;</label>
+        <input type="text" disabled style="background:#0d0d0d;border-color:#1a1a1a;color:#333;" value="—">
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <div class="actions">
@@ -357,7 +419,7 @@ function showToast(msg, type) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = 'toast ' + type + ' show';
-  setTimeout(() => { t.className = 'toast'; }, 3000);
+  setTimeout(() => { t.className = 'toast'; }, 5000);
 }
 
 function fillForm(cfg) {
@@ -367,6 +429,31 @@ function fillForm(cfg) {
       if (el) el.value = cfg[f][s];
     });
   });
+  // RPM fields
+  if (cfg.rpm) {
+    const gs = document.querySelector('[name="rpm_green_start"]');
+    const ge = document.querySelector('[name="rpm_green_end"]');
+    const rs = document.querySelector('[name="rpm_red_start"]');
+    if (gs) gs.value = cfg.rpm.green_start;
+    if (ge) ge.value = cfg.rpm.green_end;
+    if (rs) rs.value = cfg.rpm.red_start;
+  }
+  // Oil pressure
+  if (cfg.oil_pressure) {
+    const rt  = document.querySelector('[name="oil_pressure_rpm_threshold"]');
+    const ml  = document.querySelector('[name="oil_pressure_min_low"]');
+    const mh  = document.querySelector('[name="oil_pressure_min_high"]');
+    if (rt)  rt.value = cfg.oil_pressure.rpm_threshold;
+    if (ml)  ml.value = cfg.oil_pressure.min_low;
+    if (mh)  mh.value = cfg.oil_pressure.min_high;
+  }
+  // Boost
+  if (cfg.boost) {
+    const bm = document.querySelector('[name="boost_blue_max"]');
+    const gm = document.querySelector('[name="boost_green_min"]');
+    if (bm) bm.value = cfg.boost.blue_max;
+    if (gm) gm.value = cfg.boost.green_min;
+  }
 }
 
 function readForm() {
@@ -378,6 +465,20 @@ function readForm() {
       max:    parseFloat(document.querySelector(`[name="${s}_max"]`).value),
     };
   });
+  d.rpm = {
+    green_start: parseFloat(document.querySelector('[name="rpm_green_start"]').value),
+    green_end:   parseFloat(document.querySelector('[name="rpm_green_end"]').value),
+    red_start:   parseFloat(document.querySelector('[name="rpm_red_start"]').value),
+  };
+  d.oil_pressure = {
+    rpm_threshold: parseFloat(document.querySelector('[name="oil_pressure_rpm_threshold"]').value),
+    min_low:       parseFloat(document.querySelector('[name="oil_pressure_min_low"]').value),
+    min_high:      parseFloat(document.querySelector('[name="oil_pressure_min_high"]').value),
+  };
+  d.boost = {
+    blue_max:  parseFloat(document.querySelector('[name="boost_blue_max"]').value),
+    green_min: parseFloat(document.querySelector('[name="boost_green_min"]').value),
+  };
   return d;
 }
 
@@ -387,6 +488,16 @@ function validateForm(data) {
     if (data[s].min >= data[s].target) return `${s}: минимум должен быть меньше целевой`;
     if (data[s].target >= data[s].max) return `${s}: целевая должна быть меньше максимума`;
   }
+  if (data.rpm.green_start >= data.rpm.green_end)
+    return 'RPM: начало зелёной зоны должно быть меньше конца';
+  if (data.rpm.green_end >= data.rpm.red_start)
+    return 'RPM: конец зелёной зоны должен быть меньше начала красной';
+  if (data.oil_pressure.min_low <= 0 || data.oil_pressure.min_high <= 0)
+    return 'EOP: минимальное давление должно быть больше 0';
+  if (data.oil_pressure.min_low >= data.oil_pressure.min_high)
+    return 'EOP: мин при низких оборотах должен быть меньше мин при высоких';
+  if (data.boost.blue_max >= data.boost.green_min)
+    return 'BOOST: граница синего должна быть меньше границы зелёного';
   return null;
 }
 
@@ -521,91 +632,89 @@ loadConfig();
 // ─────────────────────────────────────────────
 
 WebManager::WebManager(const char *ssid, const char *password)
-    : _ssid(ssid), _password(password), _server(80)
+    : ssid_(ssid), password_(password), server_(80)
 {
 }
 
 void WebManager::begin()
 {
-    WiFi.softAP(_ssid, _password);
-    Serial.printf("[WiFi] AP запущен  SSID: %s\r\n", _ssid);
+    WiFi.softAP(ssid_, password_);
+    Serial.printf("[WiFi] AP запущен  SSID: %s\r\n", ssid_);
 
-    _server.on("/",            HTTP_GET,  [this]() { handleRoot(); });
-    _server.on("/config",      HTTP_GET,  [this]() { handleGetConfig(); });
-    _server.on("/config",      HTTP_POST, [this]() { handlePostConfig(); });
-    _server.on("/reset",       HTTP_POST, [this]() { handleReset(); });
-    _server.on("/favicon.ico", HTTP_GET,  [this]() { _server.send(204); });
+    server_.on("/",            HTTP_GET,  [this]() { handle_root(); });
+    server_.on("/config",      HTTP_GET,  [this]() { handle_get_config(); });
+    server_.on("/config",      HTTP_POST, [this]() { handle_post_config(); });
+    server_.on("/reset",       HTTP_POST, [this]() { handle_reset(); });
+    server_.on("/favicon.ico", HTTP_GET,  [this]() { server_.send(204); });
 
-    // GET /update — та же страница, что и корень
-    _server.on("/update",      HTTP_GET,  [this]() { handleUpdatePage(); });
+    // GET /update — та же страница, что и корень.
+    server_.on("/update", HTTP_GET, [this]() { handle_update_page(); });
 
-    // POST /update — загрузка .bin (два обработчика: завершение + чанки данных)
-    _server.on("/update", HTTP_POST,
-        [this]() { // вызывается ПОСЛЕ завершения загрузки файла
+    // POST /update — загрузка .bin (два обработчика: завершение + чанки данных).
+    server_.on("/update", HTTP_POST,
+        [this]() { // вызывается ПОСЛЕ завершения загрузки файла.
             bool ok = !Update.hasError();
-            _server.sendHeader("Connection", "close");
+            server_.sendHeader("Connection", "close");
             if (ok) {
-                _server.send(200, "application/json", "{\"ok\":true}");
+                server_.send(200, "application/json", "{\"ok\":true}");
                 Serial.println("[OTA] Успех — перезагрузка...");
                 delay(300);
                 ESP.restart();
             } else {
                 String err = Update.errorString();
-                _server.send(500, "application/json",
+                server_.send(500, "application/json",
                     "{\"error\":\"" + err + "\"}");
                 Serial.printf("[OTA] Ошибка: %s\r\n", err.c_str());
             }
         },
-        [this]() { handleUpdateUpload(); } // вызывается для каждого чанка
+        [this]() { handle_update_upload(); } // вызывается для каждого чанка.
     );
 
-    _server.onNotFound([this]() { handleNotFound(); });
+    server_.onNotFound([this]() { handle_not_found(); });
 
     const char *headers[] = {"Content-Length", "Content-Type"};
-    _server.collectHeaders(headers, 2);
+    server_.collectHeaders(headers, 2);
 
-    _server.begin();
+    server_.begin();
     Serial.println("[Web] HTTP сервер запущен на порту 80.");
 }
 
 void WebManager::handle()
 {
-    _server.handleClient();
+    server_.handleClient();
 }
 
-String WebManager::getIP() const
+String WebManager::get_ip() const
 {
     return WiFi.softAPIP().toString();
 }
 
-void WebManager::handleRoot()
+void WebManager::handle_root()
 {
-    _server.send_P(200, "text/html; charset=utf-8", INDEX_HTML);
+    server_.send_P(200, "text/html; charset=utf-8", INDEX_HTML);
 }
 
-void WebManager::handleGetConfig()
+void WebManager::handle_get_config()
 {
-    _server.send(200, "application/json", config.toJson());
+    server_.send(200, "application/json", config.to_json());
 }
 
-void WebManager::handlePostConfig()
+void WebManager::handle_post_config()
 {
     String body;
 
-    if (_server.hasArg("plain"))
-        body = _server.arg("plain");
+    if (server_.hasArg("plain")) {
+        body = server_.arg("plain");
+    }
 
-    if (body.isEmpty())
-    {
-        WiFiClient client = _server.client();
-        int len = _server.header("Content-Length").toInt();
-        if (len > 0 && len < 2048)
-        {
+    if (body.isEmpty()) {
+        WiFiClient client = server_.client();
+        int len = server_.header("Content-Length").toInt();
+        if (len > 0 && len < 2048) {
             body.reserve(len);
             unsigned long deadline = millis() + 300;
-            while ((int)body.length() < len && millis() < deadline)
-            {
-                if (client.available()) body += (char)client.read();
+            while (static_cast<int>(body.length()) < len && millis() < deadline) {
+                if (client.available()) body += static_cast<char>(client.read());
                 else delay(1);
             }
         }
@@ -614,78 +723,69 @@ void WebManager::handlePostConfig()
     body.trim();
     Serial.printf("[Web] POST /config  %d байт\r\n", body.length());
 
-    if (body.isEmpty())
-    {
-        _server.send(400, "application/json", "{\"error\":\"empty body\"}");
+    if (body.isEmpty()) {
+        server_.send(400, "application/json", "{\"error\":\"empty body\"}");
         return;
     }
 
-    if (config.fromJson(body))
-        _server.send(200, "application/json", "{\"ok\":true}");
-    else
-        _server.send(400, "application/json", "{\"error\":\"invalid json\"}");
+    if (config.from_json(body)) {
+        server_.send(200, "application/json", "{\"ok\":true}");
+    } else {
+        server_.send(400, "application/json", "{\"error\":\"invalid json\"}");
+    }
 }
 
-void WebManager::handleReset()
+void WebManager::handle_reset()
 {
     Serial.println("[Web] POST /reset  сброс к значениям по умолчанию");
-    if (config.resetToDefaults())
-        _server.send(200, "application/json", config.toJson());
-    else
-        _server.send(500, "application/json", "{\"error\":\"reset failed\"}");
+    if (config.reset_to_defaults()) {
+        server_.send(200, "application/json", config.to_json());
+    } else {
+        server_.send(500, "application/json", "{\"error\":\"reset failed\"}");
+    }
 }
 
-void WebManager::handleNotFound()
+void WebManager::handle_not_found()
 {
     Serial.printf("[Web] 404 %s %s\r\n",
-        _server.method() == HTTP_GET ? "GET" : "POST",
-        _server.uri().c_str());
-    _server.send(404, "text/plain", "Not found");
+        server_.method() == HTTP_GET ? "GET" : "POST",
+        server_.uri().c_str());
+    server_.send(404, "text/plain", "Not found");
 }
 
 // ── OTA ──────────────────────────────────────────────────────────────────────
 
-void WebManager::handleUpdatePage()
+void WebManager::handle_update_page()
 {
-    // OTA форма встроена в главную страницу — просто редиректим
-    _server.sendHeader("Location", "/");
-    _server.send(302);
+    // OTA форма встроена в главную страницу — просто редиректим.
+    server_.sendHeader("Location", "/");
+    server_.send(302);
 }
 
-void WebManager::handleUpdateUpload()
+void WebManager::handle_update_upload()
 {
-    HTTPUpload &upload = _server.upload();
+    HTTPUpload &upload = server_.upload();
 
-    switch (upload.status)
-    {
+    switch (upload.status) {
     case UPLOAD_FILE_START:
-        Serial.printf("[OTA] Начало: %s  (размер неизвестен)\r\n",
-                      upload.filename.c_str());
-        // UPDATE_SIZE_UNKNOWN — Update сам определит конец по закрытию соединения
-        if (!Update.begin(UPDATE_SIZE_UNKNOWN))
-        {
-            Serial.printf("[OTA] begin() ошибка: %s\r\n",
-                          Update.errorString());
+        Serial.printf("[OTA] Начало: %s\r\n", upload.filename.c_str());
+        // UPDATE_SIZE_UNKNOWN — Update сам определит конец по закрытию соединения.
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+            Serial.printf("[OTA] begin() ошибка: %s\r\n", Update.errorString());
         }
         break;
 
     case UPLOAD_FILE_WRITE:
-        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize)
-        {
-            Serial.printf("[OTA] write() ошибка: %s\r\n",
-                          Update.errorString());
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+            Serial.printf("[OTA] write() ошибка: %s\r\n", Update.errorString());
         }
         break;
 
     case UPLOAD_FILE_END:
-        if (Update.end(true)) // true = финализировать (проверить MD5/размер)
-        {
+        if (Update.end(true)) { // true = финализировать (проверить MD5/размер).
             Serial.printf("[OTA] Завершено: %u байт\r\n", upload.totalSize);
-        }
-        else
-        {
-            Serial.printf("[OTA] end() ошибка: %s\r\n",
-                          Update.errorString());
+        } else {
+            Serial.printf("[OTA] end() ошибка: %s\r\n", Update.errorString());
         }
         break;
 
