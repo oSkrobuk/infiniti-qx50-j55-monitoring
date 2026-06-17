@@ -6,7 +6,7 @@ class DisplayManager {
 public:
     DisplayManager();
 
-    void init();
+    void init(const char *version = nullptr);
 
     uint16_t get_temperature_color(float value, float min_temp,
                                    float target_temp, float max_temp);

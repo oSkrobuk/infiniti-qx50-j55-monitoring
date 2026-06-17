@@ -4,7 +4,7 @@
 
 DisplayManager::DisplayManager() : tft_(TFT_eSPI()) {}
 
-void DisplayManager::init()
+void DisplayManager::init(const char *version)
 {
     tft_.init();
     tft_.setRotation(0);
@@ -16,9 +16,9 @@ void DisplayManager::init()
     tft_.drawString("MONITORING", 75, 28, 4);
 
     // Температура
-    tft_.drawFastHLine(5, 59, 240, 0x5AEB);
+    tft_.drawFastHLine(0, 59, 240, 0x5AEB);
     tft_.setTextColor(0x5AEB, TFT_BLACK);
-    tft_.drawString("TEMPERATURE, C ", 5, 51, 2);
+    tft_.drawCentreString(" TEMPERATURE, C ", 120, 51, 2);
 
     tft_.setTextColor(0x9CD3, TFT_BLACK);
     tft_.drawString("R-COOL", 10,  69, 2);
@@ -27,14 +27,22 @@ void DisplayManager::init()
     tft_.drawString("T-OIL",  190, 69, 2);
 
     // Двигатель
-    tft_.drawFastHLine(5, 118, 240, 0x5AEB);
+    tft_.drawFastHLine(0, 118, 240, 0x5AEB);
     tft_.setTextColor(0x5AEB, TFT_BLACK);
-    tft_.drawString("ENGINE ", 5, 110, 2);
+    tft_.drawCentreString(" ENGINE ", 120, 110, 2);
 
     tft_.setTextColor(0x9CD3, TFT_BLACK);
     tft_.drawString("RPM",   10,  128, 2);
     tft_.drawString("EOP",   95,  128, 2);
     tft_.drawString("BOOST", 170, 128, 2);
+
+    // Версия прошивки — мелким шрифтом внизу экрана
+    if (version) {
+        char ver_buf[32];
+        snprintf(ver_buf, sizeof(ver_buf), "Version %s", version);
+        tft_.setTextColor(0xCE70, TFT_BLACK); // тёмно-серый
+        tft_.drawCentreString(ver_buf, 120, 224, 2);
+    }
 }
 
 uint16_t DisplayManager::get_temperature_color(float value, float min_temp,

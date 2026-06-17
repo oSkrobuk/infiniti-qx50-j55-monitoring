@@ -5,6 +5,9 @@
 #include "DisplayManager.h"
 #include "WebManager.h"
 
+// Версия прошивки — отображается внизу дисплея
+static constexpr const char *s_app_version = "2026.1";
+
 // Имя и пароль точки доступа ESP32
 // Подключитесь к этой сети, затем откройте http://192.168.4.1
 static constexpr const char *s_ap_ssid     = "QX50Monitoring";
@@ -20,7 +23,7 @@ void setup()
 
     config.init();
 
-    display.init();
+    display.init(s_app_version);
     web.begin();
 
     // Инициализация CAN-шины (SN65HVD230 / WVCMCU-230)
