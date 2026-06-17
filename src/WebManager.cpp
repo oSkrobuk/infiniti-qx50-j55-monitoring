@@ -4,7 +4,7 @@
 #include <Update.h>
 #include <WiFi.h>
 
-// HTML страница хранится во флеш-памяти (PROGMEM), не занимает RAM.
+// HTML страница хранится во флеш-памяти (PROGMEM), не занимает RAM
 static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 <!DOCTYPE html>
 <html lang="ru">
@@ -647,12 +647,12 @@ void WebManager::begin()
     server_.on("/reset",       HTTP_POST, [this]() { handle_reset(); });
     server_.on("/favicon.ico", HTTP_GET,  [this]() { server_.send(204); });
 
-    // GET /update — та же страница, что и корень.
+    // GET /update — та же страница, что и корень
     server_.on("/update", HTTP_GET, [this]() { handle_update_page(); });
 
-    // POST /update — загрузка .bin (два обработчика: завершение + чанки данных).
+    // POST /update — загрузка .bin (два обработчика: завершение + чанки данных)
     server_.on("/update", HTTP_POST,
-        [this]() { // вызывается ПОСЛЕ завершения загрузки файла.
+        [this]() { // вызывается ПОСЛЕ завершения загрузки файла
             bool ok = !Update.hasError();
             server_.sendHeader("Connection", "close");
             if (ok) {
@@ -667,7 +667,7 @@ void WebManager::begin()
                 Serial.printf("[OTA] Ошибка: %s\r\n", err.c_str());
             }
         },
-        [this]() { handle_update_upload(); } // вызывается для каждого чанка.
+        [this]() { handle_update_upload(); } // вызывается для каждого чанка
     );
 
     server_.onNotFound([this]() { handle_not_found(); });
@@ -676,7 +676,7 @@ void WebManager::begin()
     server_.collectHeaders(headers, 2);
 
     server_.begin();
-    Serial.println("[Web] HTTP сервер запущен на порту 80.");
+    Serial.println("[Web] HTTP сервер запущен на порту 80");
 }
 
 void WebManager::handle()
@@ -721,7 +721,7 @@ void WebManager::handle_post_config()
     }
 
     body.trim();
-    Serial.printf("[Web] POST /config  %d байт\r\n", body.length());
+    Serial.printf("[Web] POST /config  %u байт\r\n", body.length());
 
     if (body.isEmpty()) {
         server_.send(400, "application/json", "{\"error\":\"empty body\"}");
@@ -737,7 +737,7 @@ void WebManager::handle_post_config()
 
 void WebManager::handle_reset()
 {
-    Serial.println("[Web] POST /reset  сброс к значениям по умолчанию");
+    Serial.println("[Web] POST /reset — сброс к значениям по умолчанию");
     if (config.reset_to_defaults()) {
         server_.send(200, "application/json", config.to_json());
     } else {
@@ -757,7 +757,7 @@ void WebManager::handle_not_found()
 
 void WebManager::handle_update_page()
 {
-    // OTA форма встроена в главную страницу — просто редиректим.
+    // OTA форма встроена в главную страницу — просто редиректим
     server_.sendHeader("Location", "/");
     server_.send(302);
 }
@@ -769,7 +769,7 @@ void WebManager::handle_update_upload()
     switch (upload.status) {
     case UPLOAD_FILE_START:
         Serial.printf("[OTA] Начало: %s\r\n", upload.filename.c_str());
-        // UPDATE_SIZE_UNKNOWN — Update сам определит конец по закрытию соединения.
+        // UPDATE_SIZE_UNKNOWN — Update сам определит конец по закрытию соединения
         if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
             Serial.printf("[OTA] begin() ошибка: %s\r\n", Update.errorString());
         }
@@ -782,7 +782,7 @@ void WebManager::handle_update_upload()
         break;
 
     case UPLOAD_FILE_END:
-        if (Update.end(true)) { // true = финализировать (проверить MD5/размер).
+        if (Update.end(true)) { // true = финализировать (проверить MD5/размер)
             Serial.printf("[OTA] Завершено: %u байт\r\n", upload.totalSize);
         } else {
             Serial.printf("[OTA] end() ошибка: %s\r\n", Update.errorString());

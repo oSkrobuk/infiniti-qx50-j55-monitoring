@@ -8,13 +8,13 @@ static bool s_fs_mounted = false;
 
 // ── Значения по умолчанию ────────────────────────────────────────────────────
 //
-// Добавить новый датчик/секцию с любой структурой полей — одна лямбда ниже.
+// Добавить новый датчик/секцию с любой структурой полей — одна лямбда ниже
 // Температурные датчики: min / target / max
 // Другие типы могут иметь любые поля: warn, crit, idle, ...
 //
 static void build_defaults(JsonDocument &doc)
 {
-    // Температурные датчики.
+    // Температурные датчики
     doc["oil"]["min"]            = 50.0f;
     doc["oil"]["target"]         = 90.0f;
     doc["oil"]["max"]            = 98.0f;
@@ -31,20 +31,20 @@ static void build_defaults(JsonDocument &doc)
     doc["transmission"]["target"] = 80.0f;
     doc["transmission"]["max"]    = 98.0f;
 
-    // Обороты двигателя: три порога цветовой зоны.
+    // Обороты двигателя: три порога цветовой зоны
     // синий < green_start < зелёный < green_end < жёлтый..красный < red_start
     doc["rpm"]["green_start"] = 1000.0f;
     doc["rpm"]["green_end"]   = 3500.0f;
     doc["rpm"]["red_start"]   = 4500.0f;
 
-    // Давление масла: минимум зависит от оборотов.
-    // при RPM < rpm_threshold допустимо min_low бар, при RPM >= threshold — min_high бар.
+    // Давление масла: минимум зависит от оборотов
+    // при RPM < rpm_threshold допустимо min_low бар, при RPM >= threshold — min_high бар
     doc["oil_pressure"]["rpm_threshold"] = 3000.0f;
     doc["oil_pressure"]["min_low"]       = 1.5f;
     doc["oil_pressure"]["min_high"]      = 3.1f;
 
-    // Наддув: цветовые пороги.
-    // ≤ blue_max → синий; ≥ green_min → зелёный; между — плавно через жёлтый.
+    // Наддув: цветовые пороги
+    // ≤ blue_max → синий; ≥ green_min → зелёный; между — плавно через жёлтый
     doc["boost"]["blue_max"]  = -0.2f;
     doc["boost"]["green_min"] =  0.0f;
 }
@@ -52,7 +52,7 @@ static void build_defaults(JsonDocument &doc)
 // ── Вспомогательные функции ──────────────────────────────────────────────────
 
 // CRC32 от строки — используется для автоматического определения
-// изменения значений по умолчанию без ручного версионирования.
+// изменения значений по умолчанию без ручного версионирования
 static uint32_t crc32(const String &s)
 {
     uint32_t crc = 0xFFFFFFFFu;
@@ -86,7 +86,7 @@ static bool ensure_mounted()
         }
     }
     s_fs_mounted = true;
-    Serial.println("[FS] LittleFS смонтирован.");
+    Serial.println("[FS] LittleFS смонтирован");
     return true;
 }
 
@@ -119,13 +119,13 @@ bool ConfigManager::load_from_file()
     if (!ensure_mounted()) return false;
 
     if (!LittleFS.exists("/config.json")) {
-        Serial.println("[Config] Файл не найден, сохраняем значения по умолчанию.");
+        Serial.println("[Config] Файл не найден, сохраняем значения по умолчанию");
         return save_to_file();
     }
 
     File f = LittleFS.open("/config.json", "r");
     if (!f) {
-        Serial.println("[Config] ОШИБКА: не удалось открыть файл для чтения.");
+        Serial.println("[Config] ОШИБКА: не удалось открыть файл для чтения");
         return false;
     }
 
@@ -138,18 +138,18 @@ bool ConfigManager::load_from_file()
         return false;
     }
 
-    // Сравниваем хеш дефолтов из файла с текущим хешем дефолтов в коде.
-    // Если значения по умолчанию изменились — перезаписываем файл.
+    // Сравниваем хеш дефолтов из файла с текущим хешем дефолтов в коде
+    // Если значения по умолчанию изменились — перезаписываем файл
     uint32_t file_hash    = doc["version"] | 0u;
     uint32_t current_hash = defaults_hash();
 
     if (file_hash != current_hash) {
-        Serial.printf("[Config] Значения по умолчанию изменились (hash %08X -> %08X), сбрасываем конфиг.\r\n",
+        Serial.printf("[Config] Значения по умолчанию изменились (hash %08X -> %08X), сбрасываем конфиг\r\n",
                       file_hash, current_hash);
         return save_to_file();
     }
 
-    // Загружаем params поверх дефолтов: неизвестные поля просто игнорируются.
+    // Загружаем params поверх дефолтов: неизвестные поля просто игнорируются
     JsonObjectConst params = doc["params"].as<JsonObjectConst>();
     for (JsonPairConst section : params) {
         JsonObjectConst fields = section.value().as<JsonObjectConst>();
@@ -158,7 +158,7 @@ bool ConfigManager::load_from_file()
         }
     }
 
-    Serial.println("[Config] Конфигурация загружена.");
+    Serial.println("[Config] Конфигурация загружена");
     return true;
 }
 
@@ -168,7 +168,7 @@ bool ConfigManager::save_to_file()
 
     File f = LittleFS.open("/config.json", "w");
     if (!f) {
-        Serial.println("[Config] ОШИБКА: не удалось открыть файл для записи.");
+        Serial.println("[Config] ОШИБКА: не удалось открыть файл для записи");
         return false;
     }
 
@@ -177,20 +177,20 @@ bool ConfigManager::save_to_file()
     doc["params"]  = data_;
 
     if (serializeJson(doc, f) == 0) {
-        Serial.println("[Config] ОШИБКА: не удалось записать JSON.");
+        Serial.println("[Config] ОШИБКА: не удалось записать JSON");
         f.close();
         return false;
     }
 
     f.close();
-    Serial.println("[Config] Конфигурация сохранена.");
+    Serial.println("[Config] Конфигурация сохранена");
     return true;
 }
 
 bool ConfigManager::reset_to_defaults()
 {
     apply_defaults();
-    Serial.println("[Config] Сброс к значениям по умолчанию.");
+    Serial.println("[Config] Сброс к значениям по умолчанию");
     return save_to_file();
 }
 
@@ -210,7 +210,7 @@ bool ConfigManager::from_json(const String &json)
         return false;
     }
 
-    // Обновляем только те поля, которые пришли; остальные остаются как есть.
+    // Обновляем только те поля, которые пришли; остальные остаются как есть
     JsonObjectConst root = doc.as<JsonObjectConst>();
     for (JsonPairConst section : root) {
         JsonObjectConst fields = section.value().as<JsonObjectConst>();
