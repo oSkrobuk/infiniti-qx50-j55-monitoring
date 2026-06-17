@@ -2,17 +2,28 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 
-class DisplayManager
-{
-private:
-    TFT_eSPI tft;
-
+class DisplayManager {
 public:
     DisplayManager();
 
     void init();
 
-    uint16_t getTemperatureColor(float value, float minTemp, float targetTemp, float maxTemp);
+    uint16_t get_temperature_color(float value, float min_temp,
+                                   float target_temp, float max_temp);
 
-    void updateMetrics(float coolant, float oil, float coolantR, float transmission);
+    // Цвет оборотов: синий(<green_start) → зелёный → жёлтый → красный(≥red_start).
+    uint16_t get_rpm_color(float rpm);
+
+    // Цвет давления масла: красный если ниже минимума для текущих оборотов.
+    uint16_t get_oil_pressure_color(float pressure, float rpm);
+
+    // Цвет наддува: синий(≤blue_max) → жёлтый → зелёный(≥green_min).
+    uint16_t get_boost_color(float boost);
+
+    void update_metrics(float coolant, float oil, float coolant_r,
+                        float transmission, float rpm,
+                        float oil_pressure, float boost);
+
+private:
+    TFT_eSPI tft_;
 };
