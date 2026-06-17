@@ -12,6 +12,9 @@ static constexpr gpio_num_t CAN_RX_PIN = GPIO_NUM_34;
 // Скорость шины CAN (500 кбит/с — стандарт для большинства автомобилей)
 static constexpr twai_timing_config_t CAN_TIMING = TWAI_TIMING_CONFIG_500KBITS();
 
+// Если CAN не обновлял параметр дольше этого времени — значение считается устаревшим
+static constexpr uint32_t CAN_STALE_MS = 500;
+
 // Структура одного принятого CAN-фрейма
 struct CanFrame {
     uint32_t id;        // Идентификатор фрейма (11 или 29 бит)
@@ -20,6 +23,23 @@ struct CanFrame {
     uint8_t  dlc;       // Длина данных (0–8 байт)
     uint8_t  data[8];   // Данные фрейма
 };
+
+// Метрики, декодированные из CAN-шины Infiniti QX50 J55.
+// Каждое поле *_ts хранит millis() момента последнего обновления.
+// Начальное значение всех полей — 0 (не получено ни одного фрейма).
+struct CanMetrics {
+    float    engine_coolant;      // Т ОЖ ДВС, °C (UDS DID 0x1101)
+    uint32_t engine_coolant_ts;   // Время последнего обновления T ОЖ ДВС
+
+    float    engine_oil;          // Т масла ДВС, °C (UDS DID 0x111F)
+    uint32_t engine_oil_ts;       // Время последнего обновления T масла ДВС
+
+    float    radiator_coolant;    // Т ОЖ радиатора, °C (UDS DID 0x116B)
+    uint32_t radiator_coolant_ts; // Время последнего обновления T ОЖ радиатора
+};
+
+// Глобальный объект метрик — заполняется из can_parse_known_frames()
+extern CanMetrics can_metrics;
 
 // Колбэк, вызываемый при получении каждого фрейма
 using CanFrameCallback = std::function<void(const CanFrame &frame)>;
