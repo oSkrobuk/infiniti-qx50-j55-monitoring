@@ -45,6 +45,8 @@ All C++ source files (`.cpp`, `.h`) in this project **must** follow the
 - Use `//` for single-line comments; `//` or `/* */` for multi-line.
 - File-scope `static` variables must be prefixed with `s_` (e.g., `static bool s_fs_mounted`).
 - **All comments in `.cpp` and `.h` files must be written in Russian.**
+- **Do NOT put a period (`.`) at the end of comments.**
+- **Do NOT put a period (`.`) at the end of `Serial.print`/`Serial.println`/`Serial.printf` string literals.**
 -- **Chatting in Russian.**
 
 ## Project structure

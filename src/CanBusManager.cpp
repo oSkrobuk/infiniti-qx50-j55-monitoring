@@ -2,7 +2,7 @@
 
 #include <math.h>
 
-// Глобальный объект.
+// Глобальный объект
 CanBusManager can_bus;
 
 CanBusManager::CanBusManager()
@@ -17,25 +17,25 @@ bool CanBusManager::init()
 {
     Serial.println("[CAN] Инициализация TWAI (SN65HVD230)...");
 
-    // Конфигурация пинов.
+    // Конфигурация пинов
     twai_general_config_t g_config =
         TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_PIN, CAN_RX_PIN, TWAI_MODE_LISTEN_ONLY);
-    g_config.rx_queue_len = 128; // Увеличенная очередь для плотного трафика шины.
+    g_config.rx_queue_len = 128; // Увеличенная очередь для плотного трафика шины
 
-    // Скоростная конфигурация (500 кбит/с).
+    // Скоростная конфигурация (500 кбит/с)
     twai_timing_config_t t_config = CAN_TIMING;
 
-    // Фильтр: принимаем все фреймы.
+    // Фильтр: принимаем все фреймы
     twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
 
-    // Установка драйвера.
+    // Установка драйвера
     esp_err_t err = twai_driver_install(&g_config, &t_config, &f_config);
     if (err != ESP_OK) {
         Serial.printf("[CAN] Ошибка установки драйвера: %s\r\n", esp_err_to_name(err));
         return false;
     }
 
-    // Запуск контроллера.
+    // Запуск контроллера
     err = twai_start();
     if (err != ESP_OK) {
         Serial.printf("[CAN] Ошибка запуска TWAI: %s\r\n", esp_err_to_name(err));
@@ -59,7 +59,7 @@ void CanBusManager::stop()
     twai_stop();
     twai_driver_uninstall();
     running_ = false;
-    Serial.println("[CAN] Шина остановлена.");
+    Serial.println("[CAN] Шина остановлена");
 }
 
 void CanBusManager::on_frame(CanFrameCallback cb)
@@ -73,7 +73,7 @@ void CanBusManager::handle()
 
     twai_message_t msg;
 
-    // Читаем все доступные фреймы без блокировки (таймаут = 0).
+    // Читаем все доступные фреймы без блокировки (таймаут = 0)
     while (twai_receive(&msg, 0) == ESP_OK) {
         rx_count_++;
 
@@ -83,10 +83,10 @@ void CanBusManager::handle()
         }
     }
 
-    // Проверяем состояние шины и считаем ошибки.
+    // Проверяем состояние шины и считаем ошибки
     twai_status_info_t status;
     if (twai_get_status_info(&status) == ESP_OK) {
-        // Если контроллер попал в Bus-Off — перезапускаем.
+        // Если контроллер попал в Bus-Off — перезапускаем
         if (status.state == TWAI_STATE_BUS_OFF) {
             err_count_++;
             Serial.println("[CAN] Bus-Off! Попытка восстановления...");
@@ -123,7 +123,7 @@ CanFrame CanBusManager::to_frame(const twai_message_t &msg)
 }
 
 // -----------------------------------------------------------------------------
-// can_parse_known_frames — декодирование известных фреймов Infiniti QX50 J55.
+// can_parse_known_frames — декодирование известных фреймов Infiniti QX50 J55
 // -----------------------------------------------------------------------------
 void can_parse_known_frames(const CanFrame &frame)
 {
@@ -134,14 +134,14 @@ void can_parse_known_frames(const CanFrame &frame)
 
     switch (frame.id) {
     case 0x1F9: {
-        // Обороты двигателя: байты 0-1, big-endian.
+        // Обороты двигателя: байты 0-1, big-endian
         if (dlc < 2) break;
         uint16_t raw = (static_cast<uint16_t>(d[0]) << 8) | d[1];
         Serial.printf("  >>> Обороты ДВС: %.0f RPM\n", static_cast<float>(raw));
         break;
     }
     case 0x421: {
-        // Передача CVT (младший нибл байта 0) + температура коробки (байт 3, смещение -40).
+        // Передача CVT (младший нибл байта 0) + температура коробки (байт 3, смещение -40)
         if (dlc < 4) break;
         uint8_t gear     = d[0] & 0x0F;
         int16_t cvt_temp = static_cast<int16_t>(d[3]) - 40;
@@ -150,20 +150,20 @@ void can_parse_known_frames(const CanFrame &frame)
         break;
     }
     case 0x551: {
-        // Температура охлаждающей жидкости ДВС: байт 0, смещение -56.
+        // Температура охлаждающей жидкости ДВС: байт 0, смещение -56
         int16_t water_temp = static_cast<int16_t>(d[0]) - 56;
         Serial.printf("  >>> Т воды ДВС: %d °C\n", static_cast<int>(water_temp));
         break;
     }
     case 0x558: {
-        // Температура масла ДВС: байт 2, смещение -40.
+        // Температура масла ДВС: байт 2, смещение -40
         if (dlc < 3) break;
         int16_t oil_temp = static_cast<int16_t>(d[2]) - 40;
         Serial.printf("  >>> Т масла ДВС: %d °C\n", static_cast<int>(oil_temp));
         break;
     }
     case 0x11B: {
-        // Давление наддува: байты 0-1, big-endian, масштаб 0.001 bar, минус атмосфера.
+        // Давление наддува: байты 0-1, big-endian, масштаб 0.001 bar, минус атмосфера
         if (dlc < 2) break;
         uint16_t raw     = (static_cast<uint16_t>(d[0]) << 8) | d[1];
         float    abs_bar = (raw * 0.1f) / 100.0f;
@@ -178,7 +178,7 @@ void can_parse_known_frames(const CanFrame &frame)
 }
 
 // -----------------------------------------------------------------------------
-// can_print_frame — сырой вывод + декодирование известных фреймов.
+// can_print_frame — сырой вывод + декодирование известных фреймов
 // -----------------------------------------------------------------------------
 void can_print_frame(const CanFrame &frame)
 {
