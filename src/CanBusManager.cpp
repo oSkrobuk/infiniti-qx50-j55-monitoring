@@ -133,47 +133,68 @@ void can_parse_known_frames(const CanFrame &frame)
     if (dlc < 1) return;
 
     switch (frame.id) {
-    case 0x1F9: {
-        // Обороты двигателя: байты 0-1, big-endian
-        if (dlc < 2) break;
-        uint16_t raw = (static_cast<uint16_t>(d[0]) << 8) | d[1];
-        Serial.printf("  >>> Обороты ДВС: %.0f RPM\n", static_cast<float>(raw));
-        break;
-    }
-    case 0x421: {
-        // Передача CVT (младший нибл байта 0) + температура коробки (байт 3, смещение -40)
-        if (dlc < 4) break;
-        uint8_t gear     = d[0] & 0x0F;
-        int16_t cvt_temp = static_cast<int16_t>(d[3]) - 40;
-        Serial.printf("  >>> Передача: %d\n", static_cast<int>(gear));
-        Serial.printf("  >>> Т коробки: %d °C\n", static_cast<int>(cvt_temp));
-        break;
-    }
-    case 0x551: {
-        // Температура охлаждающей жидкости ДВС: байт 0, смещение -56
-        int16_t water_temp = static_cast<int16_t>(d[0]) - 56;
-        Serial.printf("  >>> Т воды ДВС: %d °C\n", static_cast<int>(water_temp));
-        break;
-    }
-    case 0x558: {
-        // Температура масла ДВС: байт 2, смещение -40
-        if (dlc < 3) break;
-        int16_t oil_temp = static_cast<int16_t>(d[2]) - 40;
-        Serial.printf("  >>> Т масла ДВС: %d °C\n", static_cast<int>(oil_temp));
-        break;
-    }
-    case 0x11B: {
-        // Давление наддува: байты 0-1, big-endian, масштаб 0.001 bar, минус атмосфера
-        if (dlc < 2) break;
-        uint16_t raw     = (static_cast<uint16_t>(d[0]) << 8) | d[1];
-        float    abs_bar = (raw * 0.1f) / 100.0f;
-        float    boost   = abs_bar - 1.013f;
-        Serial.printf("  >>> Наддув: %.2f bar\n", boost);
-        Serial.printf("  >>> Наддув абс. %.2f bar\n", abs_bar);
-        break;
-    }
-    default:
-        break;
+        case 0x7E8: {
+            // Диагностический ответ от ECM (UDS / ISO 14229)
+            // Нам физически необходимы минимум 6 байт (индексы d[0]...d[5])
+            if (dlc < 6) break; 
+            
+            // d[1] = 0x62 (Положительный ответ на чтение параметров Service 0x22)
+            if (d[1] == 0x62) { 
+                // Собираем идентификатор параметра DID из байт 2 и 3 (big-endian)
+                uint16_t did = (static_cast<uint16_t>(d[2]) << 8) | d[3];
+
+                switch (did) {
+                    // --- ОДНОБАЙТОВЫЕ ПАРАМЕТРЫ (значение лежит в d[4]) ---
+                    case 0x1101: {
+                        int16_t ect = static_cast<int16_t>(d[4]) - 50;
+                        Serial.printf("  >>> [UDS] Т ОЖ ДВС: %d °C\n", ect);
+                        break;
+                    }
+                    case 0x111F: {
+                        int16_t eot = static_cast<int16_t>(d[4]) - 50;
+                        Serial.printf("  >>> [UDS] Т масла ДВС: %d °C\n", eot);
+                        break;
+                    }
+                    case 0x116B: {
+                        int16_t rad_temp = static_cast<int16_t>(d[4]) - 50;
+                        Serial.printf("  >>> [UDS] Т ОЖ радиатора: %d °C\n", rad_temp);
+                        break;
+                    }
+
+                    // --- ДВУХБАЙТОВЫЕ ПАРАМЕТРЫ (значение собрано из d[4] и d[5]) ---
+                    case 0x1104: { // Обороты ДВС
+                        uint16_t raw = (static_cast<uint16_t>(d[4]) << 8) | d[5];
+                        float rpm = static_cast<float>(raw) / 4.0f;
+                        Serial.printf("  >>> [UDS] Обороты: %.0f RPM\n", rpm);
+                        break;
+                    }
+                    case 0x1224: { // Давление наддува
+                        uint16_t raw = (static_cast<uint16_t>(d[4]) << 8) | d[5];
+                        float abs_bar = static_cast<float>(raw) / 1000.0f;
+                        float boost = abs_bar - 1.013f;
+                        Serial.printf("  >>> [UDS] Наддув: %.2f bar (Абс: %.2f)\n", boost, abs_bar);
+                        break;
+                    }
+                    case 0x1103: { // ДМРВ / Расход воздуха
+                        uint16_t raw = (static_cast<uint16_t>(d[4]) << 8) | d[5];
+                        float maf = static_cast<float>(raw) / 100.0f;
+                        Serial.printf("  >>> [UDS] Расход воздуха: %.2f g/s\n", maf);
+                        break;
+                    }
+                    case 0x123A: { // Давление масла двигателя
+                        uint16_t raw = (static_cast<uint16_t>(d[4]) << 8) | d[5];
+                        float oil_press_bar = static_cast<float>(raw) / 100.0f;
+                        Serial.printf("  >>> [UDS] Давление масла: %.2f bar\n", oil_press_bar);
+                        break;
+                    }
+                    default:
+                        break;
+                }
+            }
+            break;
+        }
+        default:
+            break;
     }
 }
 
@@ -182,7 +203,7 @@ void can_parse_known_frames(const CanFrame &frame)
 // -----------------------------------------------------------------------------
 void can_print_frame(const CanFrame &frame)
 {
-    const uint8_t *d   = frame.data;
+    /*const uint8_t *d   = frame.data;
     const uint8_t  dlc = frame.dlc;
 
     // --- Сырые байты (HEX + DEC) ---
@@ -253,7 +274,7 @@ void can_print_frame(const CanFrame &frame)
             }
         }
         Serial.println();
-    }
+    }*/
 
     // --- Декодирование известных фреймов QX50 J55 ---
     can_parse_known_frames(frame);
