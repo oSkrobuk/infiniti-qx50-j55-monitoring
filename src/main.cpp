@@ -5,8 +5,16 @@
 #include "DisplayManager.h"
 #include "WebManager.h"
 
+// Вернуть значение из CAN если оно свежее (обновлено не позднее CAN_STALE_MS мс),
+// иначе вернуть 0. Таймстамп 0 означает «ни разу не получено» — тоже 0
+static float can_value(float value, uint32_t ts)
+{
+    if (ts == 0) return 0.0f;
+    return (millis() - ts <= CAN_STALE_MS) ? value : 0.0f;
+}
+
 // Версия прошивки — отображается внизу дисплея
-static constexpr const char *s_app_version = "2026.1";
+static constexpr const char *s_app_version = "2026.1.1";
 
 // Имя и пароль точки доступа ESP32
 // Подключитесь к этой сети, затем откройте http://192.168.4.1
@@ -47,13 +55,10 @@ void loop()
     if (millis() - s_last_display >= 100) {
         s_last_display = millis();
 
-        // Имитация данных с датчиков автомобиля Infiniti для проверки отображения
         float t = millis() / 3000.0f;
 
-        float mock_coolant      = 85.0f + sinf(t)        * 20.0f;
-        float mock_oil          = 90.0f + sinf(t)        * 20.0f;
-        float mock_coolant_r    = 50.0f + sinf(t)        * 70.0f;
-        float mock_transmission = 80.0f + sinf(t)        * 40.0f;
+        // Имитация данных с датчиков автомобиля Infiniti для проверки отображения
+        float mock_transmission = 80.0f + sinf(t) * 40.0f;
 
         // Обороты двигателя: 750..6000 об/мин
         float mock_rpm = 750.0f +
@@ -67,8 +72,20 @@ void loop()
         // sinf даёт -1..+1 → центр 0.35, амплитуда 0.85 → диапазон -0.5..1.2
         float mock_boost = sinf(t * 0.9f) * 0.85f + 0.35f;
 
+#ifdef USE_MOCK_DATA
+        // --- МОКИ: имитация температур для отладки отображения ---
+        float coolant   = 85.0f + sinf(t) * 20.0f;
+        float oil       = 90.0f + sinf(t) * 20.0f;
+        float coolant_r = 50.0f + sinf(t) * 70.0f;
+#else
+        // --- РЕАЛЬНЫЕ ДАННЫЕ: температуры из CAN-шины (таймаут 500 мс → 0) ---
+        float coolant   = can_value(can_metrics.engine_coolant,   can_metrics.engine_coolant_ts);
+        float oil       = can_value(can_metrics.engine_oil,       can_metrics.engine_oil_ts);
+        float coolant_r = can_value(can_metrics.radiator_coolant, can_metrics.radiator_coolant_ts);
+#endif
+
         // Обновляем параметры на дисплее (работает плавно, без единого моргания)
-        display.update_metrics(mock_coolant, mock_oil, mock_coolant_r,
+        display.update_metrics(coolant, oil, coolant_r,
                                mock_transmission, mock_rpm,
                                mock_oil_pressure, mock_boost);
     }

@@ -2,8 +2,11 @@
 
 #include <math.h>
 
-// Глобальный объект
+// Глобальный объект шины CAN
 CanBusManager can_bus;
+
+// Глобальные метрики CAN — все поля по умолчанию равны 0 (нет данных)
+CanMetrics can_metrics = {};
 
 CanBusManager::CanBusManager()
     : running_(false)
@@ -145,19 +148,19 @@ void can_parse_known_frames(const CanFrame &frame)
 
                 switch (did) {
                     // --- ОДНОБАЙТОВЫЕ ПАРАМЕТРЫ (значение лежит в d[4]) ---
-                    case 0x1101: {
-                        int16_t ect = static_cast<int16_t>(d[4]) - 50;
-                        Serial.printf("  >>> [UDS] Т ОЖ ДВС: %d °C\n", ect);
+                    case 0x1101: { // Температура ОЖ ДВС
+                        can_metrics.engine_coolant    = static_cast<float>(static_cast<int16_t>(d[4]) - 50);
+                        can_metrics.engine_coolant_ts = millis();
                         break;
                     }
-                    case 0x111F: {
-                        int16_t eot = static_cast<int16_t>(d[4]) - 50;
-                        Serial.printf("  >>> [UDS] Т масла ДВС: %d °C\n", eot);
+                    case 0x111F: { // Температура масла ДВС
+                        can_metrics.engine_oil    = static_cast<float>(static_cast<int16_t>(d[4]) - 50);
+                        can_metrics.engine_oil_ts = millis();
                         break;
                     }
-                    case 0x116B: {
-                        int16_t rad_temp = static_cast<int16_t>(d[4]) - 50;
-                        Serial.printf("  >>> [UDS] Т ОЖ радиатора: %d °C\n", rad_temp);
+                    case 0x116B: { // Температура ОЖ радиатора
+                        can_metrics.radiator_coolant    = static_cast<float>(static_cast<int16_t>(d[4]) - 50);
+                        can_metrics.radiator_coolant_ts = millis();
                         break;
                     }
 
