@@ -79,6 +79,12 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     color: var(--accent);
     margin-bottom: 14px;
   }
+  /* Два поля в одну строку */
+  .row2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
   /* Три поля в одну строку */
   .row3 {
     display: grid;
@@ -371,18 +377,14 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 
   <div class="card">
     <div class="card-title">&#128168; BOOST — Давление наддува</div>
-    <div class="row3">
+    <div class="row2">
       <div class="field">
-        <label>Синий до, бар</label>
+        <label>Синий до, В</label>
         <input class="f-min" type="number" step="0.05" name="boost_blue_max" required>
       </div>
       <div class="field">
-        <label>Зелёный от, бар</label>
+        <label>Зелёный от, В</label>
         <input class="f-target" type="number" step="0.05" name="boost_green_min" required>
-      </div>
-      <div class="field">
-        <label style="color:var(--muted);font-style:italic;">&nbsp;</label>
-        <input type="text" disabled style="background:#0d0d0d;border-color:#1a1a1a;color:#333;" value="—">
       </div>
     </div>
   </div>

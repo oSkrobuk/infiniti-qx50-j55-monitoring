@@ -31,9 +31,9 @@ void DisplayManager::init(const char *version)
     tft_.drawCentreString(" ENGINE ", 120, 110, 2);
 
     tft_.setTextColor(0x9CD3, TFT_BLACK);
-    tft_.drawCentreString("ENG-RPM", 40, 128, 2);
+    tft_.drawCentreString("ENG-RPM",  40, 128, 2);
     tft_.drawCentreString("OIL-PR-V", 120, 128, 2);
-    tft_.drawCentreString("TURBO-V", 200, 128, 2);
+    tft_.drawCentreString("TURBO-V",  200, 128, 2);
 
     // Вариатор
     tft_.drawFastHLine(0, 177, 240, 0x5AEB);
@@ -42,8 +42,8 @@ void DisplayManager::init(const char *version)
 
     tft_.setTextColor(0x9CD3, TFT_BLACK);
     tft_.drawCentreString("BATTERY-V", 40, 187, 2);
-    tft_.drawCentreString("TRANSM-G", 125, 187, 2);
-    tft_.drawCentreString("CVT-FLD", 200, 187, 2);
+    tft_.drawCentreString("TRANSM-G",  125, 187, 2);
+    tft_.drawCentreString("CVT-FLD",   200, 187, 2);
 
 
     // Версия прошивки — мелким шрифтом внизу экрана
@@ -56,7 +56,7 @@ void DisplayManager::init(const char *version)
 }
 
 uint16_t DisplayManager::get_temperature_color(float value, float min_temp,
-                                                float target_temp, float max_temp)
+                                               float target_temp, float max_temp)
 {
     // ЖЁСТКИЙ СТОПОР: температура равна или выше максимума — чистый КРАСНЫЙ (RGB565)
     if (value >= max_temp) {
@@ -179,6 +179,9 @@ uint16_t DisplayManager::get_boost_color(float boost)
 
 uint16_t DisplayManager::get_gear_color(int8_t gear)
 {
+    // Нет данных (CAN устарел → 0) — синий
+    if (gear == 0) return 0x001F;
+
     // Передача 1 → жёлтый (hue 60°), передача 8+ → зелёный (hue 120°)
     // Линейная интерполяция hue: 60° + (gear-1)/(8-1) * 60°
     float t   = static_cast<float>(gear - 1) / 7.0f; // 0..1, зажимаем в [0,1]
@@ -199,6 +202,9 @@ uint16_t DisplayManager::get_gear_color(int8_t gear)
 
 uint16_t DisplayManager::get_battery_color(float voltage)
 {
+    // Нет данных (CAN устарел → 0.0) — синий
+    if (voltage == 0.0f) return 0x001F;
+
     const float red_low   = config.get("battery", "red_low");   // < этого — красный
     const float green_min = config.get("battery", "green_min"); // начало зелёной зоны
     const float green_max = config.get("battery", "green_max"); // конец зелёной зоны
@@ -244,6 +250,9 @@ uint16_t DisplayManager::get_battery_color(float voltage)
 
 uint16_t DisplayManager::get_oil_pressure_color(float pressure, float rpm)
 {
+    // Нет данных (CAN устарел → 0.0) — синий
+    if (pressure == 0.0f) return 0x001F;
+
     float threshold    = config.get("oil_pressure", "rpm_threshold");
     float min_pressure = (rpm < threshold)
         ? config.get("oil_pressure", "min_low")
