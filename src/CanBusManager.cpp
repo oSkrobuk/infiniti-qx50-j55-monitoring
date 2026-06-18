@@ -147,7 +147,6 @@ void can_parse_known_frames(const CanFrame &frame)
                 uint16_t did = (static_cast<uint16_t>(d[2]) << 8) | d[3];
 
                 switch (did) {
-                    // --- ОДНОБАЙТОВЫЕ ПАРАМЕТРЫ (значение лежит в d[4]) ---
                     case 0x1101: { // Температура ОЖ ДВС
                         can_metrics.engine_coolant    = static_cast<float>(static_cast<int16_t>(d[4]) - 50);
                         can_metrics.engine_coolant_ts = millis();
@@ -163,31 +162,70 @@ void can_parse_known_frames(const CanFrame &frame)
                         can_metrics.radiator_coolant_ts = millis();
                         break;
                     }
+                    case 0x1201: { // Обороты двигателя (Engine RPM)
+                        uint16_t raw_rpm = (static_cast<uint16_t>(d[4]) << 8) | d[5];
+                        can_metrics.engine_rpm    = static_cast<float>(raw_rpm) * 12.5f;
+                        can_metrics.engine_rpm_ts = millis();
+                        break;
+                    }
+                    case 0x110E: { // Датчик усиления турбины
+                        // 79 / 50.0f = 1.58 Вольт
+                        can_metrics.turbo_boost_volt    = static_cast<float>(d[4]) / 50.0f;
+                        can_metrics.turbo_boost_volt_ts = millis();
+                        break;
+                    }  
+                    case 0x1278: { // Датчик давления малса ДВС
+                        // Собираем 16-битное значение из d[4] и d[5] (например, 0x014E = 334)
+                        uint16_t raw_oil_press = (static_cast<uint16_t>(d[4]) << 8) | d[5];
+                        // Переводим в чистые Вольты (334 / 200.0f = 1.67V)
+                        can_metrics.oil_pressure_volt    = static_cast<float>(raw_oil_press) / 200.0f;
+                        can_metrics.oil_pressure_volt_ts = millis();
+                        break;
+                    }                               
+                    case 0x1103: { // Нарпяжение бортовой сети
+                        // 178 * 0.08f = 14.24 Вольт
+                        can_metrics.battery_voltage    = static_cast<float>(d[4]) * 0.08f;
+                        can_metrics.battery_voltage_ts = millis();
+                        break;
+                    }
+                    default:
+                        break;
+                }
+            }
+            break;
+        }
+        case 0x7E9: {
+            // Диагностический ответ от TCM (Блок управления вариатором)
+            // Нам физически необходимы минимум 5 байт (индексы d[0]...d[4])
+            if (dlc < 5) break;
 
-                    // --- ДВУХБАЙТОВЫЕ ПАРАМЕТРЫ (значение собрано из d[4] и d[5]) ---
-                    case 0x1104: { // Обороты ДВС
-                        uint16_t raw = (static_cast<uint16_t>(d[4]) << 8) | d[5];
-                        float rpm = static_cast<float>(raw) / 4.0f;
-                        Serial.printf("  >>> [UDS] Обороты: %.0f RPM\n", rpm);
+            // d[1] = 0x62 (Положительный ответ на чтение параметров Service 0x22)
+            if (d[1] == 0x62) {
+                // Собираем идентификатор параметра DID из байт 2 и 3 (big-endian)
+                uint16_t did = (static_cast<uint16_t>(d[2]) << 8) | d[3];
+
+                switch (did) {
+                    case 0x110C: { // Температура масла в вариаторе (CVT Fluid Temp)
+                        /*
+                         * ФИЗИЧЕСКИЙ СМЫСЛ И КАЛИБРОВКА ДЛЯ INFINITI QX50 J55:
+                         * В байте d[4] прилетает сырое значение (например, 0x66 = 102 DEC).
+                         * Математика блока Jatco CVT8 HT (JF019E) использует смещение -40:
+                         * 102 - 40.0f = 62.0°C (точно совпадает с показаниями сканера Launch).
+                         * 
+                         * СПРАВОЧНЫЕ ДИАПАЗОНЫ:
+                         * < 50°C   - Вариатор не прогрет (масло NS-3 густое, нежелательно нагружать).
+                         * 70-90°C  - Идеальная рабочая температура для долгой жизни цепи и конусов.
+                         * > 100°C  - Повышенный износ, включается скрытый счетчик деградации масла.
+                         * > 115°C  - Критический перегрев, аварийный режим защиты трансмиссии.
+                         */
+                        can_metrics.cvt_temp    = static_cast<float>(static_cast<int16_t>(d[4]) - 40);
+                        can_metrics.cvt_temp_ts = millis();
                         break;
                     }
-                    case 0x1224: { // Давление наддува
-                        uint16_t raw = (static_cast<uint16_t>(d[4]) << 8) | d[5];
-                        float abs_bar = static_cast<float>(raw) / 1000.0f;
-                        float boost = abs_bar - 1.013f;
-                        Serial.printf("  >>> [UDS] Наддув: %.2f bar (Абс: %.2f)\n", boost, abs_bar);
-                        break;
-                    }
-                    case 0x1103: { // ДМРВ / Расход воздуха
-                        uint16_t raw = (static_cast<uint16_t>(d[4]) << 8) | d[5];
-                        float maf = static_cast<float>(raw) / 100.0f;
-                        Serial.printf("  >>> [UDS] Расход воздуха: %.2f g/s\n", maf);
-                        break;
-                    }
-                    case 0x123A: { // Давление масла двигателя
-                        uint16_t raw = (static_cast<uint16_t>(d[4]) << 8) | d[5];
-                        float oil_press_bar = static_cast<float>(raw) / 100.0f;
-                        Serial.printf("  >>> [UDS] Давление масла: %.2f bar\n", oil_press_bar);
+                    case 0x111F: { // Текущая виртуальная передача вариатора
+                        // Примечание: На P и N всегда возвращает 1 (превентивный выбор 1-й передачи)
+                        can_metrics.cvt_gear    = static_cast<int8_t>(d[4]);
+                        can_metrics.cvt_gear_ts = millis();
                         break;
                     }
                     default:

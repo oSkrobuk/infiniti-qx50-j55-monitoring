@@ -28,14 +28,32 @@ struct CanFrame {
 // Каждое поле *_ts хранит millis() момента последнего обновления.
 // Начальное значение всех полей — 0 (не получено ни одного фрейма).
 struct CanMetrics {
-    float    engine_coolant;      // Т ОЖ ДВС, °C (UDS DID 0x1101)
-    uint32_t engine_coolant_ts;   // Время последнего обновления T ОЖ ДВС
+    float    engine_coolant;       // Т ОЖ ДВС, °C (UDS DID 0x1101)
+    uint32_t engine_coolant_ts;    // Время последнего обновления T ОЖ ДВС
 
-    float    engine_oil;          // Т масла ДВС, °C (UDS DID 0x111F)
-    uint32_t engine_oil_ts;       // Время последнего обновления T масла ДВС
+    float    engine_oil;           // Т масла ДВС, °C (UDS DID 0x111F)
+    uint32_t engine_oil_ts;        // Время последнего обновления T масла ДВС
 
-    float    radiator_coolant;    // Т ОЖ радиатора, °C (UDS DID 0x116B)
-    uint32_t radiator_coolant_ts; // Время последнего обновления T ОЖ радиатора
+    float    radiator_coolant;     // Т ОЖ радиатора, °C (UDS DID 0x116B)
+    uint32_t radiator_coolant_ts;  // Время последнего обновления T ОЖ радиатора
+
+    float    engine_rpm;           // Обороты двигателя
+    uint32_t engine_rpm_ts;        // Время последнего обновления оборотов двигателя
+
+    float    turbo_boost_volt;     // Датчик усиления турбины
+    uint32_t turbo_boost_volt_ts;  // Время последнего обновления датчика усиления турбины
+
+    float oil_pressure_volt;       // Датчик давления масла ДВС
+    uint32_t oil_pressure_volt_ts; // Время последнего обновления датчика давления масла ДВС
+
+    float battery_voltage;         // Напряжение бортовой сети
+    uint32_t battery_voltage_ts;   // Время последнего обновления напряжения бортовой сети
+
+    float cvt_temp;                // Температура малса вариатора
+    uint32_t cvt_temp_ts;          // Время последнего обновления температуры малса вариатора
+
+    float cvt_gear;                // Виртуальная передача вариатора
+    uint32_t cvt_gear_ts;          // Время последнего обновления виртуальной передачи вариатора
 };
 
 // Глобальный объект метрик — заполняется из can_parse_known_frames()
