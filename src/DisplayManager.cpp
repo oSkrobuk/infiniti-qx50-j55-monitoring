@@ -21,10 +21,9 @@ void DisplayManager::init(const char *version)
     tft_.drawCentreString(" TEMPERATURE, C ", 120, 51, 2);
 
     tft_.setTextColor(0x9CD3, TFT_BLACK);
-    tft_.drawString("R-COOL", 10,  69, 2);
-    tft_.drawString("E-COOL", 70,  69, 2);
-    tft_.drawString("E-OIL",  130, 69, 2);
-    tft_.drawString("T-OIL",  190, 69, 2);
+    tft_.drawCentreString("RAD-ANT", 40, 69, 2);
+    tft_.drawCentreString("ENG-ANT", 120, 69, 2);
+    tft_.drawCentreString("ENG-OIL", 200, 69, 2);
 
     // Двигатель
     tft_.drawFastHLine(0, 118, 240, 0x5AEB);
@@ -32,16 +31,27 @@ void DisplayManager::init(const char *version)
     tft_.drawCentreString(" ENGINE ", 120, 110, 2);
 
     tft_.setTextColor(0x9CD3, TFT_BLACK);
-    tft_.drawString("RPM",   10,  128, 2);
-    tft_.drawString("EOP",   95,  128, 2);
-    tft_.drawString("BOOST", 170, 128, 2);
+    tft_.drawCentreString("ENG-RPM", 40, 128, 2);
+    tft_.drawCentreString("OIL-PR-V", 120, 128, 2);
+    tft_.drawCentreString("TURBO-V", 200, 128, 2);
+
+    // Вариатор
+    tft_.drawFastHLine(0, 177, 240, 0x5AEB);
+    tft_.setTextColor(0x5AEB, TFT_BLACK);
+    tft_.drawCentreString(" OTHER ", 120, 169, 2);
+
+    tft_.setTextColor(0x9CD3, TFT_BLACK);
+    tft_.drawCentreString("BATTERY-V", 40, 187, 2);
+    tft_.drawCentreString("TRANSM-G", 125, 187, 2);
+    tft_.drawCentreString("CVT-FLD", 200, 187, 2);
+
 
     // Версия прошивки — мелким шрифтом внизу экрана
     if (version) {
         char ver_buf[32];
         snprintf(ver_buf, sizeof(ver_buf), "Version %s", version);
         tft_.setTextColor(0xCE70, TFT_BLACK); // тёмно-серый
-        tft_.drawCentreString(ver_buf, 120, 224, 2);
+        tft_.drawCentreString(ver_buf, 120, 232, 1);
     }
 }
 
@@ -179,7 +189,8 @@ uint16_t DisplayManager::get_oil_pressure_color(float pressure, float rpm)
 
 void DisplayManager::update_metrics(float coolant, float oil, float coolant_r,
                                     float transmission, float rpm,
-                                    float oil_pressure, float boost)
+                                    float oil_pressure, float boost,
+                                    int8_t gear, float battery_voltage)
 {
     char buf[12];
 
@@ -190,7 +201,7 @@ void DisplayManager::update_metrics(float coolant, float oil, float coolant_r,
         config.get("radiator", "max"));
     tft_.setTextColor(radiator_color, TFT_BLACK);
     snprintf(buf, sizeof(buf), "%-5.0f", coolant_r);
-    tft_.drawString(buf, 10, 87, 4);
+    tft_.drawString(buf, 20, 87, 4);
 
     // Антифриз ДВС
     uint16_t coolant_color = get_temperature_color(coolant,
@@ -199,7 +210,7 @@ void DisplayManager::update_metrics(float coolant, float oil, float coolant_r,
         config.get("coolant", "max"));
     tft_.setTextColor(coolant_color, TFT_BLACK);
     snprintf(buf, sizeof(buf), "%-5.0f", coolant);
-    tft_.drawString(buf, 70, 87, 4);
+    tft_.drawString(buf, 100, 87, 4);
 
     // Моторное масло
     uint16_t oil_color = get_temperature_color(oil,
@@ -208,7 +219,42 @@ void DisplayManager::update_metrics(float coolant, float oil, float coolant_r,
         config.get("oil", "max"));
     tft_.setTextColor(oil_color, TFT_BLACK);
     snprintf(buf, sizeof(buf), "%-5.0f", oil);
-    tft_.drawString(buf, 130, 87, 4);
+    tft_.drawString(buf, 180, 87, 4);
+
+    // Обороты двигателя: 750..6000 — плавный цвет синий→зелёный→жёлтый→красный
+    // setTextPadding затирает 4-й символ фоном при 3-значном числе
+    tft_.setTextColor(get_rpm_color(rpm), TFT_BLACK);
+    tft_.setTextPadding(tft_.textWidth("6000", 4));
+    snprintf(buf, sizeof(buf), "%.0f", rpm);
+    tft_.drawString(buf, 12, 146, 4);
+    tft_.setTextPadding(0);
+
+    // Давление масла: цвет зависит от оборотов (красный если ниже нормы)
+    tft_.setTextColor(get_oil_pressure_color(oil_pressure, rpm), TFT_BLACK);
+    snprintf(buf, sizeof(buf), "%.2f", oil_pressure);
+    tft_.drawString(buf, 95, 146, 4);
+
+    // Давление наддува (Вольты): 0.50..4.50 В
+    // setTextPadding затирает остаток при переходе от 5 к 4 символам
+    tft_.setTextColor(get_boost_color(boost), TFT_BLACK);
+    tft_.setTextPadding(tft_.textWidth("-0.50", 4));
+    snprintf(buf, sizeof(buf), "%.2f", boost);
+    tft_.drawString(buf, 175, 146, 4);
+    tft_.setTextPadding(0);
+
+    // Вольтаж бортовой сети: 11.0..15.0 Вольт
+    tft_.setTextColor(0x07E0, TFT_BLACK);
+    tft_.setTextPadding(tft_.textWidth("14.99", 4));
+    snprintf(buf, sizeof(buf), "%.2f", battery_voltage);
+    tft_.drawString(buf, 7, 205, 4);
+    tft_.setTextPadding(0);
+
+    // Номер передачи: от 1 до 8
+    tft_.setTextColor(0x07E0, TFT_BLACK);
+    tft_.setTextPadding(tft_.textWidth("11", 4));
+    snprintf(buf, sizeof(buf), "%.0f", gear);
+    tft_.drawString(buf, 117, 205, 4);
+    tft_.setTextPadding(0);
 
     // Масло коробки
     uint16_t transmission_color = get_temperature_color(transmission,
@@ -217,26 +263,6 @@ void DisplayManager::update_metrics(float coolant, float oil, float coolant_r,
         config.get("transmission", "max"));
     tft_.setTextColor(transmission_color, TFT_BLACK);
     snprintf(buf, sizeof(buf), "%-5.0f", transmission);
-    tft_.drawString(buf, 190, 87, 4);
+    tft_.drawString(buf, 180, 205, 4);
 
-    // Обороты двигателя: 750..6000 — плавный цвет синий→зелёный→жёлтый→красный
-    // setTextPadding затирает 4-й символ фоном при 3-значном числе
-    tft_.setTextColor(get_rpm_color(rpm), TFT_BLACK);
-    tft_.setTextPadding(tft_.textWidth("6000", 4));
-    snprintf(buf, sizeof(buf), "%.0f", rpm);
-    tft_.drawString(buf, 10, 146, 4);
-    tft_.setTextPadding(0);
-
-    // Давление масла: цвет зависит от оборотов (красный если ниже нормы)
-    tft_.setTextColor(get_oil_pressure_color(oil_pressure, rpm), TFT_BLACK);
-    snprintf(buf, sizeof(buf), "%.2f", oil_pressure);
-    tft_.drawString(buf, 95, 146, 4);
-
-    // Давление наддува: -0.50..1.20 бар, 2 знака (5 символов с минусом, 4 без)
-    // setTextPadding затирает остаток при переходе от 5 к 4 символам
-    tft_.setTextColor(get_boost_color(boost), TFT_BLACK);
-    tft_.setTextPadding(tft_.textWidth("-0.50", 4));
-    snprintf(buf, sizeof(buf), "%.2f", boost);
-    tft_.drawString(buf, 170, 146, 4);
-    tft_.setTextPadding(0);
 }
