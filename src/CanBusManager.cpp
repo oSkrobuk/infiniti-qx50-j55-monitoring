@@ -206,7 +206,7 @@ void can_parse_known_frames(const CanFrame &frame)
 // -----------------------------------------------------------------------------
 void can_print_frame(const CanFrame &frame)
 {
-    /*const uint8_t *d   = frame.data;
+    const uint8_t *d   = frame.data;
     const uint8_t  dlc = frame.dlc;
 
     // --- Сырые байты (HEX + DEC) ---
@@ -219,65 +219,6 @@ void can_print_frame(const CanFrame &frame)
         Serial.printf(" %3d", d[i]);
     }
     Serial.println();
-
-    // --- uint16_t / int16_t (big-endian и little-endian) для каждой пары байт ---
-    if (dlc >= 2) {
-        Serial.printf("           u16 BE:");
-        for (uint8_t i = 0; i + 1 < dlc; i++) {
-            uint16_t be = (static_cast<uint16_t>(d[i]) << 8) | d[i + 1];
-            Serial.printf(" [%d-%d]=%5u", i, i + 1, be);
-        }
-        Serial.println();
-
-        Serial.printf("           u16 LE:");
-        for (uint8_t i = 0; i + 1 < dlc; i++) {
-            uint16_t le;
-            memcpy(&le, &d[i], 2);
-            Serial.printf(" [%d-%d]=%5u", i, i + 1, le);
-        }
-        Serial.println();
-
-        Serial.printf("           i16 BE:");
-        for (uint8_t i = 0; i + 1 < dlc; i++) {
-            int16_t be = static_cast<int16_t>(
-                (static_cast<uint16_t>(d[i]) << 8) | d[i + 1]);
-            Serial.printf(" [%d-%d]=%6d", i, i + 1, static_cast<int>(be));
-        }
-        Serial.println();
-    }
-
-    // --- uint32_t / float (big-endian и little-endian) для каждой четвёрки байт ---
-    if (dlc >= 4) {
-        Serial.printf("           u32 BE:");
-        for (uint8_t i = 0; i + 3 < dlc; i++) {
-            uint32_t be = (static_cast<uint32_t>(d[i])   << 24)
-                        | (static_cast<uint32_t>(d[i+1]) << 16)
-                        | (static_cast<uint32_t>(d[i+2]) <<  8)
-                        |  static_cast<uint32_t>(d[i+3]);
-            Serial.printf(" [%d-%d]=%10lu", i, i + 3, static_cast<unsigned long>(be));
-        }
-        Serial.println();
-
-        Serial.printf("           u32 LE:");
-        for (uint8_t i = 0; i + 3 < dlc; i++) {
-            uint32_t le;
-            memcpy(&le, &d[i], 4);
-            Serial.printf(" [%d-%d]=%10lu", i, i + 3, static_cast<unsigned long>(le));
-        }
-        Serial.println();
-
-        Serial.printf("           f32 LE:");
-        for (uint8_t i = 0; i + 3 < dlc; i++) {
-            float f;
-            memcpy(&f, &d[i], 4);
-            if (isfinite(f)) {
-                Serial.printf(" [%d-%d]=%10.3f", i, i + 3, f);
-            } else {
-                Serial.printf(" [%d-%d]=      NaN", i, i + 3);
-            }
-        }
-        Serial.println();
-    }*/
 
     // --- Декодирование известных фреймов QX50 J55 ---
     can_parse_known_frames(frame);
