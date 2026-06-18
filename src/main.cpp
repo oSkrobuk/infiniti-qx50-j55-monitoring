@@ -68,9 +68,17 @@ void loop()
         float mock_oil_pressure =
             1.3f + (sinf(t * 1.3f) * 0.5f + 0.5f) * (3.5f - 1.3f);
 
-        // Давление наддува: -0.50..1.20 бар
-        // sinf даёт -1..+1 → центр 0.35, амплитуда 0.85 → диапазон -0.5..1.2
-        float mock_boost = sinf(t * 0.9f) * 0.85f + 0.35f;
+        // Давление наддува (Вольты): 0.50..4.50 В
+        // sinf даёт -1..+1 → центр 2.50, амплитуда 2.00 → диапазон 0.5..4.5
+        float mock_boost = 2.50f + sinf(t * 0.9f) * 2.00f;
+
+        // Номер передачи: от 1 до 8 (округляем синусоиду до целого числа)
+        // sinf дает -1..+1 → приводим к 0..1, умножаем на разницу (7) и прибавляем минимум (1)
+        int8_t mock_gear = static_cast<int8_t>(roundf(1.0f + (sinf(t * 0.4f) * 0.5f + 0.5f) * 7.0f));
+
+        // Вольтаж бортовой сети: 11.0..15.0 Вольт
+        // sinf дает -1..+1 → центр 13.0V, амплитуда 2.0V → диапазон 11.0..15.0
+        float mock_battery_voltage = 13.0f + sinf(t * 0.3f) * 2.0f;
 
 #ifdef USE_MOCK_DATA
         // --- МОКИ: имитация температур для отладки отображения ---
@@ -87,6 +95,7 @@ void loop()
         // Обновляем параметры на дисплее (работает плавно, без единого моргания)
         display.update_metrics(coolant, oil, coolant_r,
                                mock_transmission, mock_rpm,
-                               mock_oil_pressure, mock_boost);
+                               mock_oil_pressure, mock_boost,
+                               mock_gear, mock_battery_voltage);
     }
 }

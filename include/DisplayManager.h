@@ -22,7 +22,8 @@ public:
 
     void update_metrics(float coolant, float oil, float coolant_r,
                         float transmission, float rpm,
-                        float oil_pressure, float boost);
+                        float oil_pressure, float boost,
+                        int8_t gear, float battery_voltage);
 
 private:
     TFT_eSPI tft_;
