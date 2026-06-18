@@ -185,7 +185,7 @@ uint16_t DisplayManager::get_gear_color(int8_t gear)
     if (t < 0.0f) t = 0.0f;
     if (t > 1.0f) t = 1.0f;
 
-    float hue = 60.0f + t * 60.0f; // 60°..120°
+    float hue = 45.0f + t * 75.0f; // 60°..120°
     float h   = hue / 60.0f;       // 1.0..2.0
     float x   = 1.0f - fabsf(fmodf(h, 2.0f) - 1.0f);
     float r = 0, g = 0, b = 0;
