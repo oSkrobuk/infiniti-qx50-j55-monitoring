@@ -85,6 +85,12 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     grid-template-columns: 1fr 1fr 1fr;
     gap: 8px;
   }
+  /* Четыре поля в одну строку */
+  .row4 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 8px;
+  }
   .field label {
     display: block;
     font-size: 0.7rem;
@@ -381,6 +387,28 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     </div>
   </div>
 
+  <div class="card">
+    <div class="card-title">&#128267; BATTERY — Бортовая сеть</div>
+    <div class="row4">
+      <div class="field">
+        <label>Красный &lt;, В</label>
+        <input class="f-min" type="number" step="0.1" name="battery_red_low" required>
+      </div>
+      <div class="field">
+        <label>Зелёный от, В</label>
+        <input class="f-target" type="number" step="0.1" name="battery_green_min" required>
+      </div>
+      <div class="field">
+        <label>Зелёный до, В</label>
+        <input class="f-target" type="number" step="0.1" name="battery_green_max" required>
+      </div>
+      <div class="field">
+        <label>Красный &gt;, В</label>
+        <input class="f-max" type="number" step="0.1" name="battery_red_high" required>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <div class="actions">
@@ -454,6 +482,17 @@ function fillForm(cfg) {
     if (bm) bm.value = cfg.boost.blue_max;
     if (gm) gm.value = cfg.boost.green_min;
   }
+  // Battery
+  if (cfg.battery) {
+    const rl = document.querySelector('[name="battery_red_low"]');
+    const gn = document.querySelector('[name="battery_green_min"]');
+    const gx = document.querySelector('[name="battery_green_max"]');
+    const rh = document.querySelector('[name="battery_red_high"]');
+    if (rl) rl.value = cfg.battery.red_low;
+    if (gn) gn.value = cfg.battery.green_min;
+    if (gx) gx.value = cfg.battery.green_max;
+    if (rh) rh.value = cfg.battery.red_high;
+  }
 }
 
 function readForm() {
@@ -479,6 +518,12 @@ function readForm() {
     blue_max:  parseFloat(document.querySelector('[name="boost_blue_max"]').value),
     green_min: parseFloat(document.querySelector('[name="boost_green_min"]').value),
   };
+  d.battery = {
+    red_low:   parseFloat(document.querySelector('[name="battery_red_low"]').value),
+    green_min: parseFloat(document.querySelector('[name="battery_green_min"]').value),
+    green_max: parseFloat(document.querySelector('[name="battery_green_max"]').value),
+    red_high:  parseFloat(document.querySelector('[name="battery_red_high"]').value),
+  };
   return d;
 }
 
@@ -498,6 +543,12 @@ function validateForm(data) {
     return 'EOP: мин при низких оборотах должен быть меньше мин при высоких';
   if (data.boost.blue_max >= data.boost.green_min)
     return 'BOOST: граница синего должна быть меньше границы зелёного';
+  if (data.battery.red_low >= data.battery.green_min)
+    return 'BATTERY: нижний красный порог должен быть меньше начала зелёной зоны';
+  if (data.battery.green_min >= data.battery.green_max)
+    return 'BATTERY: начало зелёной зоны должно быть меньше конца';
+  if (data.battery.green_max >= data.battery.red_high)
+    return 'BATTERY: конец зелёной зоны должен быть меньше верхнего красного порога';
   return null;
 }
 

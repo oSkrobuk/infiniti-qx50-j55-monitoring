@@ -20,6 +20,12 @@ public:
     // Цвет наддува: синий(≤blue_max) → жёлтый → зелёный(≥green_min)
     uint16_t get_boost_color(float boost);
 
+    // Цвет вольтажа: красный(<red_low или >red_high) → жёлтый → зелёный(green_min..green_max)
+    uint16_t get_battery_color(float voltage);
+
+    // Цвет передачи: жёлтый(1) → зелёный(8+), линейный переход по hue 60°→120°
+    uint16_t get_gear_color(int8_t gear);
+
     void update_metrics(float coolant, float oil, float coolant_r,
                         float transmission, float rpm,
                         float oil_pressure, float boost,

@@ -177,6 +177,71 @@ uint16_t DisplayManager::get_boost_color(float boost)
          static_cast<uint16_t>(b * 31));
 }
 
+uint16_t DisplayManager::get_gear_color(int8_t gear)
+{
+    // Передача 1 → жёлтый (hue 60°), передача 8+ → зелёный (hue 120°)
+    // Линейная интерполяция hue: 60° + (gear-1)/(8-1) * 60°
+    float t   = static_cast<float>(gear - 1) / 7.0f; // 0..1, зажимаем в [0,1]
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+
+    float hue = 60.0f + t * 60.0f; // 60°..120°
+    float h   = hue / 60.0f;       // 1.0..2.0
+    float x   = 1.0f - fabsf(fmodf(h, 2.0f) - 1.0f);
+    float r = 0, g = 0, b = 0;
+    if (h < 1.0f) { r = 1; g = x; b = 0; }
+    else          { r = x; g = 1; b = 0; } // h: 1..2 → r убывает, g=1
+    return static_cast<uint16_t>(
+        (static_cast<uint16_t>(r * 31) << 11) |
+        (static_cast<uint16_t>(g * 63) <<  5) |
+         static_cast<uint16_t>(b * 31));
+}
+
+uint16_t DisplayManager::get_battery_color(float voltage)
+{
+    const float red_low   = config.get("battery", "red_low");   // < этого — красный
+    const float green_min = config.get("battery", "green_min"); // начало зелёной зоны
+    const float green_max = config.get("battery", "green_max"); // конец зелёной зоны
+    const float red_high  = config.get("battery", "red_high");  // > этого — красный
+
+    // Жёсткие стопоры: ниже red_low или выше red_high — чистый красный
+    if (voltage < red_low)  return 0xF800;
+    if (voltage > red_high) return 0xF800;
+
+    // Зелёная зона: green_min..green_max
+    if (voltage >= green_min && voltage <= green_max) return 0x07E0;
+
+    // Переход красный→жёлтый→зелёный: red_low..green_min (hue: 0°→60°→120°)
+    if (voltage < green_min) {
+        float t   = (voltage - red_low) / (green_min - red_low); // 0..1
+        float hue = t * 120.0f;                                   // 0°..120°
+        float h   = hue / 60.0f;
+        float x   = 1.0f - fabsf(fmodf(h, 2.0f) - 1.0f);
+        float r = 0, g = 0, b = 0;
+        if (h < 1) { r = 1; g = x; b = 0; }
+        else       { r = x; g = 1; b = 0; }
+        return static_cast<uint16_t>(
+            (static_cast<uint16_t>(r * 31) << 11) |
+            (static_cast<uint16_t>(g * 63) <<  5) |
+             static_cast<uint16_t>(b * 31));
+    }
+
+    // Переход зелёный→жёлтый→красный: green_max..red_high (hue: 120°→60°→0°)
+    {
+        float t   = (voltage - green_max) / (red_high - green_max); // 0..1
+        float hue = 120.0f - t * 120.0f;                            // 120°..0°
+        float h   = hue / 60.0f;
+        float x   = 1.0f - fabsf(fmodf(h, 2.0f) - 1.0f);
+        float r = 0, g = 0, b = 0;
+        if (h < 1) { r = 1; g = x; b = 0; }
+        else       { r = x; g = 1; b = 0; }
+        return static_cast<uint16_t>(
+            (static_cast<uint16_t>(r * 31) << 11) |
+            (static_cast<uint16_t>(g * 63) <<  5) |
+             static_cast<uint16_t>(b * 31));
+    }
+}
+
 uint16_t DisplayManager::get_oil_pressure_color(float pressure, float rpm)
 {
     float threshold    = config.get("oil_pressure", "rpm_threshold");
@@ -243,16 +308,16 @@ void DisplayManager::update_metrics(float coolant, float oil, float coolant_r,
     tft_.setTextPadding(0);
 
     // Вольтаж бортовой сети: 11.0..15.0 Вольт
-    tft_.setTextColor(0x07E0, TFT_BLACK);
+    tft_.setTextColor(get_battery_color(battery_voltage), TFT_BLACK);
     tft_.setTextPadding(tft_.textWidth("14.99", 4));
     snprintf(buf, sizeof(buf), "%.2f", battery_voltage);
     tft_.drawString(buf, 7, 205, 4);
     tft_.setTextPadding(0);
 
-    // Номер передачи: от 1 до 8
-    tft_.setTextColor(0x07E0, TFT_BLACK);
+    // Номер передачи: от 1 до 8 — жёлтый(1) → зелёный(8)
+    tft_.setTextColor(get_gear_color(gear), TFT_BLACK);
     tft_.setTextPadding(tft_.textWidth("11", 4));
-    snprintf(buf, sizeof(buf), "%.0f", gear);
+    snprintf(buf, sizeof(buf), "%d", static_cast<int>(gear));
     tft_.drawString(buf, 117, 205, 4);
     tft_.setTextPadding(0);
 
