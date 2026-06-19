@@ -179,32 +179,32 @@ void loop()
         float t = millis() / 3000.0f;
 
         // Имитация данных с датчиков автомобиля Infiniti для проверки отображения
-        float mock_transmission = 80.0f + sinf(t) * 40.0f;
+        float mock_transmission = 80.0f + sinf(t * 2.0f) * 40.0f;
 
         // Обороты двигателя: 750..6000 об/мин
         float mock_rpm = 750.0f +
-            (sinf(t * 0.7f) * 0.5f + 0.5f) * (6000.0f - 750.0f);
+            (sinf(t * 2.1f) * 0.5f + 0.5f) * (6000.0f - 750.0f);
 
         // Давление масла: 1.3..3.5 бар
         float mock_oil_pressure =
-            1.3f + (sinf(t * 1.3f) * 0.5f + 0.5f) * (3.5f - 1.3f);
+            1.3f + (sinf(t * 2.3f) * 0.5f + 0.5f) * (3.5f - 1.3f);
 
         // Давление наддува (Вольты): 0.50..4.50 В
         // sinf даёт -1..+1 → центр 2.50, амплитуда 2.00 → диапазон 0.5..4.5
-        float mock_boost = 2.50f + sinf(t * 0.9f) * 2.00f;
+        float mock_boost = 2.50f + sinf(t * 1.9f) * 2.00f;
 
         // Время опроса RPM: 0.01..0.60 с — имитация на основе синуса
-        float mock_poll_time = 0.01f + (sinf(t * 0.5f) * 0.5f + 0.5f) * (0.60f - 0.01f);
+        float mock_poll_time = 0.01f + (sinf(t * 2.5f) * 0.5f + 0.5f) * (0.60f - 0.01f);
 
         // Вольтаж бортовой сети: 11.0..15.0 Вольт
         // sinf дает -1..+1 → центр 13.0V, амплитуда 2.0V → диапазон 11.0..15.0
-        float mock_battery_voltage = 13.0f + sinf(t * 0.3f) * 2.0f;
+        float mock_battery_voltage = 13.0f + sinf(t * 1.8f) * 2.0f;
 
 #ifdef USE_MOCK_DATA
         // --- МОКИ: имитация всех датчиков для отладки отображения ---
-        float   coolant          = 85.0f + sinf(t) * 20.0f;
-        float   oil              = 90.0f + sinf(t) * 20.0f;
-        float   coolant_r        = 50.0f + sinf(t) * 70.0f;
+        float   coolant          = 85.0f + sinf(t * 2.0f) * 20.0f;
+        float   oil              = 90.0f + sinf(t * 2.2f) * 20.0f;
+        float   coolant_r        = 50.0f + sinf(t * 1.7f) * 70.0f;
         float   rpm              = mock_rpm;
         float   oil_pressure     = mock_oil_pressure;
         float   boost            = mock_boost;
@@ -212,7 +212,7 @@ void loop()
         float   battery_voltage  = mock_battery_voltage;
         float   transmission     = mock_transmission;
 #else
-        // --- РЕАЛЬНЫЕ ДАННЫЕ: все метрики из CAN-шины (таймаут 500 мс → 0) ---
+        // --- РЕАЛЬНЫЕ ДАННЫЕ: все метрики из CAN-шины (таймаут из конфига) ---
         float   coolant          = can_value(can_metrics.engine_coolant,    can_metrics.engine_coolant_ts);
         float   oil              = can_value(can_metrics.engine_oil,        can_metrics.engine_oil_ts);
         float   coolant_r        = can_value(can_metrics.radiator_coolant,  can_metrics.radiator_coolant_ts);
