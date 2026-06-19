@@ -411,6 +411,34 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     </div>
   </div>
 
+  <div class="card">
+    <div class="card-title">&#9201; RPM-POLL — Время опроса RPM</div>
+    <div class="row2">
+      <div class="field">
+        <label>Зелёный до, с</label>
+        <input class="f-target" type="number" step="0.01" name="poll_time_green_max" required>
+      </div>
+      <div class="field">
+        <label>Красный от, с</label>
+        <input class="f-max" type="number" step="0.01" name="poll_time_red_min" required>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">&#9881; SYSTEM — Параметры CAN-опроса</div>
+    <div class="row2">
+      <div class="field">
+        <label>Интервал опроса, мс</label>
+        <input class="f-target" type="number" step="1" min="10" name="system_poll_interval_ms" required>
+      </div>
+      <div class="field">
+        <label>Устаревание CAN, мс</label>
+        <input class="f-target" type="number" step="100" min="100" name="system_stale_ms" required>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <div class="actions">
@@ -495,6 +523,20 @@ function fillForm(cfg) {
     if (gx) gx.value = cfg.battery.green_max;
     if (rh) rh.value = cfg.battery.red_high;
   }
+  // Poll time
+  if (cfg.poll_time) {
+    const gm = document.querySelector('[name="poll_time_green_max"]');
+    const rm = document.querySelector('[name="poll_time_red_min"]');
+    if (gm) gm.value = cfg.poll_time.green_max;
+    if (rm) rm.value = cfg.poll_time.red_min;
+  }
+  // System
+  if (cfg.system) {
+    const pi = document.querySelector('[name="system_poll_interval_ms"]');
+    const sm = document.querySelector('[name="system_stale_ms"]');
+    if (pi) pi.value = cfg.system.poll_interval_ms;
+    if (sm) sm.value = cfg.system.stale_ms;
+  }
 }
 
 function readForm() {
@@ -526,6 +568,14 @@ function readForm() {
     green_max: parseFloat(document.querySelector('[name="battery_green_max"]').value),
     red_high:  parseFloat(document.querySelector('[name="battery_red_high"]').value),
   };
+  d.poll_time = {
+    green_max: parseFloat(document.querySelector('[name="poll_time_green_max"]').value),
+    red_min:   parseFloat(document.querySelector('[name="poll_time_red_min"]').value),
+  };
+  d.system = {
+    poll_interval_ms: parseFloat(document.querySelector('[name="system_poll_interval_ms"]').value),
+    stale_ms:         parseFloat(document.querySelector('[name="system_stale_ms"]').value),
+  };
   return d;
 }
 
@@ -551,6 +601,16 @@ function validateForm(data) {
     return 'BATTERY: начало зелёной зоны должно быть меньше конца';
   if (data.battery.green_max >= data.battery.red_high)
     return 'BATTERY: конец зелёной зоны должен быть меньше верхнего красного порога';
+  if (data.poll_time.green_max <= 0 || data.poll_time.red_min <= 0)
+    return 'RPM-POLL: пороги должны быть больше 0';
+  if (data.poll_time.green_max >= data.poll_time.red_min)
+    return 'RPM-POLL: зелёный порог должен быть меньше красного';
+  if (data.system.poll_interval_ms < 10)
+    return 'SYSTEM: интервал опроса не может быть меньше 10 мс';
+  if (data.system.stale_ms < 100)
+    return 'SYSTEM: порог устаревания не может быть меньше 100 мс';
+  if (data.system.poll_interval_ms >= data.system.stale_ms)
+    return 'SYSTEM: интервал опроса должен быть меньше порога устаревания';
   return null;
 }
 

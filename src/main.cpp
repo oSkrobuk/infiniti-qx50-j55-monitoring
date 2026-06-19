@@ -6,16 +6,17 @@
 #include "DisplayManager.h"
 #include "WebManager.h"
 
-// Вернуть значение из CAN если оно свежее (обновлено не позднее CAN_STALE_MS мс),
+// Вернуть значение из CAN если оно свежее (обновлено не позднее stale_ms мс из конфига),
 // иначе вернуть 0. Таймстамп 0 означает «ни разу не получено» — тоже 0
 static float can_value(float value, uint32_t ts)
 {
     if (ts == 0) return 0.0f;
-    return (millis() - ts <= CAN_STALE_MS) ? value : 0.0f;
+    uint32_t stale_ms = static_cast<uint32_t>(config.get("system", "stale_ms"));
+    return (millis() - ts <= stale_ms) ? value : 0.0f;
 }
 
 // Версия прошивки — отображается внизу дисплея
-static constexpr const char *s_app_version = "2026.1.0";
+static constexpr const char *s_app_version = "2026.1.1";
 
 // Имя и пароль точки доступа ESP32
 // Подключитесь к этой сети, затем откройте http://192.168.4.1
@@ -50,7 +51,6 @@ static constexpr PollEntry POLL_LIST[] = {
     { ECM_ID, 0x1201 }, // Обороты двигателя
     { ECM_ID, 0x110E }, // Давление наддува (турбина)
     { ECM_ID, 0x1278 }, // Давление масла ДВС
-    { TCM_ID, 0x111F }, // Виртуальная передача вариатора
     { ECM_ID, 0x1103 }, // Напряжение бортовой сети
     { ECM_ID, 0x1101 }, // Температура ОЖ ДВС
     { ECM_ID, 0x111F }, // Температура масла ДВС
@@ -58,9 +58,6 @@ static constexpr PollEntry POLL_LIST[] = {
     { TCM_ID, 0x110C }, // Температура масла вариатора
 };
 static constexpr uint8_t POLL_COUNT = sizeof(POLL_LIST) / sizeof(POLL_LIST[0]);
-
-// Интервал между отправками запросов параметров (мс)
-static constexpr uint32_t POLL_INTERVAL_MS = 30;
 
 // Интервал отправки Tester Present (мс)
 static constexpr uint32_t TESTER_PRESENT_INTERVAL_MS = 2000;
@@ -115,12 +112,18 @@ static void poll_handle()
         poll_tester_present();
     }
 
-    // Циклический опрос параметров с паузой POLL_INTERVAL_MS
-    if (now - s_last_poll_ms >= POLL_INTERVAL_MS) {
+    // Циклический опрос параметров с паузой из конфига (system.poll_interval_ms)
+    uint32_t poll_interval_ms = static_cast<uint32_t>(config.get("system", "poll_interval_ms"));
+    if (now - s_last_poll_ms >= poll_interval_ms) {
         s_last_poll_ms = now;
 
         const PollEntry &entry = POLL_LIST[s_poll_idx];
         poll_send_request(entry.ecu_id, entry.did);
+
+        // Запоминаем момент отправки запроса оборотов для вычисления poll_time
+        if (entry.ecu_id == ECM_ID && entry.did == 0x1201) {
+            can_metrics.rpm_request_ts = now;
+        }
 
         s_poll_idx = (s_poll_idx + 1) % POLL_COUNT;
     }
@@ -190,9 +193,8 @@ void loop()
         // sinf даёт -1..+1 → центр 2.50, амплитуда 2.00 → диапазон 0.5..4.5
         float mock_boost = 2.50f + sinf(t * 0.9f) * 2.00f;
 
-        // Номер передачи: от 1 до 8 (округляем синусоиду до целого числа)
-        // sinf дает -1..+1 → приводим к 0..1, умножаем на разницу (7) и прибавляем минимум (1)
-        int8_t mock_gear = static_cast<int8_t>(roundf(1.0f + (sinf(t * 0.4f) * 0.5f + 0.5f) * 7.0f));
+        // Время опроса RPM: 0.01..0.60 с — имитация на основе синуса
+        float mock_poll_time = 0.01f + (sinf(t * 0.5f) * 0.5f + 0.5f) * (0.60f - 0.01f);
 
         // Вольтаж бортовой сети: 11.0..15.0 Вольт
         // sinf дает -1..+1 → центр 13.0V, амплитуда 2.0V → диапазон 11.0..15.0
@@ -206,7 +208,7 @@ void loop()
         float   rpm              = mock_rpm;
         float   oil_pressure     = mock_oil_pressure;
         float   boost            = mock_boost;
-        int8_t  gear             = mock_gear;
+        float   poll_time        = mock_poll_time;
         float   battery_voltage  = mock_battery_voltage;
         float   transmission     = mock_transmission;
 #else
@@ -217,7 +219,7 @@ void loop()
         float   rpm              = can_value(can_metrics.engine_rpm,        can_metrics.engine_rpm_ts);
         float   oil_pressure     = can_value(can_metrics.oil_pressure_volt, can_metrics.oil_pressure_volt_ts);
         float   boost            = can_value(can_metrics.turbo_boost_volt,  can_metrics.turbo_boost_volt_ts);
-        int8_t  gear             = static_cast<int8_t>(can_value(can_metrics.cvt_gear,         can_metrics.cvt_gear_ts));
+        float   poll_time        = can_value(can_metrics.rpm_poll_time,      can_metrics.rpm_poll_time_ts);
         float   battery_voltage  = can_value(can_metrics.battery_voltage,   can_metrics.battery_voltage_ts);
         float   transmission     = can_value(can_metrics.cvt_temp,          can_metrics.cvt_temp_ts);
 #endif
@@ -226,6 +228,6 @@ void loop()
         display.update_metrics(coolant, oil, coolant_r,
                                transmission, rpm,
                                oil_pressure, boost,
-                               gear, battery_voltage);
+                               poll_time, battery_voltage);
     }
 }
