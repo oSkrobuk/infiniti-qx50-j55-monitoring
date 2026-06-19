@@ -13,7 +13,7 @@ static constexpr gpio_num_t CAN_RX_PIN = GPIO_NUM_34;
 static constexpr twai_timing_config_t CAN_TIMING = TWAI_TIMING_CONFIG_500KBITS();
 
 // Если CAN не обновлял параметр дольше этого времени — значение считается устаревшим
-static constexpr uint32_t CAN_STALE_MS = 500;
+static constexpr uint32_t CAN_STALE_MS = 1000;
 
 // Структура одного принятого CAN-фрейма
 struct CanFrame {
@@ -76,6 +76,10 @@ public:
     // Зарегистрировать колбэк, который будет вызываться для каждого
     // принятого фрейма. Можно зарегистрировать только один колбэк
     void on_frame(CanFrameCallback cb);
+
+    // Отправить CAN-фрейм в шину (только когда контроллер запущен)
+    // Возвращает true если фрейм помещён в очередь TWAI
+    bool send_frame(uint32_t id, const uint8_t *data, uint8_t dlc);
 
     // Вызывать в loop(): читает все доступные фреймы из очереди TWAI
     // и передаёт их в зарегистрированный колбэк

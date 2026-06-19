@@ -20,10 +20,11 @@ bool CanBusManager::init()
 {
     Serial.println("[CAN] Инициализация TWAI (SN65HVD230)...");
 
-    // Конфигурация пинов
+    // Конфигурация пинов (нормальный режим — нужен для отправки UDS-запросов)
     twai_general_config_t g_config =
-        TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_PIN, CAN_RX_PIN, TWAI_MODE_LISTEN_ONLY);
+        TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_PIN, CAN_RX_PIN, TWAI_MODE_NORMAL);
     g_config.rx_queue_len = 128; // Увеличенная очередь для плотного трафика шины
+    g_config.tx_queue_len = 16;  // Очередь отправки для UDS-запросов
 
     // Скоростная конфигурация (500 кбит/с)
     twai_timing_config_t t_config = CAN_TIMING;
@@ -68,6 +69,24 @@ void CanBusManager::stop()
 void CanBusManager::on_frame(CanFrameCallback cb)
 {
     callback_ = cb;
+}
+
+bool CanBusManager::send_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
+{
+    if (!running_) return false;
+
+    twai_message_t msg = {};
+    msg.identifier      = id;
+    msg.data_length_code = (dlc > 8) ? 8 : dlc;
+    msg.flags           = 0; // стандартный 11-битный идентификатор
+    memcpy(msg.data, data, msg.data_length_code);
+
+    esp_err_t err = twai_transmit(&msg, pdMS_TO_TICKS(5));
+    if (err != ESP_OK) {
+        Serial.printf("[CAN] send_frame 0x%03X ошибка: %s\r\n", id, esp_err_to_name(err));
+        return false;
+    }
+    return true;
 }
 
 void CanBusManager::handle()
@@ -244,19 +263,19 @@ void can_parse_known_frames(const CanFrame &frame)
 // -----------------------------------------------------------------------------
 void can_print_frame(const CanFrame &frame)
 {
-    const uint8_t *d   = frame.data;
-    const uint8_t  dlc = frame.dlc;
+    const uint8_t *d = frame.data;
 
-    // --- Сырые байты (HEX + DEC) ---
-    Serial.printf("[CAN] ID=0x%03X DLC=%d HEX:", frame.id, dlc);
-    for (uint8_t i = 0; i < dlc; i++) {
-        Serial.printf(" %02X", d[i]);
-    }
-    Serial.print(" | DEC:");
-    for (uint8_t i = 0; i < dlc; i++) {
-        Serial.printf(" %3d", d[i]);
-    }
-    Serial.println();
+    // // --- Сырые байты (HEX + DEC) ---
+    // const uint8_t  dlc = frame.dlc;
+    // Serial.printf("[CAN] ID=0x%03X DLC=%d HEX:", frame.id, dlc);
+    // for (uint8_t i = 0; i < dlc; i++) {
+    //     Serial.printf(" %02X", d[i]);
+    // }
+    // Serial.print(" | DEC:");
+    // for (uint8_t i = 0; i < dlc; i++) {
+    //     Serial.printf(" %3d", d[i]);
+    // }
+    // Serial.println();
 
     // --- Декодирование известных фреймов QX50 J55 ---
     can_parse_known_frames(frame);
