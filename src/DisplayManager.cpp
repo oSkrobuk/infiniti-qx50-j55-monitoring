@@ -337,7 +337,7 @@ void DisplayManager::update_metrics(float coolant, float oil, float coolant_r,
     } else {
         snprintf(buf, sizeof(buf), "%.2f", poll_time);
     }
-    tft_.drawString(buf, 105, 205, 4);
+    tft_.drawString(buf, 95, 205, 4);
     tft_.setTextPadding(0);
 
     // Масло коробки
