@@ -12,9 +12,6 @@ static constexpr gpio_num_t CAN_RX_PIN = GPIO_NUM_34;
 // Скорость шины CAN (500 кбит/с — стандарт для большинства автомобилей)
 static constexpr twai_timing_config_t CAN_TIMING = TWAI_TIMING_CONFIG_500KBITS();
 
-// Если CAN не обновлял параметр дольше этого времени — значение считается устаревшим
-static constexpr uint32_t CAN_STALE_MS = 1000;
-
 // Структура одного принятого CAN-фрейма
 struct CanFrame {
     uint32_t id;        // Идентификатор фрейма (11 или 29 бит)
@@ -49,11 +46,12 @@ struct CanMetrics {
     float battery_voltage;         // Напряжение бортовой сети
     uint32_t battery_voltage_ts;   // Время последнего обновления напряжения бортовой сети
 
-    float cvt_temp;                // Температура малса вариатора
-    uint32_t cvt_temp_ts;          // Время последнего обновления температуры малса вариатора
+    float cvt_temp;                // Температура масла вариатора
+    uint32_t cvt_temp_ts;          // Время последнего обновления температуры масла вариатора
 
-    float cvt_gear;                // Виртуальная передача вариатора
-    uint32_t cvt_gear_ts;          // Время последнего обновления виртуальной передачи вариатора
+    uint32_t rpm_request_ts;       // Момент отправки UDS-запроса оборотов (millis)
+    float    rpm_poll_time;        // Время ответа на запрос оборотов, с (0 = нет данных)
+    uint32_t rpm_poll_time_ts;     // Время последнего обновления rpm_poll_time
 };
 
 // Глобальный объект метрик — заполняется из can_parse_known_frames()

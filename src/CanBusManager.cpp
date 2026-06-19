@@ -184,7 +184,15 @@ void can_parse_known_frames(const CanFrame &frame)
                     case 0x1201: { // Обороты двигателя (Engine RPM)
                         uint16_t raw_rpm = (static_cast<uint16_t>(d[4]) << 8) | d[5];
                         can_metrics.engine_rpm    = static_cast<float>(raw_rpm) * 12.5f;
-                        can_metrics.engine_rpm_ts = millis();
+                        uint32_t now              = millis();
+                        can_metrics.engine_rpm_ts = now;
+                        // Вычисляем время ответа на запрос RPM в секундах
+                        if (can_metrics.rpm_request_ts != 0) {
+                            uint32_t elapsed_ms           = now - can_metrics.rpm_request_ts;
+                            can_metrics.rpm_poll_time     = static_cast<float>(elapsed_ms) / 1000.0f;
+                            can_metrics.rpm_poll_time_ts  = now;
+                            can_metrics.rpm_request_ts    = 0; // сброс после вычисления
+                        }
                         break;
                     }
                     case 0x110E: { // Датчик усиления турбины
@@ -239,12 +247,6 @@ void can_parse_known_frames(const CanFrame &frame)
                          */
                         can_metrics.cvt_temp    = static_cast<float>(static_cast<int16_t>(d[4]) - 40);
                         can_metrics.cvt_temp_ts = millis();
-                        break;
-                    }
-                    case 0x111F: { // Текущая виртуальная передача вариатора
-                        // Примечание: На P и N всегда возвращает 1 (превентивный выбор 1-й передачи)
-                        can_metrics.cvt_gear    = static_cast<int8_t>(d[4]);
-                        can_metrics.cvt_gear_ts = millis();
                         break;
                     }
                     default:

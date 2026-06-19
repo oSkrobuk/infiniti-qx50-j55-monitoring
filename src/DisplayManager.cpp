@@ -42,7 +42,7 @@ void DisplayManager::init(const char *version)
 
     tft_.setTextColor(0x9CD3, TFT_BLACK);
     tft_.drawCentreString("BATTERY-V", 40, 187, 2);
-    tft_.drawCentreString("TRANSM-G",  125, 187, 2);
+    tft_.drawCentreString("RPM-POLL",  125, 187, 2);
     tft_.drawCentreString("CVT-FLD",   200, 187, 2);
 
 
@@ -177,27 +177,33 @@ uint16_t DisplayManager::get_boost_color(float boost)
          static_cast<uint16_t>(b * 31));
 }
 
-uint16_t DisplayManager::get_gear_color(int8_t gear)
+uint16_t DisplayManager::get_poll_time_color(float poll_time, float rpm)
 {
-    // Нет данных (CAN устарел → 0) — синий
-    if (gear == 0) return 0x001F;
+    // Обороты нулевые или нет данных — синий
+    if (rpm == 0.0f || poll_time == 0.0f) return 0x001F;
 
-    // Передача 1 → жёлтый (hue 60°), передача 8+ → зелёный (hue 120°)
-    // Линейная интерполяция hue: 60° + (gear-1)/(8-1) * 60°
-    float t   = static_cast<float>(gear - 1) / 7.0f; // 0..1, зажимаем в [0,1]
-    if (t < 0.0f) t = 0.0f;
-    if (t > 1.0f) t = 1.0f;
+    const float green_max = config.get("poll_time", "green_max"); // ≤ этого — зелёный
+    const float red_min   = config.get("poll_time", "red_min");   // ≥ этого — красный
 
-    float hue = 45.0f + t * 75.0f; // 60°..120°
-    float h   = hue / 60.0f;       // 1.0..2.0
+    // Быстрый ответ — чистый зелёный
+    if (poll_time <= green_max) return 0x07E0;
+
+    // Медленный ответ — чистый красный
+    if (poll_time >= red_min) return 0xF800;
+
+    // Плавный переход зелёный → жёлтый → красный (green_max..red_min)
+    // hue: 120° → 0° (зелёный → красный через жёлтый)
+    float t   = (poll_time - green_max) / (red_min - green_max); // 0..1
+    float hue = 120.0f - t * 120.0f;                             // 120°..0°
+    float h   = hue / 60.0f;
     float x   = 1.0f - fabsf(fmodf(h, 2.0f) - 1.0f);
-    float r = 0, g = 0, b = 0;
-    if (h < 1.0f) { r = 1; g = x; b = 0; }
-    else          { r = x; g = 1; b = 0; } // h: 1..2 → r убывает, g=1
+    float rv = 0, gv = 0, bv = 0;
+    if (h < 1.0f) { rv = 1; gv = x; bv = 0; }
+    else          { rv = x; gv = 1; bv = 0; }
     return static_cast<uint16_t>(
-        (static_cast<uint16_t>(r * 31) << 11) |
-        (static_cast<uint16_t>(g * 63) <<  5) |
-         static_cast<uint16_t>(b * 31));
+        (static_cast<uint16_t>(rv * 31) << 11) |
+        (static_cast<uint16_t>(gv * 63) <<  5) |
+         static_cast<uint16_t>(bv * 31));
 }
 
 uint16_t DisplayManager::get_battery_color(float voltage)
@@ -264,7 +270,7 @@ uint16_t DisplayManager::get_oil_pressure_color(float pressure, float rpm)
 void DisplayManager::update_metrics(float coolant, float oil, float coolant_r,
                                     float transmission, float rpm,
                                     float oil_pressure, float boost,
-                                    int8_t gear, float battery_voltage)
+                                    float poll_time, float battery_voltage)
 {
     char buf[12];
 
@@ -323,11 +329,15 @@ void DisplayManager::update_metrics(float coolant, float oil, float coolant_r,
     tft_.drawString(buf, 7, 205, 4);
     tft_.setTextPadding(0);
 
-    // Номер передачи: от 1 до 8 — жёлтый(1) → зелёный(8)
-    tft_.setTextColor(get_gear_color(gear), TFT_BLACK);
-    tft_.setTextPadding(tft_.textWidth("11", 4));
-    snprintf(buf, sizeof(buf), "%d", static_cast<int>(gear));
-    tft_.drawString(buf, 117, 205, 4);
+    // Время опроса RPM: зелёный(≤0.2с) → красный(≥0.5с), синий если rpm=0
+    tft_.setTextColor(get_poll_time_color(poll_time, rpm), TFT_BLACK);
+    tft_.setTextPadding(tft_.textWidth("0.60", 4));
+    if (rpm == 0.0f || poll_time == 0.0f) {
+        snprintf(buf, sizeof(buf), "0");
+    } else {
+        snprintf(buf, sizeof(buf), "%.2f", poll_time);
+    }
+    tft_.drawString(buf, 105, 205, 4);
     tft_.setTextPadding(0);
 
     // Масло коробки

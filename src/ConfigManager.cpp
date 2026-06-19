@@ -40,7 +40,7 @@ static void build_defaults(JsonDocument &doc)
     // Давление масла: минимум зависит от оборотов
     // при RPM < rpm_threshold допустимо min_low бар, при RPM >= threshold — min_high бар
     doc["oil_pressure"]["rpm_threshold"] = 3000.0f;
-    doc["oil_pressure"]["min_low"]       = 1.5f;
+    doc["oil_pressure"]["min_low"]       = 1.45f;
     doc["oil_pressure"]["min_high"]      = 3.1f;
 
     // Наддув: цветовые пороги
@@ -51,10 +51,21 @@ static void build_defaults(JsonDocument &doc)
     // Бортовая сеть: цветовые пороги напряжения (Вольты)
     // < red_low  → красный; red_low..green_min → жёлтый; green_min..green_max → зелёный
     // green_max..red_high → жёлтый; > red_high → красный
-    doc["battery"]["red_low"]   = 11.9f;
+    doc["battery"]["red_low"]   = 11.7f;
     doc["battery"]["green_min"] = 12.5f;
     doc["battery"]["green_max"] = 14.6f;
     doc["battery"]["red_high"]  = 14.9f;
+
+    // Время опроса RPM: цветовые пороги (секунды)
+    // ≤ green_max → зелёный; ≥ red_min → красный; между — плавный переход
+    doc["poll_time"]["green_max"] = 0.2f;
+    doc["poll_time"]["red_min"]   = 0.5f;
+
+    // Системные параметры CAN-опроса
+    // poll_interval_ms — пауза между отправками UDS-запросов (мс)
+    // stale_ms         — через сколько мс без обновления значение считается устаревшим
+    doc["system"]["poll_interval_ms"] = 30.0f;
+    doc["system"]["stale_ms"]         = 1000.0f;
 }
 
 // ── Вспомогательные функции ──────────────────────────────────────────────────
