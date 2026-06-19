@@ -265,20 +265,20 @@ void can_print_frame(const CanFrame &frame)
 {
     const uint8_t *d = frame.data;
 
-    // // --- Сырые байты (HEX + DEC) ---
-    // const uint8_t  dlc = frame.dlc;
-    // Serial.printf("[CAN] ID=0x%03X DLC=%d HEX:", frame.id, dlc);
-    // for (uint8_t i = 0; i < dlc; i++) {
-    //     Serial.printf(" %02X", d[i]);
-    // }
-    // Serial.print(" | DEC:");
-    // for (uint8_t i = 0; i < dlc; i++) {
-    //     Serial.printf(" %3d", d[i]);
-    // }
-    // Serial.println();
+#ifdef USE_MOCK_DATA
+    // --- Сырые байты (HEX + DEC) ---
+    const uint8_t  dlc = frame.dlc;
+    Serial.printf("[CAN] ID=0x%03X DLC=%d HEX:", frame.id, dlc);
+    for (uint8_t i = 0; i < dlc; i++) {
+        Serial.printf(" %02X", d[i]);
+    }
+    Serial.print(" | DEC:");
+    for (uint8_t i = 0; i < dlc; i++) {
+        Serial.printf(" %3d", d[i]);
+    }
+    Serial.println();
+#endif
 
     // --- Декодирование известных фреймов QX50 J55 ---
     can_parse_known_frames(frame);
-
-    Serial.println();
 }
