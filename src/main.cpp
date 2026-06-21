@@ -23,6 +23,9 @@ static constexpr const char *s_app_version = "2026.1.1";
 static constexpr const char *s_ap_ssid     = "QX50Monitoring";
 static constexpr const char *s_ap_password = "infiniti";
 
+// Пин бузера
+const int BUZZER_PIN = 26;
+
 DisplayManager display;
 WebManager     web(s_ap_ssid, s_ap_password);
 
