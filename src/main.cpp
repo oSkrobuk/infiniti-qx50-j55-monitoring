@@ -5,6 +5,7 @@
 #include "ConfigManager.h"
 #include "DisplayManager.h"
 #include "WebManager.h"
+#include "BuzzerController.h"
 
 // Вернуть значение из CAN если оно свежее (обновлено не позднее stale_ms мс из конфига),
 // иначе вернуть 0. Таймстамп 0 означает «ни разу не получено» — тоже 0
@@ -23,11 +24,9 @@ static constexpr const char *s_app_version = "2026.1.1";
 static constexpr const char *s_ap_ssid     = "QX50Monitoring";
 static constexpr const char *s_ap_password = "infiniti";
 
-// Пин бузера
-const int BUZZER_PIN = 26;
-
-DisplayManager display;
-WebManager     web(s_ap_ssid, s_ap_password);
+DisplayManager   display;
+WebManager       web(s_ap_ssid, s_ap_password);
+BuzzerController buzzer;
 
 // =============================================================================
 // Планировщик UDS-опроса
@@ -159,10 +158,16 @@ void setup()
 
     Serial.printf("[Web] Адрес веб-интерфейса: http://%s\r\n", web.get_ip().c_str());
     Serial.println("=====================================");
+
+    // Звук загрузки, как у биос
+    buzzer.hello();
 }
 
 void loop()
 {
+    // Ждем тригерра для бузера
+    buzzer.update();
+
     // Обрабатываем HTTP запросы
     web.handle();
 
