@@ -15,18 +15,24 @@ DisplayManager::DisplayManager()
 
 void DisplayManager::draw_header_()
 {
-    // Область заголовка — очищаем фоном
-    tft_.fillRect(0, 0, 240, 60, TFT_BLACK);
+    // Область заголовка + лейблы датчиков температуры — очищаем фоном
+    tft_.fillRect(0, 0, 240, 90, TFT_BLACK);
 
     tft_.setTextColor(TFT_WHITE, TFT_BLACK);
     tft_.drawString("INFINITI QX50 J55", 30, 5, 4);
     tft_.setTextColor(0xCE70, TFT_BLACK);
     tft_.drawString("MONITORING", 75, 28, 4);
 
-    // Разделитель секции температуры
+    // Разделитель и заголовок секции температуры
     tft_.drawFastHLine(0, 59, 240, 0x5AEB);
     tft_.setTextColor(0x5AEB, TFT_BLACK);
     tft_.drawCentreString(" TEMPERATURE, C ", 120, 51, 2);
+
+    // Лейблы датчиков температуры — восстанавливаем при сбросе оверлея
+    tft_.setTextColor(0x9CD3, TFT_BLACK);
+    tft_.drawCentreString("RAD-ANT", 40, 69, 2);
+    tft_.drawCentreString("ENG-ANT", 120, 69, 2);
+    tft_.drawCentreString("ENG-OIL", 200, 69, 2);
 }
 
 void DisplayManager::init(const char *version)
@@ -36,11 +42,6 @@ void DisplayManager::init(const char *version)
     tft_.fillScreen(TFT_BLACK);
 
     draw_header_();
-
-    tft_.setTextColor(0x9CD3, TFT_BLACK);
-    tft_.drawCentreString("RAD-ANT", 40, 69, 2);
-    tft_.drawCentreString("ENG-ANT", 120, 69, 2);
-    tft_.drawCentreString("ENG-OIL", 200, 69, 2);
 
     // Двигатель
     tft_.drawFastHLine(0, 118, 240, 0x5AEB);
@@ -80,25 +81,44 @@ void DisplayManager::show_alert(const char *code, const char *description)
         return;
     }
 
-    // Тёмно-красный фон на всю ширину в области заголовка
-    tft_.fillRect(0, 0, 240, 57, 0x4000); // тёмно-красный (RGB565)
+    // Тёмно-красный фон — расширен до 110px чтобы текст font 4 помещался
+    tft_.fillRect(0, 0, 240, 110, 0x4000);
+    tft_.drawRect(1, 1, 238, 108, 0xF800);
 
-    // Красная рамка
-    tft_.drawRect(1, 1, 238, 55, 0xF800);
-
-    // Код алерта — крупно слева + описание с переносом строки (font 2)
+    // Код алерта — крупно по центру
     tft_.setTextColor(TFT_WHITE, 0x4000);
-    tft_.drawString(code, 8, 7, 4); // font 4 ≈ 26 px высота
+    tft_.drawCentreString(code, 120, 10, 4); // font 4 ≈ 26 px высота
 
-    // Укороченное описание в одну строку (ограничиваем 28 символами)
-    char short_desc[29];
-    strncpy(short_desc, description, 28);
-    short_desc[28] = '\0';
+    // Разбиваем название на две строки по ближайшему пробелу к середине
+    char line1[33] = "";
+    char line2[33] = "";
+    int len = static_cast<int>(strlen(description));
+    int mid = len / 2;
+
+    int split = -1;
+    for (int i = mid; i >= 0; --i) {
+        if (description[i] == ' ') { split = i; break; }
+    }
+
+    if (split < 0) {
+        // Нет пробела — помещаем всё в первую строку (обрезаем)
+        strncpy(line1, description, 32);
+        line1[32] = '\0';
+    } else {
+        strncpy(line1, description, split);
+        line1[split] = '\0';
+        strncpy(line2, description + split + 1, 32);
+        line2[32] = '\0';
+    }
+
     tft_.setTextColor(0xFDA0, 0x4000); // светло-оранжевый
-    tft_.drawString(short_desc, 8, 34, 2); // font 2 ≈ 16 px высота
+    tft_.drawCentreString(line1, 120, 46, 4); // font 4, первая строка названия
+    if (line2[0] != '\0') {
+        tft_.drawCentreString(line2, 120, 78, 4); // font 4, вторая строка названия
+    }
 
-    // Восстанавливаем разделитель секции температуры
-    tft_.drawFastHLine(0, 59, 240, 0x5AEB);
+    // Восстанавливаем разделитель ENGINE (y=118) — он ниже оверлея
+    tft_.drawFastHLine(0, 118, 240, 0x5AEB);
 
     strncpy(drawn_alert_code_, code, sizeof(drawn_alert_code_) - 1);
     drawn_alert_code_[sizeof(drawn_alert_code_) - 1] = '\0';
