@@ -2,7 +2,32 @@
 
 #include "ConfigManager.h"
 
-DisplayManager::DisplayManager() : tft_(TFT_eSPI()) {}
+DisplayManager::DisplayManager()
+    : tft_(TFT_eSPI()), alert_visible_(false)
+{
+    version_buf_[0]      = '\0';
+    drawn_alert_code_[0] = '\0';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Внутренний метод: рисует статический заголовок (2 строки + секции)
+// Вызывается при init() и при clear_alert() для восстановления
+
+void DisplayManager::draw_header_()
+{
+    // Область заголовка — очищаем фоном
+    tft_.fillRect(0, 0, 240, 60, TFT_BLACK);
+
+    tft_.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft_.drawString("INFINITI QX50 J55", 30, 5, 4);
+    tft_.setTextColor(0xCE70, TFT_BLACK);
+    tft_.drawString("MONITORING", 75, 28, 4);
+
+    // Разделитель секции температуры
+    tft_.drawFastHLine(0, 59, 240, 0x5AEB);
+    tft_.setTextColor(0x5AEB, TFT_BLACK);
+    tft_.drawCentreString(" TEMPERATURE, C ", 120, 51, 2);
+}
 
 void DisplayManager::init(const char *version)
 {
@@ -10,15 +35,7 @@ void DisplayManager::init(const char *version)
     tft_.setRotation(0);
     tft_.fillScreen(TFT_BLACK);
 
-    tft_.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft_.drawString("INFINITI QX50 J55", 30, 5, 4);
-    tft_.setTextColor(0xCE70, TFT_BLACK);
-    tft_.drawString("MONITORING", 75, 28, 4);
-
-    // Температура
-    tft_.drawFastHLine(0, 59, 240, 0x5AEB);
-    tft_.setTextColor(0x5AEB, TFT_BLACK);
-    tft_.drawCentreString(" TEMPERATURE, C ", 120, 51, 2);
+    draw_header_();
 
     tft_.setTextColor(0x9CD3, TFT_BLACK);
     tft_.drawCentreString("RAD-ANT", 40, 69, 2);
@@ -45,15 +62,61 @@ void DisplayManager::init(const char *version)
     tft_.drawCentreString("RPM-POLL",  125, 187, 2);
     tft_.drawCentreString("CVT-FLD",   200, 187, 2);
 
-
     // Версия прошивки — мелким шрифтом внизу экрана
     if (version) {
-        char ver_buf[32];
-        snprintf(ver_buf, sizeof(ver_buf), "Version %s", version);
-        tft_.setTextColor(0xCE70, TFT_BLACK); // тёмно-серый
-        tft_.drawCentreString(ver_buf, 120, 232, 1);
+        snprintf(version_buf_, sizeof(version_buf_), "Version %s", version);
+        tft_.setTextColor(0xCE70, TFT_BLACK);
+        tft_.drawCentreString(version_buf_, 120, 232, 1);
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Алерт-оверлей: занимает верхние 57 пикселей (область заголовка)
+
+void DisplayManager::show_alert(const char *code, const char *description)
+{
+    // Перерисовываем только если код изменился (чтобы не мигал каждые 100 мс)
+    if (alert_visible_ && strncmp(drawn_alert_code_, code, sizeof(drawn_alert_code_)) == 0) {
+        return;
+    }
+
+    // Тёмно-красный фон на всю ширину в области заголовка
+    tft_.fillRect(0, 0, 240, 57, 0x4000); // тёмно-красный (RGB565)
+
+    // Красная рамка
+    tft_.drawRect(1, 1, 238, 55, 0xF800);
+
+    // Код алерта — крупно слева + описание с переносом строки (font 2)
+    tft_.setTextColor(TFT_WHITE, 0x4000);
+    tft_.drawString(code, 8, 7, 4); // font 4 ≈ 26 px высота
+
+    // Укороченное описание в одну строку (ограничиваем 28 символами)
+    char short_desc[29];
+    strncpy(short_desc, description, 28);
+    short_desc[28] = '\0';
+    tft_.setTextColor(0xFDA0, 0x4000); // светло-оранжевый
+    tft_.drawString(short_desc, 8, 34, 2); // font 2 ≈ 16 px высота
+
+    // Восстанавливаем разделитель секции температуры
+    tft_.drawFastHLine(0, 59, 240, 0x5AEB);
+
+    strncpy(drawn_alert_code_, code, sizeof(drawn_alert_code_) - 1);
+    drawn_alert_code_[sizeof(drawn_alert_code_) - 1] = '\0';
+    alert_visible_ = true;
+}
+
+void DisplayManager::clear_alert()
+{
+    if (!alert_visible_) return;
+
+    // Восстанавливаем статический заголовок
+    draw_header_();
+
+    drawn_alert_code_[0] = '\0';
+    alert_visible_       = false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 uint16_t DisplayManager::get_temperature_color(float value, float min_temp,
                                                float target_temp, float max_temp)
@@ -348,5 +411,4 @@ void DisplayManager::update_metrics(float coolant, float oil, float coolant_r,
     tft_.setTextColor(transmission_color, TFT_BLACK);
     snprintf(buf, sizeof(buf), "%-5.0f", transmission);
     tft_.drawString(buf, 180, 205, 4);
-
 }
