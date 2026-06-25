@@ -6,6 +6,7 @@
 #include "DisplayManager.h"
 #include "WebManager.h"
 #include "BuzzerController.h"
+#include "AlertManager.h"
 
 // Вернуть значение из CAN если оно свежее (обновлено не позднее stale_ms мс из конфига),
 // иначе вернуть 0. Таймстамп 0 означает «ни разу не получено» — тоже 0
@@ -143,6 +144,9 @@ void setup()
     display.init(s_app_version);
     web.begin();
 
+    // Инициализация менеджера алертов (после монтирования LittleFS в config.init())
+    alert_manager.init();
+
     // Инициализация CAN-шины (SN65HVD230 / WVCMCU-230)
     can_bus.on_frame(can_print_frame);
     can_bus.init();
@@ -178,6 +182,13 @@ void loop()
     // Планировщик UDS-опроса: Tester Present + циклический запрос параметров
     poll_handle();
 #endif
+
+    // Проверяем алерты раз в 200 мс
+    static uint32_t s_last_alert_check = 0;
+    if (millis() - s_last_alert_check >= 200) {
+        s_last_alert_check = millis();
+        alert_manager.update(can_metrics);
+    }
 
     // Обновляем дисплей не чаще 10 раз в секунду, без блокирующего delay
     static uint32_t s_last_display = 0;
@@ -237,5 +248,13 @@ void loop()
                                transmission, rpm,
                                oil_pressure, boost,
                                poll_time, battery_voltage);
+
+        // Оверлей алерта поверх заголовка экрана
+        if (alert_manager.has_active_alert()) {
+            display.show_alert(alert_manager.active_code(),
+                               alert_manager.active_description());
+        } else {
+            display.clear_alert();
+        }
     }
 }

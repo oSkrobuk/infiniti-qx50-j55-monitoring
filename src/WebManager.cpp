@@ -1,6 +1,7 @@
 #include "WebManager.h"
 
 #include "ConfigManager.h"
+#include "AlertManager.h"
 #include <Update.h>
 #include <WiFi.h>
 
@@ -58,6 +59,16 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     margin-top: 6px;
     letter-spacing: 2px;
     text-transform: uppercase;
+  }
+  .section-title {
+    max-width: 960px;
+    margin: 28px auto 12px;
+    font-size: 0.8rem;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
   }
   .grid {
     display: grid;
@@ -156,6 +167,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   .btn-save    { background: var(--accent); color: #000; }
   .btn-default { background: var(--border); color: var(--muted); border: 1px solid #444; }
+  .btn-danger  { background: #3a1010; color: var(--red); border: 1px solid #6a1010; }
   /* OTA styles */
   .ota-wrap {
     max-width: 960px;
@@ -248,6 +260,109 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     font-size: 0.75rem;
     margin-top: 36px;
     letter-spacing: 1px;
+  }
+  /* ── Toggle switch ────────────────────────────────── */
+  .toggle-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .toggle {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #333;
+    border-radius: 24px;
+    transition: .3s;
+  }
+  .slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background: #777;
+    border-radius: 50%;
+    transition: .3s;
+  }
+  input:checked + .slider { background: var(--green); }
+  input:checked + .slider:before { transform: translateX(20px); background: #fff; }
+  .toggle-label {
+    font-size: 0.8rem;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+  }
+  /* ── Alert history table ──────────────────────────── */
+  .alert-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 10px;
+  }
+  .btn-clear-alerts {
+    flex: 0 0 auto;
+    min-width: 0;
+    padding: 8px 16px;
+    font-size: 0.8rem;
+  }
+  .alert-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  .alert-table th {
+    color: var(--accent);
+    font-weight: 600;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    font-size: 0.75rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .alert-table td {
+    padding: 7px 8px;
+    border-bottom: 1px solid #1c1c1c;
+    vertical-align: top;
+  }
+  .alert-code {
+    color: var(--red);
+    font-weight: 700;
+    font-family: monospace;
+    font-size: 0.95rem;
+    white-space: nowrap;
+  }
+  .alert-desc { color: var(--text); }
+  .alert-count {
+    color: var(--accent);
+    font-weight: 700;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .alert-empty {
+    color: var(--muted);
+    font-style: italic;
+    text-align: center;
+    padding: 16px 0;
+  }
+  /* ── Checks params row ────────────────────────────── */
+  .check-params {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .check-params .field {
+    flex: 1 1 80px;
+    min-width: 70px;
   }
 </style>
 </head>
@@ -447,6 +562,39 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 </div>
 </form>
 
+<!-- ── Alert Checks Configuration ───────────────────────────────────────── -->
+<div class="section-title">&#9888; CHECKS — Конфигурация проверок</div>
+<div class="grid" id="checksGrid">
+  <!-- Заполняется JavaScript -->
+</div>
+<div class="actions" style="margin-bottom:8px;">
+  <button type="button" class="btn-save" id="btnSaveChecks">&#10003; Сохранить проверки</button>
+</div>
+
+<!-- ── Alert History ─────────────────────────────────────────────────────── -->
+<div class="section-title">&#128680; ALERTS — История срабатываний</div>
+<div class="ota-wrap" style="margin-top:0;">
+  <div class="card">
+    <div class="alert-actions">
+      <button type="button" class="btn-danger btn-clear-alerts" id="btnClearAlerts">
+        &#128465; Очистить историю
+      </button>
+    </div>
+    <table class="alert-table">
+      <thead>
+        <tr>
+          <th>Код</th>
+          <th>Описание</th>
+          <th style="text-align:right;">Кол-во</th>
+        </tr>
+      </thead>
+      <tbody id="alertTableBody">
+        <tr><td colspan="3" class="alert-empty">Загрузка...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <!-- OTA Firmware Update -->
 <div class="ota-wrap">
   <div class="card">
@@ -473,12 +621,39 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 <script>
 let original = {};
 
+// Описания всех проверок — должны совпадать с CHECK_DEFS в AlertManager.cpp
+const CHECK_DEFS = [
+  { code:'E01', name:'Engine Oil Temp High',
+    params:[{label:'Max temp, °C', key:'param1', step:1}] },
+  { code:'E02', name:'Engine Coolant Temp High',
+    params:[{label:'Max temp, °C', key:'param1', step:1}] },
+  { code:'E03', name:'Radiator Coolant Temp High',
+    params:[{label:'Max temp, °C', key:'param1', step:1}] },
+  { code:'E04', name:'CVT Oil Temp High',
+    params:[{label:'Max temp, °C', key:'param1', step:1}] },
+  { code:'E05', name:'Engine RPM Overspeed',
+    params:[{label:'Max RPM', key:'param1', step:50}] },
+  { code:'E06', name:'Battery Voltage Low',
+    params:[{label:'Min voltage, V', key:'param1', step:0.1}] },
+  { code:'E07', name:'Battery Voltage High',
+    params:[{label:'Max voltage, V', key:'param1', step:0.1}] },
+  { code:'E08', name:'Oil Pressure Low',
+    params:[
+      {label:'RPM threshold', key:'param1', step:100},
+      {label:'Min V (low RPM)', key:'param2', step:0.05},
+      {label:'Min V (high RPM)', key:'param3', step:0.05}
+    ]
+  },
+];
+
 function showToast(msg, type) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = 'toast ' + type + ' show';
   setTimeout(() => { t.className = 'toast'; }, 5000);
 }
+
+// ── Config form ────────────────────────────────────────────────────────────
 
 function fillForm(cfg) {
   ['oil','coolant','radiator','transmission'].forEach(f => {
@@ -487,7 +662,6 @@ function fillForm(cfg) {
       if (el) el.value = cfg[f][s];
     });
   });
-  // RPM fields
   if (cfg.rpm) {
     const gs = document.querySelector('[name="rpm_green_start"]');
     const ge = document.querySelector('[name="rpm_green_end"]');
@@ -496,23 +670,20 @@ function fillForm(cfg) {
     if (ge) ge.value = cfg.rpm.green_end;
     if (rs) rs.value = cfg.rpm.red_start;
   }
-  // Oil pressure
   if (cfg.oil_pressure) {
-    const rt  = document.querySelector('[name="oil_pressure_rpm_threshold"]');
-    const ml  = document.querySelector('[name="oil_pressure_min_low"]');
-    const mh  = document.querySelector('[name="oil_pressure_min_high"]');
-    if (rt)  rt.value = cfg.oil_pressure.rpm_threshold;
-    if (ml)  ml.value = cfg.oil_pressure.min_low;
-    if (mh)  mh.value = cfg.oil_pressure.min_high;
+    const rt = document.querySelector('[name="oil_pressure_rpm_threshold"]');
+    const ml = document.querySelector('[name="oil_pressure_min_low"]');
+    const mh = document.querySelector('[name="oil_pressure_min_high"]');
+    if (rt) rt.value = cfg.oil_pressure.rpm_threshold;
+    if (ml) ml.value = cfg.oil_pressure.min_low;
+    if (mh) mh.value = cfg.oil_pressure.min_high;
   }
-  // Boost
   if (cfg.boost) {
     const bm = document.querySelector('[name="boost_blue_max"]');
     const gm = document.querySelector('[name="boost_green_min"]');
     if (bm) bm.value = cfg.boost.blue_max;
     if (gm) gm.value = cfg.boost.green_min;
   }
-  // Battery
   if (cfg.battery) {
     const rl = document.querySelector('[name="battery_red_low"]');
     const gn = document.querySelector('[name="battery_green_min"]');
@@ -523,14 +694,12 @@ function fillForm(cfg) {
     if (gx) gx.value = cfg.battery.green_max;
     if (rh) rh.value = cfg.battery.red_high;
   }
-  // Poll time
   if (cfg.poll_time) {
     const gm = document.querySelector('[name="poll_time_green_max"]');
     const rm = document.querySelector('[name="poll_time_red_min"]');
     if (gm) gm.value = cfg.poll_time.green_max;
     if (rm) rm.value = cfg.poll_time.red_min;
   }
-  // System
   if (cfg.system) {
     const pi = document.querySelector('[name="system_poll_interval_ms"]');
     const sm = document.querySelector('[name="system_stale_ms"]');
@@ -669,7 +838,147 @@ document.getElementById('btnDefault').addEventListener('click', async () => {
   }
 });
 
-// ── OTA ──────────────────────────────────────────────────
+// ── Checks ─────────────────────────────────────────────────────────────────
+
+function renderChecks(cfg) {
+  const grid = document.getElementById('checksGrid');
+  grid.innerHTML = '';
+
+  CHECK_DEFS.forEach(def => {
+    const checkCfg = cfg[def.code] || { enabled: true, param1: 0, param2: 0, param3: 0 };
+
+    // Строим поля параметров
+    let paramsHtml = '';
+    if (def.params.length > 0) {
+      const colClass = def.params.length === 1 ? '' :
+                       def.params.length === 2 ? 'row2' : 'row3';
+      const inner = def.params.map(p => `
+        <div class="field">
+          <label>${p.label}</label>
+          <input class="f-target" type="number" step="${p.step}"
+                 id="check_${def.code}_${p.key}"
+                 value="${checkCfg[p.key] !== undefined ? checkCfg[p.key] : 0}">
+        </div>`).join('');
+      paramsHtml = `<div class="${colClass}">${inner}</div>`;
+    }
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-title">&#9888; ${def.code} &mdash; ${def.name}</div>
+      <div class="toggle-wrap">
+        <label class="toggle">
+          <input type="checkbox" id="check_${def.code}_enabled"
+                 ${checkCfg.enabled ? 'checked' : ''}>
+          <span class="slider"></span>
+        </label>
+        <span class="toggle-label" id="check_${def.code}_label">
+          ${checkCfg.enabled ? 'Enabled' : 'Disabled'}
+        </span>
+      </div>
+      ${paramsHtml}`;
+    grid.appendChild(card);
+
+    // Обновляем подпись при переключении тоггла
+    const chk = document.getElementById(`check_${def.code}_enabled`);
+    const lbl = document.getElementById(`check_${def.code}_label`);
+    chk.addEventListener('change', () => {
+      lbl.textContent = chk.checked ? 'Enabled' : 'Disabled';
+    });
+  });
+}
+
+function readChecks() {
+  const result = {};
+  CHECK_DEFS.forEach(def => {
+    const enabledEl = document.getElementById(`check_${def.code}_enabled`);
+    if (!enabledEl) return;
+    const entry = { enabled: enabledEl.checked, param1: 0, param2: 0, param3: 0 };
+    def.params.forEach(p => {
+      const el = document.getElementById(`check_${def.code}_${p.key}`);
+      if (el) entry[p.key] = parseFloat(el.value) || 0;
+    });
+    result[def.code] = entry;
+  });
+  return result;
+}
+
+async function loadChecks() {
+  try {
+    const r = await fetch('/checks');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const cfg = await r.json();
+    renderChecks(cfg);
+  } catch(e) {
+    // Если не смогли загрузить — рендерим с дефолтными значениями
+    renderChecks({});
+    showToast('Ошибка загрузки проверок: ' + e.message, 'err');
+  }
+}
+
+document.getElementById('btnSaveChecks').addEventListener('click', async () => {
+  const btn = document.getElementById('btnSaveChecks');
+  btn.disabled = true;
+  try {
+    const data = readChecks();
+    const r = await fetch('/checks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    const text = await r.text();
+    if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + text);
+    showToast('✓ Конфиг проверок сохранён!', 'ok');
+  } catch(e) {
+    showToast('Ошибка: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ── Alert history ──────────────────────────────────────────────────────────
+
+async function loadAlerts() {
+  try {
+    const r = await fetch('/alerts');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const alerts = await r.json();
+    const tbody = document.getElementById('alertTableBody');
+
+    if (!alerts || alerts.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="3" class="alert-empty">No alerts recorded</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = alerts.map(a => `
+      <tr>
+        <td><span class="alert-code">${a.code}</span></td>
+        <td class="alert-desc">${a.description}</td>
+        <td class="alert-count">${a.count}</td>
+      </tr>`).join('');
+  } catch(e) {
+    const tbody = document.getElementById('alertTableBody');
+    tbody.innerHTML = '<tr><td colspan="3" class="alert-empty">Load error: ' + e.message + '</td></tr>';
+  }
+}
+
+document.getElementById('btnClearAlerts').addEventListener('click', async () => {
+  if (!confirm('Clear all alert history?')) return;
+  const btn = document.getElementById('btnClearAlerts');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/alerts/clear', { method: 'POST' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    await loadAlerts();
+    showToast('✓ Alert history cleared.', 'ok');
+  } catch(e) {
+    showToast('Error: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ── OTA ──────────────────────────────────────────────────────────────────────
 const otaFile     = document.getElementById('otaFile');
 const otaFileName = document.getElementById('otaFileName');
 const btnOta      = document.getElementById('btnOta');
@@ -736,7 +1045,10 @@ btnOta.addEventListener('click', () => {
   xhr.send(formData);
 });
 
+// ── Init ──────────────────────────────────────────────────────────────────────
 loadConfig();
+loadChecks();
+loadAlerts();
 </script>
 </body>
 </html>
@@ -759,6 +1071,12 @@ void WebManager::begin()
     server_.on("/config",      HTTP_POST, [this]() { handle_post_config(); });
     server_.on("/reset",       HTTP_POST, [this]() { handle_reset(); });
     server_.on("/favicon.ico", HTTP_GET,  [this]() { server_.send(204); });
+
+    // Алерты и проверки
+    server_.on("/alerts",       HTTP_GET,  [this]() { handle_get_alerts(); });
+    server_.on("/alerts/clear", HTTP_POST, [this]() { handle_clear_alerts(); });
+    server_.on("/checks",       HTTP_GET,  [this]() { handle_get_checks(); });
+    server_.on("/checks",       HTTP_POST, [this]() { handle_post_checks(); });
 
     // GET /update — та же страница, что и корень
     server_.on("/update", HTTP_GET, [this]() { handle_update_page(); });
@@ -864,6 +1182,63 @@ void WebManager::handle_not_found()
         server_.method() == HTTP_GET ? "GET" : "POST",
         server_.uri().c_str());
     server_.send(404, "text/plain", "Not found");
+}
+
+// ── Alert handlers ────────────────────────────────────────────────────────────
+
+void WebManager::handle_get_alerts()
+{
+    server_.send(200, "application/json", alert_manager.log_to_json());
+}
+
+void WebManager::handle_clear_alerts()
+{
+    if (alert_manager.clear_log()) {
+        server_.send(200, "application/json", "{\"ok\":true}");
+    } else {
+        server_.send(500, "application/json", "{\"error\":\"clear failed\"}");
+    }
+}
+
+void WebManager::handle_get_checks()
+{
+    server_.send(200, "application/json", alert_manager.checks_to_json());
+}
+
+void WebManager::handle_post_checks()
+{
+    String body;
+
+    if (server_.hasArg("plain")) {
+        body = server_.arg("plain");
+    }
+
+    if (body.isEmpty()) {
+        WiFiClient client = server_.client();
+        int len = server_.header("Content-Length").toInt();
+        if (len > 0 && len < 2048) {
+            body.reserve(len);
+            unsigned long deadline = millis() + 300;
+            while (static_cast<int>(body.length()) < len && millis() < deadline) {
+                if (client.available()) body += static_cast<char>(client.read());
+                else delay(1);
+            }
+        }
+    }
+
+    body.trim();
+    Serial.printf("[Web] POST /checks  %u байт\r\n", body.length());
+
+    if (body.isEmpty()) {
+        server_.send(400, "application/json", "{\"error\":\"empty body\"}");
+        return;
+    }
+
+    if (alert_manager.checks_from_json(body)) {
+        server_.send(200, "application/json", "{\"ok\":true}");
+    } else {
+        server_.send(400, "application/json", "{\"error\":\"invalid json\"}");
+    }
 }
 
 // ── OTA ──────────────────────────────────────────────────────────────────────

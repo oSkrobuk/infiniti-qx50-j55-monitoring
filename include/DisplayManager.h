@@ -31,6 +31,27 @@ public:
                         float oil_pressure, float boost,
                         float poll_time, float battery_voltage);
 
+    // Показать алерт-оверлей поверх заголовка экрана (код + описание)
+    // Вызывать каждый кадр пока алерт активен — перерисовывает только при смене кода
+    void show_alert(const char *code, const char *description);
+
+    // Убрать алерт-оверлей, восстановить заголовок экрана
+    // Вызывать один раз когда алерт перестал быть активным
+    void clear_alert();
+
 private:
     TFT_eSPI tft_;
+
+    // Буфер версии прошивки, сохраняется для восстановления после очистки оверлея
+    char version_buf_[32];
+
+    // Код последнего нарисованного алерта — для предотвращения лишних перерисовок
+    char drawn_alert_code_[8];
+
+    // true если в данный момент на экране показан алерт-оверлей
+    bool alert_visible_;
+
+    // Перерисовать статический заголовок (INFINITI QX50 J55 / MONITORING)
+    // Используется при init() и при clear_alert()
+    void draw_header_();
 };

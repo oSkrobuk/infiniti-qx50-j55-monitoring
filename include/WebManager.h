@@ -30,4 +30,13 @@ private:
     void handle_update_page();
     // OTA: POST /update — приём .bin файла (chunked multipart upload)
     void handle_update_upload();
+
+    // Алерты: GET /alerts — журнал сработавших проверок (JSON)
+    void handle_get_alerts();
+    // Алерты: POST /alerts/clear — очистить журнал
+    void handle_clear_alerts();
+    // Проверки: GET /checks — конфиг проверок (JSON)
+    void handle_get_checks();
+    // Проверки: POST /checks — сохранить конфиг проверок (JSON body)
+    void handle_post_checks();
 };
