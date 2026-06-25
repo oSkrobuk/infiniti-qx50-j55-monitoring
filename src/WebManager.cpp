@@ -967,7 +967,7 @@ document.getElementById('btnClearAlerts').addEventListener('click', async () => 
   const btn = document.getElementById('btnClearAlerts');
   btn.disabled = true;
   try {
-    const r = await fetch('/alerts/clear', { method: 'POST' });
+    const r = await fetch('/alerts-clear', { method: 'POST' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     await loadAlerts();
     showToast('✓ Alert history cleared.', 'ok');
@@ -1073,9 +1073,9 @@ void WebManager::begin()
     server_.on("/favicon.ico", HTTP_GET,  [this]() { server_.send(204); });
 
     // Алерты и проверки
-    server_.on("/alerts",       HTTP_GET,  [this]() { handle_get_alerts(); });
-    server_.on("/alerts/clear", HTTP_POST, [this]() { handle_clear_alerts(); });
-    server_.on("/checks",       HTTP_GET,  [this]() { handle_get_checks(); });
+    server_.on("/alerts",        HTTP_GET,  [this]() { handle_get_alerts(); });
+    server_.on("/alerts-clear",  HTTP_POST, [this]() { handle_clear_alerts(); });
+    server_.on("/checks",        HTTP_GET,  [this]() { handle_get_checks(); });
     server_.on("/checks",       HTTP_POST, [this]() { handle_post_checks(); });
 
     // GET /update — та же страница, что и корень
