@@ -4,19 +4,6 @@
 
 #include "BuzzerController.h"
 
-// Вспомогательная функция: гарантирует, что LittleFS смонтирован.
-// ConfigManager монтирует FS через свой приватный ensure_mounted(), но у AlertManager
-// нет доступа к его флагу — поэтому вызываем begin(false) самостоятельно.
-// Повторный вызов безопасен: Arduino-обёртка LittleFS возвращает true без перемонтирования.
-static bool alert_ensure_fs()
-{
-    if (LittleFS.begin(false)) return true;
-    // Если FS ещё не отформатирован — форматируем (первый запуск)
-    if (LittleFS.begin(true)) return true;
-    Serial.println("[Alert] ОШИБКА: не удалось смонтировать LittleFS");
-    return false;
-}
-
 // Бузер объявлен в main.cpp — используем extern для доступа без циклических зависимостей
 extern BuzzerController buzzer;
 
@@ -109,8 +96,7 @@ void AlertManager::apply_check_defaults_()
 
 bool AlertManager::init()
 {
-    // Гарантируем монтирование LittleFS (безопасно если уже смонтирован ConfigManager-ом)
-    alert_ensure_fs();
+    // LittleFS уже смонтирован в config.init() — вызываем только загрузку файлов
     load_checks_();
     load_log_();
     Serial.println("[Alert] AlertManager инициализирован");
@@ -259,10 +245,8 @@ bool AlertManager::clear_log()
     active_code_[0] = '\0';
     active_desc_[0] = '\0';
 
-    if (!alert_ensure_fs()) return false;
-    if (LittleFS.exists(ALERTS_LOG_FILE)) {
-        LittleFS.remove(ALERTS_LOG_FILE);
-    }
+    // Удаляем файл журнала (remove() безопасен если файла нет)
+    LittleFS.remove(ALERTS_LOG_FILE);
 
     Serial.println("[Alert] Журнал алертов очищен");
     return true;
@@ -321,16 +305,12 @@ bool AlertManager::checks_from_json(const String &json)
 
 bool AlertManager::load_checks_()
 {
-    if (!alert_ensure_fs()) return false;
-    if (!LittleFS.exists(CHECKS_CONFIG_FILE)) {
-        Serial.println("[Alert] Файл проверок не найден, используем значения по умолчанию");
-        return save_checks_();
-    }
-
+    // Открываем напрямую без exists() — exists() вызывает open("r") внутри и
+    // печатает системную ошибку в Serial если файла нет (поведение ESP32 LittleFS)
     File f = LittleFS.open(CHECKS_CONFIG_FILE, "r");
     if (!f) {
-        Serial.println("[Alert] ОШИБКА: не удалось открыть файл проверок");
-        return false;
+        Serial.println("[Alert] Файл проверок не найден, используем значения по умолчанию");
+        return save_checks_();
     }
 
     JsonDocument doc;
@@ -359,7 +339,6 @@ bool AlertManager::load_checks_()
 
 bool AlertManager::save_checks_()
 {
-    if (!alert_ensure_fs()) return false;
     File f = LittleFS.open(CHECKS_CONFIG_FILE, "w");
     if (!f) {
         Serial.println("[Alert] ОШИБКА: не удалось открыть файл проверок для записи");
@@ -388,16 +367,11 @@ bool AlertManager::save_checks_()
 
 bool AlertManager::load_log_()
 {
-    if (!alert_ensure_fs()) return false;
-    if (!LittleFS.exists(ALERTS_LOG_FILE)) {
-        Serial.println("[Alert] Файл журнала не найден, журнал пуст");
-        return true;
-    }
-
+    // Открываем напрямую без exists() — избегаем ложной ошибки VFS в Serial
     File f = LittleFS.open(ALERTS_LOG_FILE, "r");
     if (!f) {
-        Serial.println("[Alert] ОШИБКА: не удалось открыть файл журнала");
-        return false;
+        Serial.println("[Alert] Файл журнала не найден, журнал пуст");
+        return true;
     }
 
     JsonDocument doc;
@@ -430,7 +404,6 @@ bool AlertManager::load_log_()
 
 bool AlertManager::save_log_()
 {
-    if (!alert_ensure_fs()) return false;
     File f = LittleFS.open(ALERTS_LOG_FILE, "w");
     if (!f) {
         Serial.println("[Alert] ОШИБКА: не удалось открыть файл журнала для записи");
