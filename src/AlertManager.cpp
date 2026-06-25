@@ -1,8 +1,21 @@
 #include "AlertManager.h"
 
+#include <sys/stat.h>
 #include <LittleFS.h>
 
 #include "BuzzerController.h"
+
+// Проверяет существование файла через POSIX stat() без открытия файла.
+// LittleFS монтируется по /littlefs — нужно добавлять этот префикс к пути.
+// Это единственный способ избежать ошибки [E][vfs_api.cpp:105] в ESP32 VFS,
+// которая возникает при любом open("r") на несуществующий файл.
+static bool littlefs_file_exists(const char *path)
+{
+    char full[64];
+    snprintf(full, sizeof(full), "/littlefs%s", path);
+    struct stat st;
+    return stat(full, &st) == 0;
+}
 
 // Бузер объявлен в main.cpp — используем extern для доступа без циклических зависимостей
 extern BuzzerController buzzer;
@@ -305,12 +318,16 @@ bool AlertManager::checks_from_json(const String &json)
 
 bool AlertManager::load_checks_()
 {
-    // Открываем напрямую без exists() — exists() вызывает open("r") внутри и
-    // печатает системную ошибку в Serial если файла нет (поведение ESP32 LittleFS)
-    File f = LittleFS.open(CHECKS_CONFIG_FILE, "r");
-    if (!f) {
+    // Проверяем существование через stat() — без открытия файла, без VFS-ошибки в Serial
+    if (!littlefs_file_exists(CHECKS_CONFIG_FILE)) {
         Serial.println("[Alert] Файл проверок не найден, используем значения по умолчанию");
         return save_checks_();
+    }
+
+    File f = LittleFS.open(CHECKS_CONFIG_FILE, "r");
+    if (!f) {
+        Serial.println("[Alert] ОШИБКА: не удалось открыть файл проверок");
+        return false;
     }
 
     JsonDocument doc;
@@ -367,11 +384,16 @@ bool AlertManager::save_checks_()
 
 bool AlertManager::load_log_()
 {
-    // Открываем напрямую без exists() — избегаем ложной ошибки VFS в Serial
-    File f = LittleFS.open(ALERTS_LOG_FILE, "r");
-    if (!f) {
+    // Проверяем существование через stat() — без открытия файла, без VFS-ошибки в Serial
+    if (!littlefs_file_exists(ALERTS_LOG_FILE)) {
         Serial.println("[Alert] Файл журнала не найден, журнал пуст");
         return true;
+    }
+
+    File f = LittleFS.open(ALERTS_LOG_FILE, "r");
+    if (!f) {
+        Serial.println("[Alert] ОШИБКА: не удалось открыть файл журнала");
+        return false;
     }
 
     JsonDocument doc;
