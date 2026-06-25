@@ -230,6 +230,27 @@ void loop()
         float   poll_time        = mock_poll_time;
         float   battery_voltage  = mock_battery_voltage;
         float   transmission     = mock_transmission;
+
+        // Записываем мок-данные в can_metrics — AlertManager читает именно оттуда
+        {
+            uint32_t ts = millis();
+            can_metrics.engine_oil           = oil;
+            can_metrics.engine_oil_ts        = ts;
+            can_metrics.engine_coolant       = coolant;
+            can_metrics.engine_coolant_ts    = ts;
+            can_metrics.radiator_coolant     = coolant_r;
+            can_metrics.radiator_coolant_ts  = ts;
+            can_metrics.cvt_temp             = transmission;
+            can_metrics.cvt_temp_ts          = ts;
+            can_metrics.engine_rpm           = rpm;
+            can_metrics.engine_rpm_ts        = ts;
+            can_metrics.battery_voltage      = battery_voltage;
+            can_metrics.battery_voltage_ts   = ts;
+            can_metrics.oil_pressure_volt    = oil_pressure;
+            can_metrics.oil_pressure_volt_ts = ts;
+            can_metrics.turbo_boost_volt     = boost;
+            can_metrics.turbo_boost_volt_ts  = ts;
+        }
 #else
         // --- РЕАЛЬНЫЕ ДАННЫЕ: все метрики из CAN-шины (таймаут из конфига) ---
         float   coolant          = can_value(can_metrics.engine_coolant,    can_metrics.engine_coolant_ts);
