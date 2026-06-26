@@ -264,13 +264,15 @@ void loop()
         float   transmission     = can_value(can_metrics.cvt_temp,          can_metrics.cvt_temp_ts);
 #endif
 
-        // Обновляем параметры на дисплее (работает плавно, без единого моргания)
-        display.update_metrics(coolant, oil, coolant_r,
-                               transmission, rpm,
-                               oil_pressure, boost,
-                               poll_time, battery_voltage);
+        // Пока алерт активен — метрики не обновляем, чтобы не затирать оверлей
+        if (!alert_manager.has_active_alert()) {
+            display.update_metrics(coolant, oil, coolant_r,
+                                   transmission, rpm,
+                                   oil_pressure, boost,
+                                   poll_time, battery_voltage);
+        }
 
-        // Оверлей алерта поверх заголовка экрана
+        // Оверлей алерта: показываем на весь экран или убираем при снятии алерта
         if (alert_manager.has_active_alert()) {
             display.show_alert(alert_manager.active_code(),
                                alert_manager.active_description());
