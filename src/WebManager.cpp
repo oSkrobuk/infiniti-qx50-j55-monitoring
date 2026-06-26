@@ -370,7 +370,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 
 <header>
   <h1>&#9670; INFINITI QX50 J55 &#9670;</h1>
-  <h2>MONITORING - Config Editor</h2>
+  <h2>MONITORING - Редактор конфигурации</h2>
 </header>
 
 <div class="legend" style="margin-bottom:14px;">
@@ -624,24 +624,24 @@ let original = {};
 // Описания всех проверок — должны совпадать с CHECK_DEFS в AlertManager.cpp
 const CHECK_DEFS = [
   { code:'E01', name:'Engine Oil Temp High',
-    params:[{label:'Max temp, °C', key:'param1', step:1}] },
+    params:[{label:'Макс. темп, °C', key:'param1', step:1}] },
   { code:'E02', name:'Engine Coolant Temp High',
-    params:[{label:'Max temp, °C', key:'param1', step:1}] },
+    params:[{label:'Макс. темп, °C', key:'param1', step:1}] },
   { code:'E03', name:'Radiator Coolant Temp High',
-    params:[{label:'Max temp, °C', key:'param1', step:1}] },
+    params:[{label:'Макс. темп, °C', key:'param1', step:1}] },
   { code:'E04', name:'CVT Oil Temp High',
-    params:[{label:'Max temp, °C', key:'param1', step:1}] },
+    params:[{label:'Макс. темп, °C', key:'param1', step:1}] },
   { code:'E05', name:'Engine RPM Overspeed',
-    params:[{label:'Max RPM', key:'param1', step:50}] },
+    params:[{label:'Макс. обороты', key:'param1', step:50}] },
   { code:'E06', name:'Battery Voltage Low',
-    params:[{label:'Min voltage, V', key:'param1', step:0.1}] },
+    params:[{label:'Мин. напряжение, В', key:'param1', step:0.1}] },
   { code:'E07', name:'Battery Voltage High',
-    params:[{label:'Max voltage, V', key:'param1', step:0.1}] },
+    params:[{label:'Макс. напряжение, В', key:'param1', step:0.1}] },
   { code:'E08', name:'Oil Pressure Low',
     params:[
-      {label:'RPM threshold', key:'param1', step:100},
-      {label:'Min V (low RPM)', key:'param2', step:0.05},
-      {label:'Min V (high RPM)', key:'param3', step:0.05}
+      {label:'Порог оборотов', key:'param1', step:100},
+      {label:'Мин. В (низк. обор.)', key:'param2', step:0.05},
+      {label:'Мин. В (выс. обор.)', key:'param3', step:0.05}
     ]
   },
 ];
@@ -873,7 +873,7 @@ function renderChecks(cfg) {
           <span class="slider"></span>
         </label>
         <span class="toggle-label" id="check_${def.code}_label">
-          ${checkCfg.enabled ? 'Enabled' : 'Disabled'}
+          ${checkCfg.enabled ? 'Включено' : 'Выключено'}
         </span>
       </div>
       ${paramsHtml}`;
@@ -883,7 +883,7 @@ function renderChecks(cfg) {
     const chk = document.getElementById(`check_${def.code}_enabled`);
     const lbl = document.getElementById(`check_${def.code}_label`);
     chk.addEventListener('change', () => {
-      lbl.textContent = chk.checked ? 'Enabled' : 'Disabled';
+      lbl.textContent = chk.checked ? 'Включено' : 'Выключено';
     });
   });
 }
@@ -946,7 +946,7 @@ async function loadAlerts() {
     const tbody = document.getElementById('alertTableBody');
 
     if (!alerts || alerts.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="3" class="alert-empty">No alerts recorded</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="3" class="alert-empty">Нет срабатываний</td></tr>';
       return;
     }
 
@@ -958,21 +958,21 @@ async function loadAlerts() {
       </tr>`).join('');
   } catch(e) {
     const tbody = document.getElementById('alertTableBody');
-    tbody.innerHTML = '<tr><td colspan="3" class="alert-empty">Load error: ' + e.message + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" class="alert-empty">Ошибка загрузки: ' + e.message + '</td></tr>';
   }
 }
 
 document.getElementById('btnClearAlerts').addEventListener('click', async () => {
-  if (!confirm('Clear all alert history?')) return;
+  if (!confirm('Очистить всю историю алертов?')) return;
   const btn = document.getElementById('btnClearAlerts');
   btn.disabled = true;
   try {
     const r = await fetch('/alerts-clear', { method: 'POST' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     await loadAlerts();
-    showToast('✓ Alert history cleared.', 'ok');
+    showToast('✓ История алертов очищена', 'ok');
   } catch(e) {
-    showToast('Error: ' + e.message, 'err');
+    showToast('Ошибка: ' + e.message, 'err');
   } finally {
     btn.disabled = false;
   }

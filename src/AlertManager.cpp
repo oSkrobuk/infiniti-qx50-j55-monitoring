@@ -1,21 +1,8 @@
 #include "AlertManager.h"
 
-#include <sys/stat.h>
 #include <LittleFS.h>
 
 #include "BuzzerController.h"
-
-// Проверяет существование файла через POSIX stat() без открытия файла.
-// LittleFS монтируется по /littlefs — нужно добавлять этот префикс к пути.
-// Это единственный способ избежать ошибки [E][vfs_api.cpp:105] в ESP32 VFS,
-// которая возникает при любом open("r") на несуществующий файл.
-static bool littlefs_file_exists(const char *path)
-{
-    char full[64];
-    snprintf(full, sizeof(full), "/littlefs%s", path);
-    struct stat st;
-    return stat(full, &st) == 0;
-}
 
 // Бузер объявлен в main.cpp — используем extern для доступа без циклических зависимостей
 extern BuzzerController buzzer;
@@ -318,8 +305,7 @@ bool AlertManager::checks_from_json(const String &json)
 
 bool AlertManager::load_checks_()
 {
-    // Проверяем существование через stat() — без открытия файла, без VFS-ошибки в Serial
-    if (!littlefs_file_exists(CHECKS_CONFIG_FILE)) {
+    if (!LittleFS.exists(CHECKS_CONFIG_FILE)) {
         Serial.println("[Alert] Файл проверок не найден, используем значения по умолчанию");
         return save_checks_();
     }
@@ -384,16 +370,17 @@ bool AlertManager::save_checks_()
 
 bool AlertManager::load_log_()
 {
-    // Проверяем существование через stat() — без открытия файла, без VFS-ошибки в Serial
-    if (!littlefs_file_exists(ALERTS_LOG_FILE)) {
+    // Если файла нет — это нормальная ситуация (первый запуск или после очистки)
+    if (!LittleFS.exists(ALERTS_LOG_FILE)) {
         Serial.println("[Alert] Файл журнала не найден, журнал пуст");
         return true;
     }
 
     File f = LittleFS.open(ALERTS_LOG_FILE, "r");
     if (!f) {
-        Serial.println("[Alert] ОШИБКА: не удалось открыть файл журнала");
-        return false;
+        // Файл недоступен — считаем журнал пустым, не возвращаем ошибку
+        Serial.println("[Alert] Файл журнала недоступен, журнал пуст");
+        return true;
     }
 
     JsonDocument doc;
@@ -401,8 +388,10 @@ bool AlertManager::load_log_()
     f.close();
 
     if (err) {
-        Serial.printf("[Alert] ОШИБКА парсинга файла журнала: %s\r\n", err.c_str());
-        return false;
+        // Повреждённый файл — считаем журнал пустым
+        Serial.printf("[Alert] Файл журнала повреждён (%s), журнал пуст\r\n", err.c_str());
+        LittleFS.remove(ALERTS_LOG_FILE);
+        return true;
     }
 
     JsonArrayConst arr = doc.as<JsonArrayConst>();
