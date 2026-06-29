@@ -102,80 +102,114 @@ void DisplayManager::show_alert(const char *code, const char *description)
     // Очищаем весь экран
     tft_.fillScreen(TFT_BLACK);
 
-    // Заголовок "! ALERT !" — оранжевый, font 4
-    tft_.setTextColor(0xFD20, TFT_BLACK);
-    tft_.drawCentreString("! ALERT !", 120, 20, 4);
+    // Код алерта — красный, font 4
+    tft_.setTextColor(0xF800, TFT_BLACK);
+    tft_.drawCentreString(code, 120, 20, 4);
 
     // Разделитель
     tft_.drawFastHLine(10, 58, 220, 0xF800);
-
-    // Код алерта — красный, font 4
-    tft_.setTextColor(0xF800, TFT_BLACK);
-    tft_.drawCentreString(code, 120, 72, 4);
-
-    // Второй разделитель
-    tft_.drawFastHLine(10, 110, 220, 0xF800);
 
     // Описание: разбиваем на строки по пробелу ближайшему к середине
     char line1[33] = "";
     char line2[33] = "";
     char line3[33] = "";
+    char line4[33] = "";
+    char line5[33] = "";
     int len = static_cast<int>(strlen(description));
 
     if (len <= 19) {
-        // Короткое — в одну строку
-        strncpy(line1, description, 32);
-        line1[32] = '\0';
+        // Короткий текст — всё в первую строку, остальные пустые
+        strncpy(line1, description, 32); line1[31] = '\0';
+        line2[0] = '\0'; line3[0] = '\0'; line4[0] = '\0'; line5[0] = '\0';
     } else {
-        // Ищем пробел ближайший к 1/3 длины
-        int p1 = len / 3;
-        int split1 = -1;
-        for (int i = p1; i < len; ++i) {
-            if (description[i] == ' ') { split1 = i; break; }
-        }
-        if (split1 < 0) split1 = len / 2;
+        int lines_count = 5;
+        int chunk_size = len / lines_count;
+        int current_idx = 0;
+        char* target_lines[5] = {line1, line2, line3, line4, line5};
 
-        strncpy(line1, description, split1);
-        line1[split1] = '\0';
-
-        const char *rest = description + split1 + 1;
-        int rlen = static_cast<int>(strlen(rest));
-
-        if (rlen <= 19) {
-            strncpy(line2, rest, 32);
-            line2[32] = '\0';
-        } else {
-            int p2 = rlen / 2;
-            int split2 = -1;
-            for (int i = p2; i >= 0; --i) {
-                if (rest[i] == ' ') { split2 = i; break; }
+        for (int l = 0; l < lines_count; ++l) {
+            if (current_idx >= len) {
+                target_lines[l][0] = '\0';
+                continue;
             }
-            if (split2 < 0) split2 = rlen / 2;
-            strncpy(line2, rest, split2);
-            line2[split2] = '\0';
-            strncpy(line3, rest + split2 + 1, 32);
-            line3[32] = '\0';
+
+            // Для последней строки просто забираем весь остаток
+            if (l == lines_count - 1) {
+                strncpy(target_lines[l], description + current_idx, 32);
+                target_lines[l][31] = '\0';
+                break;
+            }
+
+            // Ищем оптимальную точку разреза (ближайший пробел вперед)
+            int target_split = current_idx + chunk_size;
+            int split_point = -1;
+
+            for (int i = target_split; i < len; ++i) {
+                if (description[i] == ' ') {
+                    split_point = i;
+                    break;
+                }
+            }
+
+            // Если пробел впереди не найден, ищем его назад
+            if (split_point < 0) {
+                for (int i = target_split; i > current_idx; --i) {
+                    if (description[i] == ' ') {
+                        split_point = i;
+                        break;
+                    }
+                }
+            }
+
+            // Если пробелов вообще нет, режем жестко по размеру куска
+            if (split_point < 0) {
+                split_point = target_split;
+            }
+
+            int copy_len = split_point - current_idx;
+            if (copy_len > 31) copy_len = 31; // Защита от переполнения буфера в 32 байта
+
+            strncpy(target_lines[l], description + current_idx, copy_len);
+            target_lines[l][copy_len] = '\0';
+
+            // Шаг вперед. Если разбились по пробелу, пропускаем его (+1)
+            current_idx = split_point + (description[split_point] == ' ' ? 1 : 0);
         }
     }
 
     tft_.setTextColor(TFT_WHITE, TFT_BLACK);
-    if (line3[0]) {
-        // Три строки — чуть смещаем вверх
-        tft_.drawCentreString(line1, 120, 125, 4);
-        tft_.drawCentreString(line2, 120, 158, 4);
-        tft_.drawCentreString(line3, 120, 191, 4);
+
+    if (line5[0]) {
+        // Пять строк (было 95...207)
+        tft_.drawCentreString(line1, 120, 80, 4);
+        tft_.drawCentreString(line2, 120, 108, 4);
+        tft_.drawCentreString(line3, 120, 136, 4);
+        tft_.drawCentreString(line4, 120, 164, 4);
+        tft_.drawCentreString(line5, 120, 192, 4);
+    } else if (line4[0]) {
+        // Четыре строки (было 108...195)
+        tft_.drawCentreString(line1, 120, 93, 4);
+        tft_.drawCentreString(line2, 120, 122, 4);
+        tft_.drawCentreString(line3, 120, 151, 4);
+        tft_.drawCentreString(line4, 120, 180, 4);
+    } else if (line3[0]) {
+        // Три строки (было 121...181)
+        tft_.drawCentreString(line1, 120, 106, 4);
+        tft_.drawCentreString(line2, 120, 136, 4);
+        tft_.drawCentreString(line3, 120, 166, 4);
     } else if (line2[0]) {
-        // Две строки
-        tft_.drawCentreString(line1, 120, 135, 4);
-        tft_.drawCentreString(line2, 120, 172, 4);
+        // Две строки (было 135...167)
+        tft_.drawCentreString(line1, 120, 120, 4);
+        tft_.drawCentreString(line2, 120, 152, 4);
     } else {
-        // Одна строка — по центру
-        tft_.drawCentreString(line1, 120, 150, 4);
+        // Одна строка (было 150)
+        tft_.drawCentreString(line1, 120, 135, 4);
     }
 
     strncpy(drawn_alert_code_, code, sizeof(drawn_alert_code_) - 1);
     drawn_alert_code_[sizeof(drawn_alert_code_) - 1] = '\0';
     alert_visible_ = true;
+
 }
 
 void DisplayManager::clear_alert()
