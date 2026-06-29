@@ -31,13 +31,18 @@ public:
                         float oil_pressure, float boost,
                         float poll_time, float battery_voltage);
 
-    // Показать алерт-оверлей поверх заголовка экрана (код + описание)
+    // Показать алерт-оверлей поверх заголовка экрана
+    // display_name — строки через '\n': первая и третья UPPERCASE красные, вторая белая
     // Вызывать каждый кадр пока алерт активен — перерисовывает только при смене кода
-    void show_alert(const char *code, const char *description);
+    void show_alert(const char *code, const char *display_name);
 
     // Убрать алерт-оверлей, восстановить заголовок экрана
     // Вызывать один раз когда алерт перестал быть активным
     void clear_alert();
+
+    // Обновить индикатор алертов (красный кружок слева от «MONITORING»)
+    // has_alerts — true если в журнале есть хотя бы одна запись
+    void update_alert_indicator(bool has_alerts);
 
 private:
     TFT_eSPI tft_;
@@ -50,6 +55,9 @@ private:
 
     // true если в данный момент на экране показан алерт-оверлей
     bool alert_visible_;
+
+    // Текущее состояние индикатора алертов — для предотвращения лишних перерисовок
+    bool alert_indicator_;
 
     // Перерисовать все статические элементы экрана (заголовок, подписи, версия)
     // Используется при init() и при clear_alert() для полного восстановления UI

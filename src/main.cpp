@@ -18,7 +18,7 @@ static float can_value(float value, uint32_t ts)
 }
 
 // Версия прошивки — отображается внизу дисплея
-static constexpr const char *s_app_version = "2026.2.1";
+static constexpr const char *s_app_version = "2026.2.2";
 
 // Имя и пароль точки доступа ESP32
 // Подключитесь к этой сети, затем откройте http://192.168.4.1
@@ -272,10 +272,13 @@ void loop()
                                    poll_time, battery_voltage);
         }
 
+        // Индикатор журнала: красный кружок если есть хотя бы одна запись
+        display.update_alert_indicator(alert_manager.log_count() > 0);
+
         // Оверлей алерта: показываем на весь экран или убираем при снятии алерта
         if (alert_manager.has_active_alert()) {
             display.show_alert(alert_manager.active_code(),
-                               alert_manager.active_description());
+                               alert_manager.active_display_name());
         } else {
             display.clear_alert();
         }
