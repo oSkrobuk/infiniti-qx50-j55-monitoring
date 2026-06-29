@@ -624,26 +624,37 @@ let original = {};
 // Описания всех проверок — должны совпадать с CHECK_DEFS в AlertManager.cpp
 const CHECK_DEFS = [
   { code:'E01', name:'Engine Oil Temp High',
+    desc:'Температура масла двигателя превысила максимальный порог',
     params:[{label:'Макс. темп, °C', key:'param1', step:1}] },
   { code:'E02', name:'Engine Coolant Temp High',
+    desc:'Температура антифриза двигателя превысила максимальный порог',
     params:[{label:'Макс. темп, °C', key:'param1', step:1}] },
   { code:'E03', name:'Radiator Coolant Temp High',
+    desc:'Температура антифриза радиатора превысила максимальный порог',
     params:[{label:'Макс. темп, °C', key:'param1', step:1}] },
   { code:'E04', name:'CVT Oil Temp High',
+    desc:'Температура масла вариатора превысила максимальный порог',
     params:[{label:'Макс. темп, °C', key:'param1', step:1}] },
   { code:'E05', name:'Engine RPM Overspeed',
-    params:[{label:'Макс. обороты', key:'param1', step:50}] },
+    desc:'Обороты двигателя превысили максимально допустимый предел',
+    params:[{label:'Макс. об/мин', key:'param1', step:50}] },
   { code:'E06', name:'Battery Voltage Low',
+    desc:'Напряжение бортовой сети упало ниже минимального порога',
     params:[{label:'Мин. напряжение, В', key:'param1', step:0.1}] },
   { code:'E07', name:'Battery Voltage High',
+    desc:'Напряжение бортовой сети превысило максимальный порог',
     params:[{label:'Макс. напряжение, В', key:'param1', step:0.1}] },
   { code:'E08', name:'Oil Pressure Low',
+    desc:'Напряжение датчика давления масла ниже нормы для текущих оборотов',
     params:[
-      {label:'Порог оборотов', key:'param1', step:100},
+      {label:'Порог об/мин', key:'param1', step:100},
       {label:'Мин. В (низк. обор.)', key:'param2', step:0.05},
       {label:'Мин. В (выс. обор.)', key:'param3', step:0.05}
     ]
   },
+  { code:'E09', name:'Oil-Coolant Temp Delta High',
+    desc:'Разница температур масла и антифриза двигателя превысила допустимый порог',
+    params:[{label:'Макс. дельта, °C', key:'param1', step:1}] },
 ];
 
 function showToast(msg, type) {
@@ -845,7 +856,7 @@ function renderChecks(cfg) {
   grid.innerHTML = '';
 
   CHECK_DEFS.forEach(def => {
-    const checkCfg = cfg[def.code] || { enabled: true, param1: 0, param2: 0, param3: 0 };
+  const checkCfg = cfg[def.code] || { enabled: true, always_alert: false, param1: 0, param2: 0, param3: 0 };
 
     // Строим поля параметров
     let paramsHtml = '';
@@ -866,6 +877,7 @@ function renderChecks(cfg) {
     card.className = 'card';
     card.innerHTML = `
       <div class="card-title">&#9888; ${def.code} &mdash; ${def.name}</div>
+      <div style="font-size:0.75rem;color:var(--muted);margin-bottom:10px;line-height:1.4">${def.desc}</div>
       <div class="toggle-wrap">
         <label class="toggle">
           <input type="checkbox" id="check_${def.code}_enabled"
@@ -876,14 +888,32 @@ function renderChecks(cfg) {
           ${checkCfg.enabled ? 'Включено' : 'Выключено'}
         </span>
       </div>
+      <div class="toggle-wrap" style="margin-bottom:12px;">
+        <label class="toggle">
+          <input type="checkbox" id="check_${def.code}_always_alert"
+                 ${checkCfg.always_alert ? 'checked' : ''}>
+          <span class="slider"></span>
+        </label>
+        <span class="toggle-label" id="check_${def.code}_always_label"
+              style="color:var(--muted);font-size:0.75rem;">
+          ${checkCfg.always_alert ? 'Всегда звенеть' : 'Однократно (антидребезг)'}
+        </span>
+      </div>
       ${paramsHtml}`;
     grid.appendChild(card);
 
-    // Обновляем подпись при переключении тоггла
+    // Обновляем подпись при переключении тоггла «включено»
     const chk = document.getElementById(`check_${def.code}_enabled`);
     const lbl = document.getElementById(`check_${def.code}_label`);
     chk.addEventListener('change', () => {
       lbl.textContent = chk.checked ? 'Включено' : 'Выключено';
+    });
+
+    // Обновляем подпись при переключении тоггла «always_alert»
+    const chkA = document.getElementById(`check_${def.code}_always_alert`);
+    const lblA = document.getElementById(`check_${def.code}_always_label`);
+    chkA.addEventListener('change', () => {
+      lblA.textContent = chkA.checked ? 'Всегда звенеть' : 'Однократно (антидребезг)';
     });
   });
 }
@@ -891,9 +921,14 @@ function renderChecks(cfg) {
 function readChecks() {
   const result = {};
   CHECK_DEFS.forEach(def => {
-    const enabledEl = document.getElementById(`check_${def.code}_enabled`);
+    const enabledEl     = document.getElementById(`check_${def.code}_enabled`);
+    const alwaysEl      = document.getElementById(`check_${def.code}_always_alert`);
     if (!enabledEl) return;
-    const entry = { enabled: enabledEl.checked, param1: 0, param2: 0, param3: 0 };
+    const entry = {
+      enabled:      enabledEl.checked,
+      always_alert: alwaysEl ? alwaysEl.checked : false,
+      param1: 0, param2: 0, param3: 0
+    };
     def.params.forEach(p => {
       const el = document.getElementById(`check_${def.code}_${p.key}`);
       if (el) entry[p.key] = parseFloat(el.value) || 0;

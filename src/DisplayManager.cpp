@@ -3,7 +3,7 @@
 #include "ConfigManager.h"
 
 DisplayManager::DisplayManager()
-    : tft_(TFT_eSPI()), alert_visible_(false)
+    : tft_(TFT_eSPI()), alert_visible_(false), alert_indicator_(false)
 {
     version_buf_[0]      = '\0';
     drawn_alert_code_[0] = '\0';
@@ -92,7 +92,7 @@ void DisplayManager::init(const char *version)
 // ─────────────────────────────────────────────────────────────────────────────
 // Алерт-оверлей: занимает ВЕСЬ экран, метрики в это время не обновляются
 
-void DisplayManager::show_alert(const char *code, const char *description)
+void DisplayManager::show_alert(const char *code, const char *display_name)
 {
     // Перерисовываем только если код изменился
     if (alert_visible_ && strncmp(drawn_alert_code_, code, sizeof(drawn_alert_code_)) == 0) {
@@ -102,114 +102,59 @@ void DisplayManager::show_alert(const char *code, const char *description)
     // Очищаем весь экран
     tft_.fillScreen(TFT_BLACK);
 
-    // Код алерта — красный, font 4
-    tft_.setTextColor(0xF800, TFT_BLACK);
-    tft_.drawCentreString(code, 120, 20, 4);
+    // Код алерта — золотой, font 4, вверху
+    tft_.setTextColor(0xCE70, TFT_BLACK);
+    tft_.drawCentreString(code, 120, 15, 4);
 
-    // Разделитель
-    tft_.drawFastHLine(10, 58, 220, 0xF800);
+    // Разделительная линия
+    tft_.drawFastHLine(10, 52, 220, 0xCE70);
 
-    // Описание: разбиваем на строки по пробелу ближайшему к середине
-    char line1[33] = "";
-    char line2[33] = "";
-    char line3[33] = "";
-    char line4[33] = "";
-    char line5[33] = "";
-    int len = static_cast<int>(strlen(description));
+    // Разбиваем display_name по '\n' на три строки (максимум 3)
+    // Формат: "LINE1\nLine2\nLINE3"
+    char line1[32] = "";
+    char line2[32] = "";
+    char line3[32] = "";
 
-    if (len <= 19) {
-        // Короткий текст — всё в первую строку, остальные пустые
-        strncpy(line1, description, 32); line1[31] = '\0';
-        line2[0] = '\0'; line3[0] = '\0'; line4[0] = '\0'; line5[0] = '\0';
-    } else {
-        int lines_count = 5;
-        int chunk_size = len / lines_count;
-        int current_idx = 0;
-        char* target_lines[5] = {line1, line2, line3, line4, line5};
-
-        for (int l = 0; l < lines_count; ++l) {
-            if (current_idx >= len) {
-                target_lines[l][0] = '\0';
-                continue;
-            }
-
-            // Для последней строки просто забираем весь остаток
-            if (l == lines_count - 1) {
-                strncpy(target_lines[l], description + current_idx, 32);
-                target_lines[l][31] = '\0';
-                break;
-            }
-
-            // Ищем оптимальную точку разреза (ближайший пробел вперед)
-            int target_split = current_idx + chunk_size;
-            int split_point = -1;
-
-            for (int i = target_split; i < len; ++i) {
-                if (description[i] == ' ') {
-                    split_point = i;
-                    break;
-                }
-            }
-
-            // Если пробел впереди не найден, ищем его назад
-            if (split_point < 0) {
-                for (int i = target_split; i > current_idx; --i) {
-                    if (description[i] == ' ') {
-                        split_point = i;
-                        break;
-                    }
-                }
-            }
-
-            // Если пробелов вообще нет, режем жестко по размеру куска
-            if (split_point < 0) {
-                split_point = target_split;
-            }
-
-            int copy_len = split_point - current_idx;
-            if (copy_len > 31) copy_len = 31; // Защита от переполнения буфера в 32 байта
-
-            strncpy(target_lines[l], description + current_idx, copy_len);
-            target_lines[l][copy_len] = '\0';
-
-            // Шаг вперед. Если разбились по пробелу, пропускаем его (+1)
-            current_idx = split_point + (description[split_point] == ' ' ? 1 : 0);
+    const char *p = display_name;
+    char *targets[3] = {line1, line2, line3};
+    for (int i = 0; i < 3 && p && *p; ++i) {
+        const char *nl = strchr(p, '\n');
+        int copy_len;
+        if (nl) {
+            copy_len = static_cast<int>(nl - p);
+        } else {
+            copy_len = static_cast<int>(strlen(p));
         }
+        if (copy_len > 31) copy_len = 31;
+        // Используем memcpy вместо strncpy — длина уже точно известна и ограничена
+        memcpy(targets[i], p, static_cast<size_t>(copy_len));
+        targets[i][copy_len] = '\0';
+        p = nl ? nl + 1 : nullptr;
     }
 
+    // Позиционирование: область ниже разделителя y=52 до y=240 (188 px)
+    // Font 4 — высота ~26 px, отступ между строками 16 px
+    // Блок из 3 строк: 3*26 + 2*16 = 110 px
+    // Центр блока: 52 + 188/2 = 146, верх блока: 146 - 55 = 91
+    static constexpr int16_t LINE_H  = 26; // высота шрифта 4
+    static constexpr int16_t LINE_GAP = 16; // отступ между строками
+    static constexpr int16_t Y_START  = 91; // верх первой строки
+
+    // Строка 1: красная (тема — например "ENGINE OIL")
+    tft_.setTextColor(0xF800, TFT_BLACK);
+    tft_.drawCentreString(line1, 120, Y_START, 4);
+
+    // Строка 2: белая (параметр — например "Temperature")
     tft_.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft_.drawCentreString(line2, 120, Y_START + LINE_H + LINE_GAP, 4);
 
-    if (line5[0]) {
-        // Пять строк (было 95...207)
-        tft_.drawCentreString(line1, 120, 80, 4);
-        tft_.drawCentreString(line2, 120, 108, 4);
-        tft_.drawCentreString(line3, 120, 136, 4);
-        tft_.drawCentreString(line4, 120, 164, 4);
-        tft_.drawCentreString(line5, 120, 192, 4);
-    } else if (line4[0]) {
-        // Четыре строки (было 108...195)
-        tft_.drawCentreString(line1, 120, 93, 4);
-        tft_.drawCentreString(line2, 120, 122, 4);
-        tft_.drawCentreString(line3, 120, 151, 4);
-        tft_.drawCentreString(line4, 120, 180, 4);
-    } else if (line3[0]) {
-        // Три строки (было 121...181)
-        tft_.drawCentreString(line1, 120, 106, 4);
-        tft_.drawCentreString(line2, 120, 136, 4);
-        tft_.drawCentreString(line3, 120, 166, 4);
-    } else if (line2[0]) {
-        // Две строки (было 135...167)
-        tft_.drawCentreString(line1, 120, 120, 4);
-        tft_.drawCentreString(line2, 120, 152, 4);
-    } else {
-        // Одна строка (было 150)
-        tft_.drawCentreString(line1, 120, 135, 4);
-    }
+    // Строка 3: красная (состояние — например "HIGH")
+    tft_.setTextColor(0xF800, TFT_BLACK);
+    tft_.drawCentreString(line3, 120, Y_START + (LINE_H + LINE_GAP) * 2, 4);
 
     strncpy(drawn_alert_code_, code, sizeof(drawn_alert_code_) - 1);
     drawn_alert_code_[sizeof(drawn_alert_code_) - 1] = '\0';
     alert_visible_ = true;
-
 }
 
 void DisplayManager::clear_alert()
@@ -222,6 +167,27 @@ void DisplayManager::clear_alert()
 
     drawn_alert_code_[0] = '\0';
     alert_visible_       = false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+void DisplayManager::update_alert_indicator(bool has_alerts)
+{
+    // Перерисовываем только при изменении состояния
+    if (has_alerts == alert_indicator_) return;
+    alert_indicator_ = has_alerts;
+
+    // Кружок диаметром 8 px слева от строки «MONITORING» (y=28, font 4 ~ высота 26 px)
+    // Центр строки по y ≈ 28 + 13 = 41, x = 58 (чуть левее первой буквы «M»)
+    static constexpr int16_t IND_X = 58;
+    static constexpr int16_t IND_Y = 41;
+    static constexpr int16_t IND_R = 5;
+
+    if (has_alerts) {
+        tft_.fillCircle(IND_X, IND_Y, IND_R, 0xF800); // красный
+    } else {
+        tft_.fillCircle(IND_X, IND_Y, IND_R, TFT_BLACK); // стираем
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
