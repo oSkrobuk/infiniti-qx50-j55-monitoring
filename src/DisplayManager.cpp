@@ -167,6 +167,10 @@ void DisplayManager::clear_alert()
 
     drawn_alert_code_[0] = '\0';
     alert_visible_       = false;
+
+    // Экран полностью перерисован — сбрасываем кэш индикатора,
+    // чтобы update_alert_indicator() восстановил кружок в следующем кадре
+    alert_indicator_ = false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
