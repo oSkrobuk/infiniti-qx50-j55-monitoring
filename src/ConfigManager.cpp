@@ -180,11 +180,17 @@ bool ConfigManager::load_from_file()
     }
 
     // Загружаем params поверх дефолтов: неизвестные поля просто игнорируются
+    // Строки (wifi ssid/password) сохраняются как строки, числа — как float
     JsonObjectConst params = doc["params"].as<JsonObjectConst>();
     for (JsonPairConst section : params) {
         JsonObjectConst fields = section.value().as<JsonObjectConst>();
         for (JsonPairConst field : fields) {
-            data_[section.key()][field.key()] = field.value().as<float>();
+            JsonVariantConst v = field.value();
+            if (v.is<const char *>()) {
+                data_[section.key()][field.key()] = v.as<const char *>();
+            } else {
+                data_[section.key()][field.key()] = v.as<float>();
+            }
         }
     }
 
