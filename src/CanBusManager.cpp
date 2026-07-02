@@ -184,15 +184,7 @@ void can_parse_known_frames(const CanFrame &frame)
                     case 0x1201: { // Обороты двигателя (Engine RPM)
                         uint16_t raw_rpm = (static_cast<uint16_t>(d[4]) << 8) | d[5];
                         can_metrics.engine_rpm    = static_cast<float>(raw_rpm) * 12.5f;
-                        uint32_t now              = millis();
-                        can_metrics.engine_rpm_ts = now;
-                        // Вычисляем время ответа на запрос RPM в секундах
-                        if (can_metrics.rpm_request_ts != 0) {
-                            uint32_t elapsed_ms           = now - can_metrics.rpm_request_ts;
-                            can_metrics.rpm_poll_time     = static_cast<float>(elapsed_ms) / 1000.0f;
-                            can_metrics.rpm_poll_time_ts  = now;
-                            can_metrics.rpm_request_ts    = 0; // сброс после вычисления
-                        }
+                        can_metrics.engine_rpm_ts = millis();
                         break;
                     }
                     case 0x110E: { // Датчик усиления турбины

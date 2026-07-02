@@ -79,7 +79,7 @@ void DisplayManager::draw_header_()
 void DisplayManager::init(const char *version)
 {
     tft_.init();
-    tft_.setRotation(0);
+    tft_.setRotation(90);
     tft_.fillScreen(TFT_BLACK);
 
     if (version) {

@@ -66,6 +66,10 @@ static void build_defaults(JsonDocument &doc)
     // stale_ms         — через сколько мс без обновления значение считается устаревшим
     doc["system"]["poll_interval_ms"] = 30.0f;
     doc["system"]["stale_ms"]         = 1000.0f;
+
+    // Настройки WiFi точки доступа (строки, не участвуют в числовом хеше)
+    doc["wifi"]["ssid"]     = "QX50Monitoring";
+    doc["wifi"]["password"] = "infiniti";
 }
 
 // ── Вспомогательные функции ──────────────────────────────────────────────────
@@ -125,6 +129,13 @@ void ConfigManager::apply_defaults()
 float ConfigManager::get(const char *section, const char *field) const
 {
     return data_[section][field] | 0.0f;
+}
+
+String ConfigManager::get_str(const char *section, const char *field) const
+{
+    JsonVariantConst v = data_[section][field];
+    if (v.is<const char *>()) return String(v.as<const char *>());
+    return String("");
 }
 
 bool ConfigManager::init()
@@ -230,11 +241,17 @@ bool ConfigManager::from_json(const String &json)
     }
 
     // Обновляем только те поля, которые пришли; остальные остаются как есть
+    // Строки (wifi ssid/password) сохраняются как строки, числа — как float
     JsonObjectConst root = doc.as<JsonObjectConst>();
     for (JsonPairConst section : root) {
         JsonObjectConst fields = section.value().as<JsonObjectConst>();
         for (JsonPairConst field : fields) {
-            data_[section.key()][field.key()] = field.value().as<float>();
+            JsonVariantConst v = field.value();
+            if (v.is<const char *>()) {
+                data_[section.key()][field.key()] = v.as<const char *>();
+            } else {
+                data_[section.key()][field.key()] = v.as<float>();
+            }
         }
     }
 
