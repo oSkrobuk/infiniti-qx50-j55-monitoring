@@ -430,7 +430,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
           </div>
           <div class="field">
             <label>Пароль</label>
-            <input type="password" id="wifi_password" name="wifi_password" maxlength="63">
+            <input type="text" id="wifi_password" name="wifi_password" maxlength="63" autocomplete="off">
           </div>
         </div>
         <p class="wifi-note">&#9888; После сохранения устройство перезагрузится. Переподключитесь к новой сети.</p>
@@ -453,6 +453,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     </div>
 
     <div class="actions">
+      <button type="button" class="btn-default" onclick="resetAllSystem()">&#8635; Сбросить все</button>
       <button type="submit" class="btn-save" id="btnSaveWifi">&#10003; Сохранить WiFi &amp; систему</button>
     </div>
     </form>
@@ -502,6 +503,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
       <!-- Заполняется JavaScript -->
     </div>
     <div class="actions">
+      <button type="button" class="btn-default" onclick="resetAllChecks()">&#8635; Сбросить все</button>
       <button type="button" class="btn-save" id="btnSaveChecks">&#10003; Сохранить проверки</button>
     </div>
   </div>
@@ -687,7 +689,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     </div>
 
     <div class="actions">
-      <button type="button" class="btn-default" id="btnDefault">&#8635; По умолчанию</button>
+      <button type="button" class="btn-default" id="btnDefault">&#8635; Сбросить все</button>
       <button type="submit" class="btn-save" id="btnSave">&#10003; Сохранить метрики</button>
     </div>
     </form>
@@ -1265,6 +1267,17 @@ function resetCardFields(section) {
     const el = document.querySelector(`[name="${section}_${key}"]`);
     if (el) el.value = val;
   });
+}
+
+// Сбрасывает все поля раздела «Системные параметры» к дефолтам
+function resetAllSystem() {
+  resetWifiCard();
+  resetCardFields('system');
+}
+
+// Сбрасывает все карточки проверок к дефолтам
+function resetAllChecks() {
+  Object.keys(CHECK_DEFAULTS).forEach(code => resetCheckCard(code));
 }
 
 // Сбрасывает WiFi-карточку к дефолтам
