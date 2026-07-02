@@ -13,7 +13,7 @@ AlertManager alert_manager;
 // Статические описания всех проверок (не изменяются в рантайме)
 // Поля: code, name, display_name, description,
 //        param1_label, param2_label, param3_label,
-//        param1_def, param2_def, param3_def, always_alert_def
+//        param1_def, param2_def, param3_def
 const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
     {
         "E01",
@@ -21,7 +21,7 @@ const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
         "ENGINE OIL\nTemperature\nHIGH",
         "Температура масла двигателя превысила максимальный порог",
         "Макс. темп, C", nullptr, nullptr,
-        120.0f, 0.0f, 0.0f, false
+        120.0f, 0.0f, 0.0f
     },
     {
         "E02",
@@ -29,7 +29,7 @@ const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
         "ENGINE COOLANT\nTemperature\nHIGH",
         "Температура антифриза двигателя превысила максимальный порог",
         "Макс. темп, C", nullptr, nullptr,
-        103.0f, 0.0f, 0.0f, false
+        103.0f, 0.0f, 0.0f
     },
     {
         "E03",
@@ -37,7 +37,7 @@ const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
         "RADIATOR\nTemperature\nHIGH",
         "Температура антифриза радиатора превысила максимальный порог",
         "Макс. темп, C", nullptr, nullptr,
-        95.0f, 0.0f, 0.0f, false
+        95.0f, 0.0f, 0.0f
     },
     {
         "E04",
@@ -45,7 +45,7 @@ const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
         "CVT OIL\nTemperature\nHIGH",
         "Температура масла вариатора превысила максимальный порог",
         "Макс. темп, C", nullptr, nullptr,
-        110.0f, 0.0f, 0.0f, false
+        110.0f, 0.0f, 0.0f
     },
     {
         "E05",
@@ -53,7 +53,7 @@ const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
         "ENGINE\nRPM\nOVERSPEED",
         "Обороты двигателя превысили максимально допустимый предел",
         "Макс. об/мин", nullptr, nullptr,
-        6500.0f, 0.0f, 0.0f, false
+        6500.0f, 0.0f, 0.0f
     },
     {
         "E06",
@@ -61,7 +61,7 @@ const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
         "BATTERY\nVoltage\nLOW",
         "Напряжение бортовой сети упало ниже минимального порога",
         "Мин. напряж, В", nullptr, nullptr,
-        11.5f, 0.0f, 0.0f, false
+        11.5f, 0.0f, 0.0f
     },
     {
         "E07",
@@ -69,7 +69,7 @@ const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
         "BATTERY\nVoltage\nHIGH",
         "Напряжение бортовой сети превысило максимальный порог",
         "Макс. напряж, В", nullptr, nullptr,
-        15.0f, 0.0f, 0.0f, false
+        15.0f, 0.0f, 0.0f
     },
     {
         "E08",
@@ -77,7 +77,7 @@ const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
         "OIL\nPressure\nLOW",
         "Напряжение датчика давления масла ниже нормы для текущих оборотов",
         "Порог об/мин", "Мин. В (низк. об)", "Мин. В (выс. об)",
-        3000.0f, 1.0f, 1.5f, false
+        3000.0f, 1.0f, 1.5f
     },
     {
         "E09",
@@ -85,7 +85,7 @@ const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
         "OIL vs COOLANT\nDelta\nHIGH",
         "Разница температур масла и антифриза двигателя превысила допустимый порог",
         "Макс. дельта, C", nullptr, nullptr,
-        15.0f, 0.0f, 0.0f, false
+        15.0f, 0.0f, 0.0f
     },
 };
 
@@ -99,17 +99,17 @@ AlertManager::AlertManager()
     active_dname_[0] = '\0';
     apply_check_defaults_();
     memset(last_trigger_ms_, 0, sizeof(last_trigger_ms_));
+    memset(shown_once_,      0, sizeof(shown_once_));
     memset(log_, 0, sizeof(log_));
 }
 
 void AlertManager::apply_check_defaults_()
 {
     for (uint8_t i = 0; i < CHECK_COUNT; ++i) {
-        checks_[i].enabled      = true;
-        checks_[i].always_alert = CHECK_DEFS[i].always_alert_def;
-        checks_[i].param1       = CHECK_DEFS[i].param1_def;
-        checks_[i].param2       = CHECK_DEFS[i].param2_def;
-        checks_[i].param3       = CHECK_DEFS[i].param3_def;
+        checks_[i].enabled = true;
+        checks_[i].param1  = CHECK_DEFS[i].param1_def;
+        checks_[i].param2  = CHECK_DEFS[i].param2_def;
+        checks_[i].param3  = CHECK_DEFS[i].param3_def;
     }
 }
 
@@ -180,16 +180,19 @@ void AlertManager::update(const CanMetrics &m)
 void AlertManager::try_trigger_(uint8_t idx, bool triggered)
 {
     if (!triggered) return;
-    if (!checks_[idx].enabled) return;
 
     uint32_t now = millis();
 
-    // Антидребезг: не повторять сигнал раньше ALERT_RETRIGGER_MS мс
-    // Если always_alert == true — антидребезг не применяется
-    if (!checks_[idx].always_alert &&
-        last_trigger_ms_[idx] != 0 &&
-        (now - last_trigger_ms_[idx]) < ALERT_RETRIGGER_MS) {
-        return;
+    if (checks_[idx].enabled) {
+        // Проверка включена: антидребезг — не повторять чаще ALERT_RETRIGGER_MS
+        if (last_trigger_ms_[idx] != 0 &&
+            (now - last_trigger_ms_[idx]) < ALERT_RETRIGGER_MS) {
+            return;
+        }
+    } else {
+        // Проверка отключена: показываем 1 раз за сессию МК (shown_once_ сбрасывается только при перезагрузке)
+        if (shown_once_[idx]) return;
+        shown_once_[idx] = true;
     }
 
     last_trigger_ms_[idx] = now;
@@ -292,12 +295,11 @@ String AlertManager::checks_to_json() const
     JsonDocument doc;
 
     for (uint8_t i = 0; i < CHECK_COUNT; ++i) {
-        const char *code              = CHECK_DEFS[i].code;
-        doc[code]["enabled"]          = checks_[i].enabled;
-        doc[code]["always_alert"]     = checks_[i].always_alert;
-        doc[code]["param1"]           = checks_[i].param1;
-        doc[code]["param2"]           = checks_[i].param2;
-        doc[code]["param3"]           = checks_[i].param3;
+        const char *code     = CHECK_DEFS[i].code;
+        doc[code]["enabled"] = checks_[i].enabled;
+        doc[code]["param1"]  = checks_[i].param1;
+        doc[code]["param2"]  = checks_[i].param2;
+        doc[code]["param3"]  = checks_[i].param3;
     }
 
     String out;
@@ -318,21 +320,10 @@ bool AlertManager::checks_from_json(const String &json)
         const char *code = CHECK_DEFS[i].code;
         if (doc[code].is<JsonObject>()) {
             JsonObjectConst obj = doc[code].as<JsonObjectConst>();
-            if (obj["enabled"].is<bool>()) {
-                checks_[i].enabled = obj["enabled"].as<bool>();
-            }
-            if (obj["always_alert"].is<bool>()) {
-                checks_[i].always_alert = obj["always_alert"].as<bool>();
-            }
-            if (obj["param1"].is<float>()) {
-                checks_[i].param1 = obj["param1"].as<float>();
-            }
-            if (obj["param2"].is<float>()) {
-                checks_[i].param2 = obj["param2"].as<float>();
-            }
-            if (obj["param3"].is<float>()) {
-                checks_[i].param3 = obj["param3"].as<float>();
-            }
+            if (obj["enabled"].is<bool>()) checks_[i].enabled = obj["enabled"].as<bool>();
+            if (obj["param1"].is<float>()) checks_[i].param1  = obj["param1"].as<float>();
+            if (obj["param2"].is<float>()) checks_[i].param2  = obj["param2"].as<float>();
+            if (obj["param3"].is<float>()) checks_[i].param3  = obj["param3"].as<float>();
         }
     }
 
@@ -368,11 +359,10 @@ bool AlertManager::load_checks_()
         const char *code = CHECK_DEFS[i].code;
         if (doc[code].is<JsonObject>()) {
             JsonObjectConst obj = doc[code].as<JsonObjectConst>();
-            if (obj["enabled"].is<bool>())       checks_[i].enabled      = obj["enabled"].as<bool>();
-            if (obj["always_alert"].is<bool>())  checks_[i].always_alert = obj["always_alert"].as<bool>();
-            if (obj["param1"].is<float>())       checks_[i].param1       = obj["param1"].as<float>();
-            if (obj["param2"].is<float>())       checks_[i].param2       = obj["param2"].as<float>();
-            if (obj["param3"].is<float>())       checks_[i].param3       = obj["param3"].as<float>();
+            if (obj["enabled"].is<bool>()) checks_[i].enabled = obj["enabled"].as<bool>();
+            if (obj["param1"].is<float>()) checks_[i].param1  = obj["param1"].as<float>();
+            if (obj["param2"].is<float>()) checks_[i].param2  = obj["param2"].as<float>();
+            if (obj["param3"].is<float>()) checks_[i].param3  = obj["param3"].as<float>();
         }
     }
 
@@ -392,12 +382,11 @@ bool AlertManager::save_checks_()
 
     JsonDocument doc;
     for (uint8_t i = 0; i < CHECK_COUNT; ++i) {
-        const char *code              = CHECK_DEFS[i].code;
-        doc[code]["enabled"]          = checks_[i].enabled;
-        doc[code]["always_alert"]     = checks_[i].always_alert;
-        doc[code]["param1"]           = checks_[i].param1;
-        doc[code]["param2"]           = checks_[i].param2;
-        doc[code]["param3"]           = checks_[i].param3;
+        const char *code     = CHECK_DEFS[i].code;
+        doc[code]["enabled"] = checks_[i].enabled;
+        doc[code]["param1"]  = checks_[i].param1;
+        doc[code]["param2"]  = checks_[i].param2;
+        doc[code]["param3"]  = checks_[i].param3;
     }
 
     if (serializeJson(doc, f) == 0) {
