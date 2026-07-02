@@ -1050,8 +1050,8 @@ function renderChecks(cfg) {
           <span class="slider"></span>
         </label>
         <span class="toggle-label" id="check_${def.code}_label">
-          ${checkCfg.enabled ? 'Включено (с антидребезгом)' : 'Выключено (1 раз за сессию)'}
-        </span>
+            ${checkCfg.enabled ? 'При постоянной ошибки повтор раз в 15 сек' : 'Однократно за сессию'}
+          </span>
       </div>
       ${paramsHtml}`;
     grid.appendChild(card);
@@ -1059,7 +1059,7 @@ function renderChecks(cfg) {
     const chk = document.getElementById(`check_${def.code}_enabled`);
     const lbl = document.getElementById(`check_${def.code}_label`);
     chk.addEventListener('change', () => {
-      lbl.textContent = chk.checked ? 'Включено (с антидребезгом)' : 'Выключено (1 раз за сессию)';
+      lbl.textContent = chk.checked ? 'При постоянной ошибки повтор раз в 15 сек' : 'Однократно за сессию';
     });
   });
 }
@@ -1240,21 +1240,21 @@ const CARD_DEFAULTS = {
   rpm:          { green_start: 1000, green_end: 3500, red_start: 4500 },
   oil_pressure: { rpm_threshold: 3000, min_low: 1.45, min_high: 3.1 },
   boost:        { blue_max: 1.3, green_min: 1.58 },
-  battery:      { red_low: 11.7, green_min: 12.5, green_max: 14.6, red_high: 14.9 },
+  battery:      { red_low: 11.5, green_min: 12.0, green_max: 14.6, red_high: 14.9 },
   poll_time:    { green_max: 0.2, red_min: 0.5 },
 };
 
 // Дефолты проверок совпадают с CHECK_DEFS в AlertManager.cpp
 const CHECK_DEFAULTS = {
-  E01: { enabled: true, param1: 120,  param2: 0,   param3: 0   },
-  E02: { enabled: true, param1: 103,  param2: 0,   param3: 0   },
-  E03: { enabled: true, param1: 95,   param2: 0,   param3: 0   },
-  E04: { enabled: true, param1: 110,  param2: 0,   param3: 0   },
+  E01: { enabled: true, param1: 98,   param2: 0,   param3: 0   },
+  E02: { enabled: true, param1: 96,   param2: 0,   param3: 0   },
+  E03: { enabled: true, param1: 90,   param2: 0,   param3: 0   },
+  E04: { enabled: true, param1: 100,  param2: 0,   param3: 0   },
   E05: { enabled: true, param1: 6500, param2: 0,   param3: 0   },
   E06: { enabled: true, param1: 11.5, param2: 0,   param3: 0   },
   E07: { enabled: true, param1: 15,   param2: 0,   param3: 0   },
-  E08: { enabled: true, param1: 3000, param2: 1.0, param3: 1.5 },
-  E09: { enabled: true, param1: 15,   param2: 0,   param3: 0   },
+  E08: { enabled: true, param1: 3000, param2: 1.4, param3: 2.9 },
+  E09: { enabled: true, param1: 14,   param2: 0,   param3: 0   },
 };
 
 // Сбрасывает поля числовой карточки к дефолтам по имени секции
@@ -1284,7 +1284,7 @@ function resetCheckCard(code) {
   const labelEl   = document.getElementById(`check_${code}_label`);
   if (enabledEl) {
     enabledEl.checked = d.enabled;
-    if (labelEl) labelEl.textContent = d.enabled ? 'Включено (с антидребезгом)' : 'Выключено (1 раз за сессию)';
+    if (labelEl) labelEl.textContent = d.enabled ? 'При постоянной ошибки повтор раз в 15 сек' : 'Однократно за сессию';
   }
   ['param1', 'param2', 'param3'].forEach(p => {
     const el = document.getElementById(`check_${code}_${p}`);

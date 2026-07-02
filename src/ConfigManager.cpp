@@ -51,8 +51,8 @@ static void build_defaults(JsonDocument &doc)
     // Бортовая сеть: цветовые пороги напряжения (Вольты)
     // < red_low  → красный; red_low..green_min → жёлтый; green_min..green_max → зелёный
     // green_max..red_high → жёлтый; > red_high → красный
-    doc["battery"]["red_low"]   = 11.7f;
-    doc["battery"]["green_min"] = 12.5f;
+    doc["battery"]["red_low"]   = 11.5f;
+    doc["battery"]["green_min"] = 12.0f;
     doc["battery"]["green_max"] = 14.6f;
     doc["battery"]["red_high"]  = 14.9f;
 

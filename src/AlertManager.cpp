@@ -21,7 +21,7 @@ const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
         "ENGINE OIL\nTemperature\nHIGH",
         "Температура масла двигателя превысила максимальный порог",
         "Макс. темп, C", nullptr, nullptr,
-        120.0f, 0.0f, 0.0f
+        98.0f, 0.0f, 0.0f
     },
     {
         "E02",
@@ -29,7 +29,7 @@ const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
         "ENGINE COOLANT\nTemperature\nHIGH",
         "Температура антифриза двигателя превысила максимальный порог",
         "Макс. темп, C", nullptr, nullptr,
-        103.0f, 0.0f, 0.0f
+        96.0f, 0.0f, 0.0f
     },
     {
         "E03",
@@ -37,7 +37,7 @@ const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
         "RADIATOR\nTemperature\nHIGH",
         "Температура антифриза радиатора превысила максимальный порог",
         "Макс. темп, C", nullptr, nullptr,
-        95.0f, 0.0f, 0.0f
+        90.0f, 0.0f, 0.0f
     },
     {
         "E04",
@@ -45,7 +45,7 @@ const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
         "CVT OIL\nTemperature\nHIGH",
         "Температура масла вариатора превысила максимальный порог",
         "Макс. темп, C", nullptr, nullptr,
-        110.0f, 0.0f, 0.0f
+        100.0f, 0.0f, 0.0f
     },
     {
         "E05",
@@ -77,7 +77,7 @@ const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
         "OIL\nPressure\nLOW",
         "Напряжение датчика давления масла ниже нормы для текущих оборотов",
         "Порог об/мин", "Мин. В (низк. об)", "Мин. В (выс. об)",
-        3000.0f, 1.0f, 1.5f
+        3000.0f, 1.4f, 2.9f
     },
     {
         "E09",
@@ -85,7 +85,7 @@ const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
         "OIL vs COOLANT\nDelta\nHIGH",
         "Разница температур масла и антифриза двигателя превысила допустимый порог",
         "Макс. дельта, C", nullptr, nullptr,
-        15.0f, 0.0f, 0.0f
+        14.0f, 0.0f, 0.0f
     },
 };
 
