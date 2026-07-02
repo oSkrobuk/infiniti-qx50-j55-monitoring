@@ -369,6 +369,29 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     flex: 1 1 80px;
     min-width: 70px;
   }
+  /* ── Card default button ────────────────────────────── */
+  .card-hdr {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .card-hdr .card-title { margin-bottom: 0; }
+  .btn-card-default {
+    flex: 0 0 auto;
+    min-width: 0;
+    padding: 4px 10px;
+    font-size: 0.7rem;
+    border-radius: 6px;
+    background: var(--border);
+    color: var(--muted);
+    border: 1px solid #444;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+  .btn-card-default:hover { opacity: 0.8; }
   footer {
     text-align: center;
     color: var(--muted);
@@ -399,7 +422,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     <form id="wifiForm">
     <div class="grid">
       <div class="card">
-        <div class="card-title">&#128267; WiFi &mdash; Точка доступа</div>
+        <div class="card-hdr"><div class="card-title">&#128267; WiFi &mdash; Точка доступа</div><button type="button" class="btn-card-default" onclick="resetWifiCard()">&#8635; Сброс</button></div>
         <div class="row2">
           <div class="field">
             <label>Имя сети (SSID)</label>
@@ -415,7 +438,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 
       <!-- Параметры CAN-опроса -->
       <div class="card">
-        <div class="card-title">&#9201; CAN &mdash; Параметры опроса</div>
+        <div class="card-hdr"><div class="card-title">&#9201; CAN &mdash; Параметры опроса</div><button type="button" class="btn-card-default" onclick="resetCardFields('system')">&#8635; Сброс</button></div>
         <div class="row2">
           <div class="field">
             <label>Интервал опроса, мс</label>
@@ -504,7 +527,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     <div class="grid">
 
       <div class="card">
-        <div class="card-title">&#128167; E-OIL &mdash; Моторное масло</div>
+        <div class="card-hdr"><div class="card-title">&#128167; E-OIL &mdash; Моторное масло</div><button type="button" class="btn-card-default" onclick="resetCardFields('oil')">&#8635; Сброс</button></div>
         <div class="row3">
           <div class="field">
             <label>Мин, °C</label>
@@ -522,7 +545,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
       </div>
 
       <div class="card">
-        <div class="card-title">&#10052; E-COOL &mdash; Антифриз ДВС</div>
+        <div class="card-hdr"><div class="card-title">&#10052; E-COOL &mdash; Антифриз ДВС</div><button type="button" class="btn-card-default" onclick="resetCardFields('coolant')">&#8635; Сброс</button></div>
         <div class="row3">
           <div class="field">
             <label>Мин, °C</label>
@@ -540,7 +563,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
       </div>
 
       <div class="card">
-        <div class="card-title">&#127777; R-COOL &mdash; Антифриз радиатора</div>
+        <div class="card-hdr"><div class="card-title">&#127777; R-COOL &mdash; Антифриз радиатора</div><button type="button" class="btn-card-default" onclick="resetCardFields('radiator')">&#8635; Сброс</button></div>
         <div class="row3">
           <div class="field">
             <label>Мин, °C</label>
@@ -558,7 +581,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
       </div>
 
       <div class="card">
-        <div class="card-title">&#9881; T-OIL &mdash; Масло АКПП</div>
+        <div class="card-hdr"><div class="card-title">&#9881; T-OIL &mdash; Масло АКПП</div><button type="button" class="btn-card-default" onclick="resetCardFields('transmission')">&#8635; Сброс</button></div>
         <div class="row3">
           <div class="field">
             <label>Мин, °C</label>
@@ -576,7 +599,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
       </div>
 
       <div class="card">
-        <div class="card-title">&#9889; RPM &mdash; Обороты двигателя</div>
+        <div class="card-hdr"><div class="card-title">&#9889; RPM &mdash; Обороты двигателя</div><button type="button" class="btn-card-default" onclick="resetCardFields('rpm')">&#8635; Сброс</button></div>
         <div class="row3">
           <div class="field">
             <label>Нач. зелёной</label>
@@ -594,7 +617,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
       </div>
 
       <div class="card">
-        <div class="card-title">&#128167; EOP &mdash; Давление масла</div>
+        <div class="card-hdr"><div class="card-title">&#128167; EOP &mdash; Давление масла</div><button type="button" class="btn-card-default" onclick="resetCardFields('oil_pressure')">&#8635; Сброс</button></div>
         <div class="row3">
           <div class="field">
             <label>Порог RPM</label>
@@ -612,7 +635,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
       </div>
 
       <div class="card">
-        <div class="card-title">&#128168; BOOST &mdash; Давление наддува</div>
+        <div class="card-hdr"><div class="card-title">&#128168; BOOST &mdash; Давление наддува</div><button type="button" class="btn-card-default" onclick="resetCardFields('boost')">&#8635; Сброс</button></div>
         <div class="row2">
           <div class="field">
             <label>Синий до, В</label>
@@ -626,7 +649,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
       </div>
 
       <div class="card">
-        <div class="card-title">&#128267; BATTERY &mdash; Бортовая сеть</div>
+        <div class="card-hdr"><div class="card-title">&#128267; BATTERY &mdash; Бортовая сеть</div><button type="button" class="btn-card-default" onclick="resetCardFields('battery')">&#8635; Сброс</button></div>
         <div class="row4">
           <div class="field">
             <label>Красный &lt;, В</label>
@@ -648,7 +671,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
       </div>
 
       <div class="card">
-        <div class="card-title">&#9201; RPM-POLL &mdash; Время опроса RPM</div>
+        <div class="card-hdr"><div class="card-title">&#9201; RPM-POLL &mdash; Время опроса RPM</div><button type="button" class="btn-card-default" onclick="resetCardFields('poll_time')">&#8635; Сброс</button></div>
         <div class="row2">
           <div class="field">
             <label>Зелёный до, с</label>
@@ -1018,7 +1041,7 @@ function renderChecks(cfg) {
     const card = document.createElement('div');
     card.className = 'card';
     card.innerHTML = `
-      <div class="card-title">&#9888; ${def.code} &mdash; ${def.name}</div>
+      <div class="card-hdr"><div class="card-title">&#9888; ${def.code} &mdash; ${def.name}</div><button type="button" class="btn-card-default" onclick="resetCheckCard('${def.code}')">&#8635; Сброс</button></div>
       <div style="font-size:0.75rem;color:var(--muted);margin-bottom:10px;line-height:1.4">${def.desc}</div>
       <div class="toggle-wrap" style="margin-bottom:12px;">
         <label class="toggle">
@@ -1203,6 +1226,71 @@ btnOta.addEventListener('click', () => {
 
   xhr.send(formData);
 });
+
+// ── Сброс карточек к значениям по умолчанию ───────────────────────────────
+
+// Значения по умолчанию совпадают с build_defaults() в ConfigManager.cpp
+const CARD_DEFAULTS = {
+  wifi:         { ssid: 'QX50Monitoring', password: 'infiniti' },
+  system:       { poll_interval_ms: 30, stale_ms: 1000 },
+  oil:          { min: 50, target: 90, max: 98 },
+  coolant:      { min: 50, target: 90, max: 93 },
+  radiator:     { min: 0,  target: 50, max: 90 },
+  transmission: { min: 50, target: 80, max: 98 },
+  rpm:          { green_start: 1000, green_end: 3500, red_start: 4500 },
+  oil_pressure: { rpm_threshold: 3000, min_low: 1.45, min_high: 3.1 },
+  boost:        { blue_max: 1.3, green_min: 1.58 },
+  battery:      { red_low: 11.7, green_min: 12.5, green_max: 14.6, red_high: 14.9 },
+  poll_time:    { green_max: 0.2, red_min: 0.5 },
+};
+
+// Дефолты проверок совпадают с CHECK_DEFS в AlertManager.cpp
+const CHECK_DEFAULTS = {
+  E01: { enabled: true, param1: 120,  param2: 0,   param3: 0   },
+  E02: { enabled: true, param1: 103,  param2: 0,   param3: 0   },
+  E03: { enabled: true, param1: 95,   param2: 0,   param3: 0   },
+  E04: { enabled: true, param1: 110,  param2: 0,   param3: 0   },
+  E05: { enabled: true, param1: 6500, param2: 0,   param3: 0   },
+  E06: { enabled: true, param1: 11.5, param2: 0,   param3: 0   },
+  E07: { enabled: true, param1: 15,   param2: 0,   param3: 0   },
+  E08: { enabled: true, param1: 3000, param2: 1.0, param3: 1.5 },
+  E09: { enabled: true, param1: 15,   param2: 0,   param3: 0   },
+};
+
+// Сбрасывает поля числовой карточки к дефолтам по имени секции
+function resetCardFields(section) {
+  const d = CARD_DEFAULTS[section];
+  if (!d) return;
+  Object.entries(d).forEach(([key, val]) => {
+    const el = document.querySelector(`[name="${section}_${key}"]`);
+    if (el) el.value = val;
+  });
+}
+
+// Сбрасывает WiFi-карточку к дефолтам
+function resetWifiCard() {
+  const d = CARD_DEFAULTS.wifi;
+  const ssidEl = document.getElementById('wifi_ssid');
+  const passEl = document.getElementById('wifi_password');
+  if (ssidEl) ssidEl.value = d.ssid;
+  if (passEl) passEl.value = d.password;
+}
+
+// Сбрасывает карточку проверки к дефолтам
+function resetCheckCard(code) {
+  const d = CHECK_DEFAULTS[code];
+  if (!d) return;
+  const enabledEl = document.getElementById(`check_${code}_enabled`);
+  const labelEl   = document.getElementById(`check_${code}_label`);
+  if (enabledEl) {
+    enabledEl.checked = d.enabled;
+    if (labelEl) labelEl.textContent = d.enabled ? 'Включено (с антидребезгом)' : 'Выключено (1 раз за сессию)';
+  }
+  ['param1', 'param2', 'param3'].forEach(p => {
+    const el = document.getElementById(`check_${code}_${p}`);
+    if (el && d[p] !== undefined) el.value = d[p];
+  });
+}
 
 // ── Init ───────────────────────────────────────────────────────────────────
 
