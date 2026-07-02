@@ -494,8 +494,13 @@ ESP32 создаёт собственную точку доступа (Access Po
 
 Прошивка через PlatformIO:
 ```
+pio run -e esp32 --target upload
+```
 
----
+Готовый бинарник для OTA или Flash Tool:
+```
+.pio/build/esp32/firmware.bin
+```
 
 ## 12. Лицензия
 
@@ -509,10 +514,3 @@ ESP32 создаёт собственную точку доступа (Access Po
 | ❌ Коммерческое использование | Запрещено (продажа ПО, встройка в продаваемое железо, коммерческие услуги) |
 
 Полный текст лицензии — в файле [`LICENSE`](LICENSE).
-pio run -e esp32 --target upload
-```
-
-Готовый бинарник для OTA или Flash Tool:
-```
-.pio/build/esp32/firmware.bin
-```
