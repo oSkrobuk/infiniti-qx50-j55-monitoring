@@ -29,26 +29,24 @@ struct AlertLogEntry {
 
 // Структура конфигурации одной проверки (хранится в /checks.json)
 struct CheckConfig {
-    bool  enabled;       // Включена ли проверка
-    bool  always_alert;  // Срабатывать при каждом триггере (без антидребезга)
-    float param1;        // Первый порог (смысл зависит от проверки)
-    float param2;        // Второй порог (0 если не используется)
-    float param3;        // Третий порог (0 если не используется)
+    bool  enabled; // Включена ли проверка
+    float param1;  // Первый порог (смысл зависит от проверки)
+    float param2;  // Второй порог (0 если не используется)
+    float param3;  // Третий порог (0 если не используется)
 };
 
 // Статическое описание одной проверки (не изменяется при работе)
 struct CheckDef {
-    const char *code;              // Код вида "E01"
-    const char *name;              // Краткое имя на английском
-    const char *display_name;      // Форматированное имя для дисплея (строки через '\n')
-    const char *description;       // Расшифровка на русском (для Web UI и журнала)
-    const char *param1_label;      // Метка первого порога (nullptr если не используется)
-    const char *param2_label;      // Метка второго порога (nullptr если не используется)
-    const char *param3_label;      // Метка третьего порога (nullptr если не используется)
-    float       param1_def;        // Значение по умолчанию для param1
-    float       param2_def;        // Значение по умолчанию для param2
-    float       param3_def;        // Значение по умолчанию для param3
-    bool        always_alert_def;  // Значение по умолчанию для always_alert
+    const char *code;          // Код вида "E01"
+    const char *name;          // Краткое имя на английском
+    const char *display_name;  // Форматированное имя для дисплея (строки через '\n')
+    const char *description;   // Расшифровка на русском (для Web UI и журнала)
+    const char *param1_label;  // Метка первого порога (nullptr если не используется)
+    const char *param2_label;  // Метка второго порога (nullptr если не используется)
+    const char *param3_label;  // Метка третьего порога (nullptr если не используется)
+    float       param1_def;    // Значение по умолчанию для param1
+    float       param2_def;    // Значение по умолчанию для param2
+    float       param3_def;    // Значение по умолчанию для param3
 };
 
 class AlertManager {
@@ -93,16 +91,18 @@ public:
     static constexpr uint8_t CHECK_COUNT = 9;
 
 private:
-    CheckConfig   checks_[CHECK_COUNT];   // Конфиг каждой проверки
-    AlertLogEntry log_[ALERT_LOG_MAX];    // Журнал уникальных алертов
-    uint8_t       log_count_;             // Текущее число записей в журнале
+    CheckConfig   checks_[CHECK_COUNT];     // Конфиг каждой проверки
+    AlertLogEntry log_[ALERT_LOG_MAX];      // Журнал уникальных алертов
+    uint8_t       log_count_;               // Текущее число записей в журнале
 
-    char     active_code_[8];             // Код активного алерта
-    char     active_desc_[128];           // Описание активного алерта (русский)
-    char     active_dname_[64];           // Форматированное имя для дисплея (строки через '\n')
-    uint32_t active_since_;               // millis() момента последнего срабатывания
+    char     active_code_[8];               // Код активного алерта
+    char     active_desc_[128];             // Описание активного алерта (русский)
+    char     active_dname_[64];             // Форматированное имя для дисплея (строки через '\n')
+    uint32_t active_since_;                 // millis() момента последнего срабатывания
 
-    uint32_t last_trigger_ms_[CHECK_COUNT]; // Таймер антидребезга для каждой проверки
+    uint32_t last_trigger_ms_[CHECK_COUNT]; // Таймер антидребезга (enabled=true)
+    // Флаг «уже показали в этой сессии» (enabled=false, сбрасывается только при перезагрузке МК)
+    bool     shown_once_[CHECK_COUNT];
 
     // Загрузить конфиг проверок из файла (defaults если файла нет)
     bool load_checks_();

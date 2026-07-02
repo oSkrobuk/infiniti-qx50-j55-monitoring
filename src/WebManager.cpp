@@ -999,7 +999,7 @@ function renderChecks(cfg) {
   grid.innerHTML = '';
 
   CHECK_DEFS.forEach(def => {
-    const checkCfg = cfg[def.code] || { enabled: true, always_alert: false, param1: 0, param2: 0, param3: 0 };
+    const checkCfg = cfg[def.code] || { enabled: true, param1: 0, param2: 0, param3: 0 };
 
     let paramsHtml = '';
     if (def.params.length > 0) {
@@ -1020,25 +1020,14 @@ function renderChecks(cfg) {
     card.innerHTML = `
       <div class="card-title">&#9888; ${def.code} &mdash; ${def.name}</div>
       <div style="font-size:0.75rem;color:var(--muted);margin-bottom:10px;line-height:1.4">${def.desc}</div>
-      <div class="toggle-wrap">
+      <div class="toggle-wrap" style="margin-bottom:12px;">
         <label class="toggle">
           <input type="checkbox" id="check_${def.code}_enabled"
                  ${checkCfg.enabled ? 'checked' : ''}>
           <span class="slider"></span>
         </label>
         <span class="toggle-label" id="check_${def.code}_label">
-          ${checkCfg.enabled ? 'Включено' : 'Выключено'}
-        </span>
-      </div>
-      <div class="toggle-wrap" style="margin-bottom:12px;">
-        <label class="toggle">
-          <input type="checkbox" id="check_${def.code}_always_alert"
-                 ${checkCfg.always_alert ? 'checked' : ''}>
-          <span class="slider"></span>
-        </label>
-        <span class="toggle-label" id="check_${def.code}_always_label"
-              style="color:var(--muted);font-size:0.75rem;">
-          ${checkCfg.always_alert ? 'Всегда звенеть' : 'Однократно (антидребезг)'}
+          ${checkCfg.enabled ? 'Включено (с антидребезгом)' : 'Выключено (1 раз за сессию)'}
         </span>
       </div>
       ${paramsHtml}`;
@@ -1047,13 +1036,7 @@ function renderChecks(cfg) {
     const chk = document.getElementById(`check_${def.code}_enabled`);
     const lbl = document.getElementById(`check_${def.code}_label`);
     chk.addEventListener('change', () => {
-      lbl.textContent = chk.checked ? 'Включено' : 'Выключено';
-    });
-
-    const chkA = document.getElementById(`check_${def.code}_always_alert`);
-    const lblA = document.getElementById(`check_${def.code}_always_label`);
-    chkA.addEventListener('change', () => {
-      lblA.textContent = chkA.checked ? 'Всегда звенеть' : 'Однократно (антидребезг)';
+      lbl.textContent = chk.checked ? 'Включено (с антидребезгом)' : 'Выключено (1 раз за сессию)';
     });
   });
 }
@@ -1062,11 +1045,9 @@ function readChecks() {
   const result = {};
   CHECK_DEFS.forEach(def => {
     const enabledEl = document.getElementById(`check_${def.code}_enabled`);
-    const alwaysEl  = document.getElementById(`check_${def.code}_always_alert`);
     if (!enabledEl) return;
     const entry = {
-      enabled:      enabledEl.checked,
-      always_alert: alwaysEl ? alwaysEl.checked : false,
+      enabled: enabledEl.checked,
       param1: 0, param2: 0, param3: 0
     };
     def.params.forEach(p => {

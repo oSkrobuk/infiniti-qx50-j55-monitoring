@@ -182,10 +182,9 @@ void DisplayManager::update_alert_indicator(bool has_alerts)
     alert_indicator_ = has_alerts;
 
     // Кружок диаметром 8 px слева от строки «MONITORING» (y=28, font 4 ~ высота 26 px)
-    // Центр строки по y ≈ 28 + 13 = 41, x = 58 (чуть левее первой буквы «M»)
-    static constexpr int16_t IND_X = 58;
-    static constexpr int16_t IND_Y = 41;
-    static constexpr int16_t IND_R = 5;
+    static constexpr int16_t IND_X = 15;
+    static constexpr int16_t IND_Y = 40;
+    static constexpr int16_t IND_R = 8;
 
     if (has_alerts) {
         tft_.fillCircle(IND_X, IND_Y, IND_R, 0xF800); // красный
