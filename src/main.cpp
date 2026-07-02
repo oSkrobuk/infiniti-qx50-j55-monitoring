@@ -18,15 +18,10 @@ static float can_value(float value, uint32_t ts)
 }
 
 // Версия прошивки — отображается внизу дисплея
-static constexpr const char *s_app_version = "2026.2.2";
-
-// Имя и пароль точки доступа ESP32
-// Подключитесь к этой сети, затем откройте http://192.168.4.1
-static constexpr const char *s_ap_ssid     = "QX50Monitoring";
-static constexpr const char *s_ap_password = "infiniti";
+static constexpr const char *s_app_version = "2026.2.3";
 
 DisplayManager   display;
-WebManager       web(s_ap_ssid, s_ap_password);
+WebManager       web;
 BuzzerController buzzer;
 
 // =============================================================================
@@ -123,8 +118,14 @@ static void poll_handle()
         const PollEntry &entry = POLL_LIST[s_poll_idx];
         poll_send_request(entry.ecu_id, entry.did);
 
-        // Запоминаем момент отправки запроса оборотов для вычисления poll_time
+        // Вычисляем период обновления RPM (время между двумя последовательными отправками запроса)
+        // rpm_poll_time показывает реальный интервал обновления данных оборотов = poll_interval_ms * POLL_COUNT
         if (entry.ecu_id == ECM_ID && entry.did == 0x1201) {
+            if (can_metrics.rpm_request_ts != 0) {
+                uint32_t elapsed_ms       = now - can_metrics.rpm_request_ts;
+                can_metrics.rpm_poll_time    = static_cast<float>(elapsed_ms) / 1000.0f;
+                can_metrics.rpm_poll_time_ts = now;
+            }
             can_metrics.rpm_request_ts = now;
         }
 
@@ -259,7 +260,10 @@ void loop()
         float   rpm              = can_value(can_metrics.engine_rpm,        can_metrics.engine_rpm_ts);
         float   oil_pressure     = can_value(can_metrics.oil_pressure_volt, can_metrics.oil_pressure_volt_ts);
         float   boost            = can_value(can_metrics.turbo_boost_volt,  can_metrics.turbo_boost_volt_ts);
-        float   poll_time        = can_value(can_metrics.rpm_poll_time,      can_metrics.rpm_poll_time_ts);
+        // rpm_poll_time — результат последнего замера, а не живой поток:
+        // не ограничиваем stale_ms, иначе при большом poll_interval_ms (>stale_ms/POLL_COUNT)
+        // значение всегда протухает до следующего опроса RPM и отображается как 0
+        float   poll_time        = (can_metrics.rpm_poll_time_ts != 0) ? can_metrics.rpm_poll_time : 0.0f;
         float   battery_voltage  = can_value(can_metrics.battery_voltage,   can_metrics.battery_voltage_ts);
         float   transmission     = can_value(can_metrics.cvt_temp,          can_metrics.cvt_temp_ts);
 #endif

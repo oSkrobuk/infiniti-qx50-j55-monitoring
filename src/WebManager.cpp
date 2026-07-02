@@ -53,29 +53,50 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     font-weight: 400;
     margin-top: 4px;
   }
-  header p {
-    color: var(--muted);
-    font-size: 0.8rem;
-    margin-top: 6px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-  }
-  .section-title {
+  /* ── Accordion (details/summary) ─────────────────── */
+  .sect {
     max-width: 960px;
-    margin: 28px auto 12px;
+    margin: 12px auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .sect > summary {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    cursor: pointer;
+    background: var(--card);
+    user-select: none;
+    outline: none;
+  }
+  .sect > summary::-webkit-details-marker { display: none; }
+  .sect-title {
     font-size: 0.8rem;
     letter-spacing: 3px;
     text-transform: uppercase;
     color: var(--accent);
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 8px;
+    font-weight: 600;
   }
+  .sect-chevron {
+    color: var(--muted);
+    font-size: 0.85rem;
+    transition: transform 0.25s;
+  }
+  .sect[open] > summary .sect-chevron { transform: rotate(180deg); }
+  .sect-body {
+    padding: 16px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+  /* ── Cards & grid ────────────────────────────────── */
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 16px;
-    max-width: 960px;
-    margin: 0 auto 20px;
+    margin-bottom: 16px;
   }
   .card {
     background: var(--card);
@@ -90,24 +111,9 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     color: var(--accent);
     margin-bottom: 14px;
   }
-  /* Два поля в одну строку */
-  .row2 {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-  /* Три поля в одну строку */
-  .row3 {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 8px;
-  }
-  /* Четыре поля в одну строку */
-  .row4 {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr;
-    gap: 8px;
-  }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .row4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; }
   .field label {
     display: block;
     font-size: 0.7rem;
@@ -116,7 +122,9 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     letter-spacing: 0.5px;
     white-space: nowrap;
   }
-  .field input[type="number"] {
+  .field input[type="number"],
+  .field input[type="text"],
+  .field input[type="password"] {
     width: 100%;
     background: #111;
     border: 1px solid var(--border);
@@ -128,9 +136,12 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     transition: border-color 0.2s;
     text-align: center;
   }
+  .field input[type="text"]:focus,
+  .field input[type="password"]:focus { border-color: var(--accent); }
   .field input.f-min:focus    { border-color: var(--blue); }
   .field input.f-target:focus { border-color: var(--green); }
   .field input.f-max:focus    { border-color: var(--red); }
+  /* ── Legend ─────────────────────────────────────── */
   .legend {
     display: flex;
     gap: 14px;
@@ -138,18 +149,15 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     color: var(--muted);
     margin-bottom: 14px;
     flex-wrap: wrap;
-    max-width: 960px;
-    margin-left: auto;
-    margin-right: auto;
   }
   .legend span { display: flex; align-items: center; gap: 4px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  /* ── Actions ─────────────────────────────────────── */
   .actions {
-    max-width: 960px;
-    margin: 0 auto;
     display: flex;
     gap: 12px;
     flex-wrap: wrap;
+    margin-top: 4px;
   }
   button {
     flex: 1;
@@ -168,11 +176,14 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
   .btn-save    { background: var(--accent); color: #000; }
   .btn-default { background: var(--border); color: var(--muted); border: 1px solid #444; }
   .btn-danger  { background: #3a1010; color: var(--red); border: 1px solid #6a1010; }
-  /* OTA styles */
-  .ota-wrap {
-    max-width: 960px;
-    margin: 20px auto 0;
+  /* ── WiFi note ───────────────────────────────────── */
+  .wifi-note {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 10px;
+    line-height: 1.5;
   }
+  /* ── OTA ─────────────────────────────────────────── */
   .ota-row {
     display: flex;
     gap: 12px;
@@ -230,6 +241,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     text-align: center;
     letter-spacing: 0.5px;
   }
+  /* ── Toast ───────────────────────────────────────── */
   .toast {
     position: fixed;
     bottom: 24px;
@@ -252,16 +264,9 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     visibility: visible;
     transition: transform 0.4s ease, visibility 0s linear 0s;
   }
-  .toast.ok   { border-color: var(--green); color: var(--green); }
-  .toast.err  { border-color: var(--red);   color: var(--red); }
-  footer {
-    text-align: center;
-    color: var(--muted);
-    font-size: 0.75rem;
-    margin-top: 36px;
-    letter-spacing: 1px;
-  }
-  /* ── Toggle switch ────────────────────────────────── */
+  .toast.ok  { border-color: var(--green); color: var(--green); }
+  .toast.err { border-color: var(--red);   color: var(--red); }
+  /* ── Toggle switch ───────────────────────────────── */
   .toggle-wrap {
     display: flex;
     align-items: center;
@@ -302,7 +307,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     color: var(--muted);
     letter-spacing: 0.5px;
   }
-  /* ── Alert history table ──────────────────────────── */
+  /* ── Alert table ─────────────────────────────────── */
   .alert-actions {
     display: flex;
     justify-content: flex-end;
@@ -354,7 +359,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     text-align: center;
     padding: 16px 0;
   }
-  /* ── Checks params row ────────────────────────────── */
+  /* ── Check params ────────────────────────────────── */
   .check-params {
     display: flex;
     flex-wrap: wrap;
@@ -364,217 +369,83 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     flex: 1 1 80px;
     min-width: 70px;
   }
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.75rem;
+    margin-top: 36px;
+    letter-spacing: 1px;
+  }
 </style>
 </head>
 <body>
 
 <header>
   <h1>&#9670; INFINITI QX50 J55 &#9670;</h1>
-  <h2>MONITORING - Редактор конфигурации</h2>
+  <h2>MONITORING &mdash; Редактор конфигурации</h2>
 </header>
 
-<div class="legend" style="margin-bottom:14px;">
-  <span><span class="dot" style="background:#2196f3"></span> Минимум</span>
-  <span><span class="dot" style="background:#4caf50"></span> Целевая</span>
-  <span><span class="dot" style="background:#f44336"></span> Максимум</span>
-</div>
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- 1. СИСТЕМНЫЕ ПАРАМЕТРЫ                                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<details class="sect" id="sectSystem">
+  <summary>
+    <span class="sect-title">&#9881; 1. Системные параметры</span>
+    <span class="sect-chevron">&#9660;</span>
+  </summary>
+  <div class="sect-body">
 
-<form id="configForm">
-<div class="grid">
+    <!-- WiFi -->
+    <form id="wifiForm">
+    <div class="grid">
+      <div class="card">
+        <div class="card-title">&#128267; WiFi &mdash; Точка доступа</div>
+        <div class="row2">
+          <div class="field">
+            <label>Имя сети (SSID)</label>
+            <input type="text" id="wifi_ssid" name="wifi_ssid" maxlength="31" required>
+          </div>
+          <div class="field">
+            <label>Пароль</label>
+            <input type="password" id="wifi_password" name="wifi_password" maxlength="63">
+          </div>
+        </div>
+        <p class="wifi-note">&#9888; После сохранения устройство перезагрузится. Переподключитесь к новой сети.</p>
+      </div>
 
-  <div class="card">
-    <div class="card-title">&#128167; E-OIL — Моторное масло</div>
-    <div class="row3">
-      <div class="field">
-        <label>Мин, °C</label>
-        <input class="f-min" type="number" step="0.5" name="oil_min" required>
-      </div>
-      <div class="field">
-        <label>Цель, °C</label>
-        <input class="f-target" type="number" step="0.5" name="oil_target" required>
-      </div>
-      <div class="field">
-        <label>Макс, °C</label>
-        <input class="f-max" type="number" step="0.5" name="oil_max" required>
+      <!-- Параметры CAN-опроса -->
+      <div class="card">
+        <div class="card-title">&#9201; CAN &mdash; Параметры опроса</div>
+        <div class="row2">
+          <div class="field">
+            <label>Интервал опроса, мс</label>
+            <input class="f-target" type="number" step="1" min="10" name="system_poll_interval_ms" required>
+          </div>
+          <div class="field">
+            <label>Устаревание CAN, мс</label>
+            <input class="f-target" type="number" step="100" min="100" name="system_stale_ms" required>
+          </div>
+        </div>
       </div>
     </div>
-  </div>
 
-  <div class="card">
-    <div class="card-title">&#10052; E-COOL — Антифриз ДВС</div>
-    <div class="row3">
-      <div class="field">
-        <label>Мин, °C</label>
-        <input class="f-min" type="number" step="0.5" name="coolant_min" required>
-      </div>
-      <div class="field">
-        <label>Цель, °C</label>
-        <input class="f-target" type="number" step="0.5" name="coolant_target" required>
-      </div>
-      <div class="field">
-        <label>Макс, °C</label>
-        <input class="f-max" type="number" step="0.5" name="coolant_max" required>
-      </div>
+    <div class="actions">
+      <button type="submit" class="btn-save" id="btnSaveWifi">&#10003; Сохранить WiFi &amp; систему</button>
     </div>
+    </form>
+
   </div>
+</details>
 
-  <div class="card">
-    <div class="card-title">&#127777; R-COOL — Антифриз радиатора</div>
-    <div class="row3">
-      <div class="field">
-        <label>Мин, °C</label>
-        <input class="f-min" type="number" step="0.5" name="radiator_min" required>
-      </div>
-      <div class="field">
-        <label>Цель, °C</label>
-        <input class="f-target" type="number" step="0.5" name="radiator_target" required>
-      </div>
-      <div class="field">
-        <label>Макс, °C</label>
-        <input class="f-max" type="number" step="0.5" name="radiator_max" required>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">&#9881; T-OIL — Масло АКПП</div>
-    <div class="row3">
-      <div class="field">
-        <label>Мин, °C</label>
-        <input class="f-min" type="number" step="0.5" name="transmission_min" required>
-      </div>
-      <div class="field">
-        <label>Цель, °C</label>
-        <input class="f-target" type="number" step="0.5" name="transmission_target" required>
-      </div>
-      <div class="field">
-        <label>Макс, °C</label>
-        <input class="f-max" type="number" step="0.5" name="transmission_max" required>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">&#9889; RPM — Обороты двигателя</div>
-    <div class="row3">
-      <div class="field">
-        <label>Нач. зелёной</label>
-        <input class="f-min" type="number" step="50" name="rpm_green_start" required>
-      </div>
-      <div class="field">
-        <label>Кон. зелёной</label>
-        <input class="f-target" type="number" step="50" name="rpm_green_end" required>
-      </div>
-      <div class="field">
-        <label>Нач. красной</label>
-        <input class="f-max" type="number" step="50" name="rpm_red_start" required>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">&#128167; EOP — Давление масла</div>
-    <div class="row3">
-      <div class="field">
-        <label>Порог RPM</label>
-        <input class="f-target" type="number" step="100" name="oil_pressure_rpm_threshold" required>
-      </div>
-      <div class="field">
-        <label>Мин &lt;порога, бар</label>
-        <input class="f-min" type="number" step="0.1" name="oil_pressure_min_low" required>
-      </div>
-      <div class="field">
-        <label>Мин &ge;порога, бар</label>
-        <input class="f-max" type="number" step="0.1" name="oil_pressure_min_high" required>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">&#128168; BOOST — Давление наддува</div>
-    <div class="row2">
-      <div class="field">
-        <label>Синий до, В</label>
-        <input class="f-min" type="number" step="0.05" name="boost_blue_max" required>
-      </div>
-      <div class="field">
-        <label>Зелёный от, В</label>
-        <input class="f-target" type="number" step="0.05" name="boost_green_min" required>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">&#128267; BATTERY — Бортовая сеть</div>
-    <div class="row4">
-      <div class="field">
-        <label>Красный &lt;, В</label>
-        <input class="f-min" type="number" step="0.1" name="battery_red_low" required>
-      </div>
-      <div class="field">
-        <label>Зелёный от, В</label>
-        <input class="f-target" type="number" step="0.1" name="battery_green_min" required>
-      </div>
-      <div class="field">
-        <label>Зелёный до, В</label>
-        <input class="f-target" type="number" step="0.1" name="battery_green_max" required>
-      </div>
-      <div class="field">
-        <label>Красный &gt;, В</label>
-        <input class="f-max" type="number" step="0.1" name="battery_red_high" required>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">&#9201; RPM-POLL — Время опроса RPM</div>
-    <div class="row2">
-      <div class="field">
-        <label>Зелёный до, с</label>
-        <input class="f-target" type="number" step="0.01" name="poll_time_green_max" required>
-      </div>
-      <div class="field">
-        <label>Красный от, с</label>
-        <input class="f-max" type="number" step="0.01" name="poll_time_red_min" required>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">&#9881; SYSTEM — Параметры CAN-опроса</div>
-    <div class="row2">
-      <div class="field">
-        <label>Интервал опроса, мс</label>
-        <input class="f-target" type="number" step="1" min="10" name="system_poll_interval_ms" required>
-      </div>
-      <div class="field">
-        <label>Устаревание CAN, мс</label>
-        <input class="f-target" type="number" step="100" min="100" name="system_stale_ms" required>
-      </div>
-    </div>
-  </div>
-
-</div>
-
-<div class="actions">
-  <button type="button" class="btn-default" id="btnDefault">&#8635; По умолчанию</button>
-  <button type="submit" class="btn-save"    id="btnSave">&#10003; Сохранить</button>
-</div>
-</form>
-
-<!-- ── Alert Checks Configuration ───────────────────────────────────────── -->
-<div class="section-title">&#9888; CHECKS — Конфигурация проверок</div>
-<div class="grid" id="checksGrid">
-  <!-- Заполняется JavaScript -->
-</div>
-<div class="actions" style="margin-bottom:8px;">
-  <button type="button" class="btn-save" id="btnSaveChecks">&#10003; Сохранить проверки</button>
-</div>
-
-<!-- ── Alert History ─────────────────────────────────────────────────────── -->
-<div class="section-title">&#128680; ALERTS — История срабатываний</div>
-<div class="ota-wrap" style="margin-top:0;">
-  <div class="card">
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- 2. ИСТОРИЯ СРАБАТЫВАНИЙ                                                 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<details class="sect" id="sectAlerts">
+  <summary>
+    <span class="sect-title">&#128680; 2. История срабатываний</span>
+    <span class="sect-chevron">&#9660;</span>
+  </summary>
+  <div class="sect-body">
     <div class="alert-actions">
       <button type="button" class="btn-danger btn-clear-alerts" id="btnClearAlerts">
         &#128465; Очистить историю
@@ -593,69 +464,247 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<!-- OTA Firmware Update -->
-<div class="ota-wrap">
-  <div class="card">
-    <div class="card-title">&#8593; OTA — Обновление прошивки</div>
-    <div class="ota-row">
-      <label class="btn-ota-label" for="otaFile">&#128190; Выбрать .bin</label>
-      <input type="file" id="otaFile" accept=".bin" style="display:none">
-      <span class="ota-filename" id="otaFileName">файл не выбран</span>
-      <button type="button" class="btn-ota-upload" id="btnOta" disabled>&#8593; Загрузить</button>
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- 3. КОНФИГУРАЦИЯ ПРОВЕРОК                                                -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<details class="sect" id="sectChecks">
+  <summary>
+    <span class="sect-title">&#9888; 3. Конфигурация проверок</span>
+    <span class="sect-chevron">&#9660;</span>
+  </summary>
+  <div class="sect-body">
+    <div class="grid" id="checksGrid">
+      <!-- Заполняется JavaScript -->
     </div>
-    <div class="ota-progress" id="otaProgress">
-      <div class="ota-bar-bg">
-        <div class="ota-bar-fill" id="otaBar"></div>
-      </div>
-      <div class="ota-status" id="otaStatus"></div>
+    <div class="actions">
+      <button type="button" class="btn-save" id="btnSaveChecks">&#10003; Сохранить проверки</button>
     </div>
   </div>
-</div>
+</details>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- 4. КОНФИГУРАЦИЯ МЕТРИК                                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<details class="sect" id="sectMetrics">
+  <summary>
+    <span class="sect-title">&#128202; 4. Конфигурация метрик</span>
+    <span class="sect-chevron">&#9660;</span>
+  </summary>
+  <div class="sect-body">
+
+    <div class="legend">
+      <span><span class="dot" style="background:#2196f3"></span> Минимум</span>
+      <span><span class="dot" style="background:#4caf50"></span> Целевая</span>
+      <span><span class="dot" style="background:#f44336"></span> Максимум</span>
+    </div>
+
+    <form id="configForm">
+    <div class="grid">
+
+      <div class="card">
+        <div class="card-title">&#128167; E-OIL &mdash; Моторное масло</div>
+        <div class="row3">
+          <div class="field">
+            <label>Мин, °C</label>
+            <input class="f-min" type="number" step="0.01" name="oil_min" required>
+          </div>
+          <div class="field">
+            <label>Цель, °C</label>
+            <input class="f-target" type="number" step="0.01" name="oil_target" required>
+          </div>
+          <div class="field">
+            <label>Макс, °C</label>
+            <input class="f-max" type="number" step="0.01" name="oil_max" required>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">&#10052; E-COOL &mdash; Антифриз ДВС</div>
+        <div class="row3">
+          <div class="field">
+            <label>Мин, °C</label>
+            <input class="f-min" type="number" step="0.01" name="coolant_min" required>
+          </div>
+          <div class="field">
+            <label>Цель, °C</label>
+            <input class="f-target" type="number" step="0.01" name="coolant_target" required>
+          </div>
+          <div class="field">
+            <label>Макс, °C</label>
+            <input class="f-max" type="number" step="0.01" name="coolant_max" required>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">&#127777; R-COOL &mdash; Антифриз радиатора</div>
+        <div class="row3">
+          <div class="field">
+            <label>Мин, °C</label>
+            <input class="f-min" type="number" step="0.01" name="radiator_min" required>
+          </div>
+          <div class="field">
+            <label>Цель, °C</label>
+            <input class="f-target" type="number" step="0.01" name="radiator_target" required>
+          </div>
+          <div class="field">
+            <label>Макс, °C</label>
+            <input class="f-max" type="number" step="0.01" name="radiator_max" required>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">&#9881; T-OIL &mdash; Масло АКПП</div>
+        <div class="row3">
+          <div class="field">
+            <label>Мин, °C</label>
+            <input class="f-min" type="number" step="0.01" name="transmission_min" required>
+          </div>
+          <div class="field">
+            <label>Цель, °C</label>
+            <input class="f-target" type="number" step="0.01" name="transmission_target" required>
+          </div>
+          <div class="field">
+            <label>Макс, °C</label>
+            <input class="f-max" type="number" step="0.01" name="transmission_max" required>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">&#9889; RPM &mdash; Обороты двигателя</div>
+        <div class="row3">
+          <div class="field">
+            <label>Нач. зелёной</label>
+            <input class="f-min" type="number" step="50" name="rpm_green_start" required>
+          </div>
+          <div class="field">
+            <label>Кон. зелёной</label>
+            <input class="f-target" type="number" step="50" name="rpm_green_end" required>
+          </div>
+          <div class="field">
+            <label>Нач. красной</label>
+            <input class="f-max" type="number" step="50" name="rpm_red_start" required>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">&#128167; EOP &mdash; Давление масла</div>
+        <div class="row3">
+          <div class="field">
+            <label>Порог RPM</label>
+            <input class="f-target" type="number" step="100" name="oil_pressure_rpm_threshold" required>
+          </div>
+          <div class="field">
+            <label>Мин &lt;порога, бар</label>
+            <input class="f-min" type="number" step="0.01" name="oil_pressure_min_low" required>
+          </div>
+          <div class="field">
+            <label>Мин &ge;порога, бар</label>
+            <input class="f-max" type="number" step="0.01" name="oil_pressure_min_high" required>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">&#128168; BOOST &mdash; Давление наддува</div>
+        <div class="row2">
+          <div class="field">
+            <label>Синий до, В</label>
+            <input class="f-min" type="number" step="0.01" name="boost_blue_max" required>
+          </div>
+          <div class="field">
+            <label>Зелёный от, В</label>
+            <input class="f-target" type="number" step="0.01" name="boost_green_min" required>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">&#128267; BATTERY &mdash; Бортовая сеть</div>
+        <div class="row4">
+          <div class="field">
+            <label>Красный &lt;, В</label>
+            <input class="f-min" type="number" step="0.01" name="battery_red_low" required>
+          </div>
+          <div class="field">
+            <label>Зелёный от, В</label>
+            <input class="f-target" type="number" step="0.01" name="battery_green_min" required>
+          </div>
+          <div class="field">
+            <label>Зелёный до, В</label>
+            <input class="f-target" type="number" step="0.01" name="battery_green_max" required>
+          </div>
+          <div class="field">
+            <label>Красный &gt;, В</label>
+            <input class="f-max" type="number" step="0.01" name="battery_red_high" required>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">&#9201; RPM-POLL &mdash; Время опроса RPM</div>
+        <div class="row2">
+          <div class="field">
+            <label>Зелёный до, с</label>
+            <input class="f-target" type="number" step="0.01" name="poll_time_green_max" required>
+          </div>
+          <div class="field">
+            <label>Красный от, с</label>
+            <input class="f-max" type="number" step="0.01" name="poll_time_red_min" required>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="actions">
+      <button type="button" class="btn-default" id="btnDefault">&#8635; По умолчанию</button>
+      <button type="submit" class="btn-save" id="btnSave">&#10003; Сохранить метрики</button>
+    </div>
+    </form>
+
+  </div>
+</details>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- 5. ОБНОВЛЕНИЕ ПРОШИВКИ                                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<details class="sect" id="sectOta">
+  <summary>
+    <span class="sect-title">&#8593; 5. Обновление прошивки</span>
+    <span class="sect-chevron">&#9660;</span>
+  </summary>
+  <div class="sect-body">
+    <div class="card">
+      <div class="card-title">&#8593; OTA &mdash; Загрузка .bin</div>
+      <div class="ota-row">
+        <label class="btn-ota-label" for="otaFile">&#128190; Выбрать .bin</label>
+        <input type="file" id="otaFile" accept=".bin" style="display:none">
+        <span class="ota-filename" id="otaFileName">файл не выбран</span>
+        <button type="button" class="btn-ota-upload" id="btnOta" disabled>&#8593; Загрузить</button>
+      </div>
+      <div class="ota-progress" id="otaProgress">
+        <div class="ota-bar-bg">
+          <div class="ota-bar-fill" id="otaBar"></div>
+        </div>
+        <div class="ota-status" id="otaStatus"></div>
+      </div>
+    </div>
+  </div>
+</details>
 
 <div class="toast" id="toast"></div>
 
 <footer>Infiniti QX50 J55 Monitoring &mdash; ESP32</footer>
 
 <script>
-let original = {};
-
-// Описания всех проверок — должны совпадать с CHECK_DEFS в AlertManager.cpp
-const CHECK_DEFS = [
-  { code:'E01', name:'Engine Oil Temp High',
-    desc:'Температура масла двигателя превысила максимальный порог',
-    params:[{label:'Макс. темп, °C', key:'param1', step:1}] },
-  { code:'E02', name:'Engine Coolant Temp High',
-    desc:'Температура антифриза двигателя превысила максимальный порог',
-    params:[{label:'Макс. темп, °C', key:'param1', step:1}] },
-  { code:'E03', name:'Radiator Coolant Temp High',
-    desc:'Температура антифриза радиатора превысила максимальный порог',
-    params:[{label:'Макс. темп, °C', key:'param1', step:1}] },
-  { code:'E04', name:'CVT Oil Temp High',
-    desc:'Температура масла вариатора превысила максимальный порог',
-    params:[{label:'Макс. темп, °C', key:'param1', step:1}] },
-  { code:'E05', name:'Engine RPM Overspeed',
-    desc:'Обороты двигателя превысили максимально допустимый предел',
-    params:[{label:'Макс. об/мин', key:'param1', step:50}] },
-  { code:'E06', name:'Battery Voltage Low',
-    desc:'Напряжение бортовой сети упало ниже минимального порога',
-    params:[{label:'Мин. напряжение, В', key:'param1', step:0.1}] },
-  { code:'E07', name:'Battery Voltage High',
-    desc:'Напряжение бортовой сети превысило максимальный порог',
-    params:[{label:'Макс. напряжение, В', key:'param1', step:0.1}] },
-  { code:'E08', name:'Oil Pressure Low',
-    desc:'Напряжение датчика давления масла ниже нормы для текущих оборотов',
-    params:[
-      {label:'Порог об/мин', key:'param1', step:100},
-      {label:'Мин. В (низк. обор.)', key:'param2', step:0.05},
-      {label:'Мин. В (выс. обор.)', key:'param3', step:0.05}
-    ]
-  },
-  { code:'E09', name:'Oil-Coolant Temp Delta High',
-    desc:'Разница температур масла и антифриза двигателя превысила допустимый порог',
-    params:[{label:'Макс. дельта, °C', key:'param1', step:1}] },
-];
+// ── Утилиты ────────────────────────────────────────────────────────────────
 
 function showToast(msg, type) {
   const t = document.getElementById('toast');
@@ -664,7 +713,7 @@ function showToast(msg, type) {
   setTimeout(() => { t.className = 'toast'; }, 5000);
 }
 
-// ── Config form ────────────────────────────────────────────────────────────
+// ── Конфиг метрик ──────────────────────────────────────────────────────────
 
 function fillForm(cfg) {
   ['oil','coolant','radiator','transmission'].forEach(f => {
@@ -719,7 +768,7 @@ function fillForm(cfg) {
   }
 }
 
-function readForm() {
+function readMetricsForm() {
   const d = {};
   ['oil','coolant','radiator','transmission'].forEach(s => {
     d[s] = {
@@ -752,14 +801,10 @@ function readForm() {
     green_max: parseFloat(document.querySelector('[name="poll_time_green_max"]').value),
     red_min:   parseFloat(document.querySelector('[name="poll_time_red_min"]').value),
   };
-  d.system = {
-    poll_interval_ms: parseFloat(document.querySelector('[name="system_poll_interval_ms"]').value),
-    stale_ms:         parseFloat(document.querySelector('[name="system_stale_ms"]').value),
-  };
   return d;
 }
 
-function validateForm(data) {
+function validateMetrics(data) {
   const sensors = ['oil','coolant','radiator','transmission'];
   for (const s of sensors) {
     if (data[s].min >= data[s].target) return `${s}: минимум должен быть меньше целевой`;
@@ -785,12 +830,6 @@ function validateForm(data) {
     return 'RPM-POLL: пороги должны быть больше 0';
   if (data.poll_time.green_max >= data.poll_time.red_min)
     return 'RPM-POLL: зелёный порог должен быть меньше красного';
-  if (data.system.poll_interval_ms < 10)
-    return 'SYSTEM: интервал опроса не может быть меньше 10 мс';
-  if (data.system.stale_ms < 100)
-    return 'SYSTEM: порог устаревания не может быть меньше 100 мс';
-  if (data.system.poll_interval_ms >= data.system.stale_ms)
-    return 'SYSTEM: интервал опроса должен быть меньше порога устаревания';
   return null;
 }
 
@@ -799,17 +838,16 @@ async function loadConfig() {
     const r = await fetch('/config');
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const cfg = await r.json();
-    original = JSON.parse(JSON.stringify(cfg));
     fillForm(cfg);
   } catch(e) {
-    showToast('Ошибка загрузки: ' + e.message, 'err');
+    showToast('Ошибка загрузки конфига: ' + e.message, 'err');
   }
 }
 
 document.getElementById('configForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const data = readForm();
-  const err = validateForm(data);
+  const data = readMetricsForm();
+  const err = validateMetrics(data);
   if (err) { showToast('⚠ ' + err, 'err'); return; }
 
   const btn = document.getElementById('btnSave');
@@ -822,8 +860,7 @@ document.getElementById('configForm').addEventListener('submit', async (e) => {
     });
     const text = await r.text();
     if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + text);
-    original = JSON.parse(JSON.stringify(data));
-    showToast('✓ Конфиг сохранён!', 'ok');
+    showToast('✓ Метрики сохранены!', 'ok');
   } catch(e) {
     showToast('Ошибка: ' + e.message, 'err');
   } finally {
@@ -839,9 +876,8 @@ document.getElementById('btnDefault').addEventListener('click', async () => {
     const r = await fetch('/reset', { method: 'POST' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const cfg = await r.json();
-    original = JSON.parse(JSON.stringify(cfg));
     fillForm(cfg);
-    showToast('Значения по умолчанию восстановлены.', 'ok');
+    showToast('Значения по умолчанию восстановлены', 'ok');
   } catch(e) {
     showToast('Ошибка: ' + e.message, 'err');
   } finally {
@@ -849,16 +885,122 @@ document.getElementById('btnDefault').addEventListener('click', async () => {
   }
 });
 
-// ── Checks ─────────────────────────────────────────────────────────────────
+// ── WiFi + система ─────────────────────────────────────────────────────────
+
+async function loadWifi() {
+  try {
+    const r = await fetch('/wifi');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const w = await r.json();
+    const ssidEl = document.getElementById('wifi_ssid');
+    const passEl = document.getElementById('wifi_password');
+    if (ssidEl) ssidEl.value = w.ssid || '';
+    if (passEl) passEl.value = w.password || '';
+  } catch(e) {
+    showToast('Ошибка загрузки WiFi: ' + e.message, 'err');
+  }
+}
+
+document.getElementById('wifiForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const ssid = document.getElementById('wifi_ssid').value.trim();
+  const pass  = document.getElementById('wifi_password').value;
+  if (!ssid) { showToast('⚠ SSID не может быть пустым', 'err'); return; }
+
+  const pollEl = document.querySelector('[name="system_poll_interval_ms"]');
+  const staleEl = document.querySelector('[name="system_stale_ms"]');
+  const poll_ms  = parseFloat(pollEl  ? pollEl.value  : 30);
+  const stale_ms = parseFloat(staleEl ? staleEl.value : 1000);
+
+  if (poll_ms < 10)  { showToast('⚠ Интервал опроса не может быть меньше 10 мс', 'err'); return; }
+  if (stale_ms < 100){ showToast('⚠ Порог устаревания не может быть меньше 100 мс', 'err'); return; }
+  if (poll_ms >= stale_ms){ showToast('⚠ Интервал опроса должен быть меньше порога устаревания', 'err'); return; }
+
+  const btn = document.getElementById('btnSaveWifi');
+  btn.disabled = true;
+
+  // Сохраняем WiFi
+  try {
+    const payload = { wifi: { ssid: ssid, password: pass } };
+    const r = await fetch('/wifi', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const text = await r.text();
+    if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + text);
+  } catch(e) {
+    showToast('Ошибка сохранения WiFi: ' + e.message, 'err');
+    btn.disabled = false;
+    return;
+  }
+
+  // Сохраняем системные параметры CAN
+  try {
+    const sysPayload = { system: { poll_interval_ms: poll_ms, stale_ms: stale_ms } };
+    const r2 = await fetch('/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sysPayload)
+    });
+    if (!r2.ok) throw new Error('HTTP ' + r2.status);
+  } catch(e) {
+    showToast('Ошибка сохранения системных параметров: ' + e.message, 'err');
+    btn.disabled = false;
+    return;
+  }
+
+  showToast('✓ Сохранено. Перезагрузка...', 'ok');
+  setTimeout(async () => {
+    try { await fetch('/restart', { method: 'POST' }); } catch(_) {}
+  }, 1200);
+});
+
+// ── Проверки ───────────────────────────────────────────────────────────────
+
+const CHECK_DEFS = [
+  { code:'E01', name:'Engine Oil Temp High',
+    desc:'Температура масла двигателя превысила максимальный порог',
+    params:[{label:'Макс. темп, °C', key:'param1', step:1}] },
+  { code:'E02', name:'Engine Coolant Temp High',
+    desc:'Температура антифриза двигателя превысила максимальный порог',
+    params:[{label:'Макс. темп, °C', key:'param1', step:1}] },
+  { code:'E03', name:'Radiator Coolant Temp High',
+    desc:'Температура антифриза радиатора превысила максимальный порог',
+    params:[{label:'Макс. темп, °C', key:'param1', step:1}] },
+  { code:'E04', name:'CVT Oil Temp High',
+    desc:'Температура масла вариатора превысила максимальный порог',
+    params:[{label:'Макс. темп, °C', key:'param1', step:1}] },
+  { code:'E05', name:'Engine RPM Overspeed',
+    desc:'Обороты двигателя превысили максимально допустимый предел',
+    params:[{label:'Макс. об/мин', key:'param1', step:50}] },
+  { code:'E06', name:'Battery Voltage Low',
+    desc:'Напряжение бортовой сети упало ниже минимального порога',
+    params:[{label:'Мин. напряжение, В', key:'param1', step:0.01}] },
+  { code:'E07', name:'Battery Voltage High',
+    desc:'Напряжение бортовой сети превысило максимальный порог',
+    params:[{label:'Макс. напряжение, В', key:'param1', step:0.01}] },
+  { code:'E08', name:'Oil Pressure Low',
+    desc:'Напряжение датчика давления масла ниже нормы для текущих оборотов',
+    params:[
+      {label:'Порог об/мин', key:'param1', step:100},
+      {label:'Мин. В (низк. обор.)', key:'param2', step:0.01},
+      {label:'Мин. В (выс. обор.)', key:'param3', step:0.01}
+    ]
+  },
+  { code:'E09', name:'Oil-Coolant Temp Delta High',
+    desc:'Разница температур масла и антифриза двигателя превысила допустимый порог',
+    params:[{label:'Макс. дельта, °C', key:'param1', step:1}] },
+];
 
 function renderChecks(cfg) {
   const grid = document.getElementById('checksGrid');
   grid.innerHTML = '';
 
   CHECK_DEFS.forEach(def => {
-  const checkCfg = cfg[def.code] || { enabled: true, always_alert: false, param1: 0, param2: 0, param3: 0 };
+    const checkCfg = cfg[def.code] || { enabled: true, always_alert: false, param1: 0, param2: 0, param3: 0 };
 
-    // Строим поля параметров
     let paramsHtml = '';
     if (def.params.length > 0) {
       const colClass = def.params.length === 1 ? '' :
@@ -902,14 +1044,12 @@ function renderChecks(cfg) {
       ${paramsHtml}`;
     grid.appendChild(card);
 
-    // Обновляем подпись при переключении тоггла «включено»
     const chk = document.getElementById(`check_${def.code}_enabled`);
     const lbl = document.getElementById(`check_${def.code}_label`);
     chk.addEventListener('change', () => {
       lbl.textContent = chk.checked ? 'Включено' : 'Выключено';
     });
 
-    // Обновляем подпись при переключении тоггла «always_alert»
     const chkA = document.getElementById(`check_${def.code}_always_alert`);
     const lblA = document.getElementById(`check_${def.code}_always_label`);
     chkA.addEventListener('change', () => {
@@ -921,8 +1061,8 @@ function renderChecks(cfg) {
 function readChecks() {
   const result = {};
   CHECK_DEFS.forEach(def => {
-    const enabledEl     = document.getElementById(`check_${def.code}_enabled`);
-    const alwaysEl      = document.getElementById(`check_${def.code}_always_alert`);
+    const enabledEl = document.getElementById(`check_${def.code}_enabled`);
+    const alwaysEl  = document.getElementById(`check_${def.code}_always_alert`);
     if (!enabledEl) return;
     const entry = {
       enabled:      enabledEl.checked,
@@ -945,7 +1085,6 @@ async function loadChecks() {
     const cfg = await r.json();
     renderChecks(cfg);
   } catch(e) {
-    // Если не смогли загрузить — рендерим с дефолтными значениями
     renderChecks({});
     showToast('Ошибка загрузки проверок: ' + e.message, 'err');
   }
@@ -971,7 +1110,7 @@ document.getElementById('btnSaveChecks').addEventListener('click', async () => {
   }
 });
 
-// ── Alert history ──────────────────────────────────────────────────────────
+// ── История алертов ────────────────────────────────────────────────────────
 
 async function loadAlerts() {
   try {
@@ -979,12 +1118,10 @@ async function loadAlerts() {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const alerts = await r.json();
     const tbody = document.getElementById('alertTableBody');
-
     if (!alerts || alerts.length === 0) {
       tbody.innerHTML = '<tr><td colspan="3" class="alert-empty">Нет срабатываний</td></tr>';
       return;
     }
-
     tbody.innerHTML = alerts.map(a => `
       <tr>
         <td><span class="alert-code">${a.code}</span></td>
@@ -1013,7 +1150,13 @@ document.getElementById('btnClearAlerts').addEventListener('click', async () => 
   }
 });
 
-// ── OTA ──────────────────────────────────────────────────────────────────────
+// Открываем секцию с историей при загрузке (для удобства навигации)
+document.getElementById('sectAlerts').addEventListener('toggle', function() {
+  if (this.open) loadAlerts();
+});
+
+// ── OTA ────────────────────────────────────────────────────────────────────
+
 const otaFile     = document.getElementById('otaFile');
 const otaFileName = document.getElementById('otaFileName');
 const btnOta      = document.getElementById('btnOta');
@@ -1080,9 +1223,13 @@ btnOta.addEventListener('click', () => {
   xhr.send(formData);
 });
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ── Init ───────────────────────────────────────────────────────────────────
+
 loadConfig();
+loadWifi();
 loadChecks();
+// Алерты загружаются при открытии секции (toggle event), но при первом открытии
+// секция может быть уже открыта — грузим сразу
 loadAlerts();
 </script>
 </body>
@@ -1091,15 +1238,21 @@ loadAlerts();
 
 // ─────────────────────────────────────────────
 
-WebManager::WebManager(const char *ssid, const char *password)
-    : ssid_(ssid), password_(password), server_(80)
+WebManager::WebManager()
+    : server_(80)
 {
 }
 
 void WebManager::begin()
 {
-    WiFi.softAP(ssid_, password_);
-    Serial.printf("[WiFi] AP запущен  SSID: %s\r\n", ssid_);
+    // WiFi ssid/password читаются из конфига (установлены в build_defaults или сохранены пользователем)
+    String ssid = config.get_str("wifi", "ssid");
+    String pass = config.get_str("wifi", "password");
+
+    if (ssid.isEmpty()) ssid = "QX50Monitoring";
+
+    WiFi.softAP(ssid.c_str(), pass.isEmpty() ? nullptr : pass.c_str());
+    Serial.printf("[WiFi] AP запущен  SSID: %s\r\n", ssid.c_str());
 
     server_.on("/",            HTTP_GET,  [this]() { handle_root(); });
     server_.on("/config",      HTTP_GET,  [this]() { handle_get_config(); });
@@ -1107,11 +1260,23 @@ void WebManager::begin()
     server_.on("/reset",       HTTP_POST, [this]() { handle_reset(); });
     server_.on("/favicon.ico", HTTP_GET,  [this]() { server_.send(204); });
 
+    // WiFi настройки
+    server_.on("/wifi",        HTTP_GET,  [this]() { handle_get_wifi(); });
+    server_.on("/wifi",        HTTP_POST, [this]() { handle_post_wifi(); });
+
+    // Перезагрузка (вызывается из JS после сохранения WiFi)
+    server_.on("/restart", HTTP_POST, [this]() {
+        server_.send(200, "application/json", "{\"ok\":true}");
+        Serial.println("[Web] Перезагрузка по запросу из веб-интерфейса");
+        delay(300);
+        ESP.restart();
+    });
+
     // Алерты и проверки
     server_.on("/alerts",        HTTP_GET,  [this]() { handle_get_alerts(); });
     server_.on("/alerts-clear",  HTTP_POST, [this]() { handle_clear_alerts(); });
     server_.on("/checks",        HTTP_GET,  [this]() { handle_get_checks(); });
-    server_.on("/checks",       HTTP_POST, [this]() { handle_post_checks(); });
+    server_.on("/checks",        HTTP_POST, [this]() { handle_post_checks(); });
 
     // GET /update — та же страница, что и корень
     server_.on("/update", HTTP_GET, [this]() { handle_update_page(); });
@@ -1217,6 +1382,53 @@ void WebManager::handle_not_found()
         server_.method() == HTTP_GET ? "GET" : "POST",
         server_.uri().c_str());
     server_.send(404, "text/plain", "Not found");
+}
+
+// ── WiFi handlers ─────────────────────────────────────────────────────────────
+
+void WebManager::handle_get_wifi()
+{
+    String ssid = config.get_str("wifi", "ssid");
+    String pass = config.get_str("wifi", "password");
+    String json = "{\"ssid\":\"" + ssid + "\",\"password\":\"" + pass + "\"}";
+    server_.send(200, "application/json", json);
+}
+
+void WebManager::handle_post_wifi()
+{
+    String body;
+
+    if (server_.hasArg("plain")) {
+        body = server_.arg("plain");
+    }
+
+    if (body.isEmpty()) {
+        WiFiClient client = server_.client();
+        int len = server_.header("Content-Length").toInt();
+        if (len > 0 && len < 512) {
+            body.reserve(len);
+            unsigned long deadline = millis() + 300;
+            while (static_cast<int>(body.length()) < len && millis() < deadline) {
+                if (client.available()) body += static_cast<char>(client.read());
+                else delay(1);
+            }
+        }
+    }
+
+    body.trim();
+    Serial.printf("[Web] POST /wifi  %u байт\r\n", body.length());
+
+    if (body.isEmpty()) {
+        server_.send(400, "application/json", "{\"error\":\"empty body\"}");
+        return;
+    }
+
+    // Ожидаем JSON вида: {"wifi":{"ssid":"...","password":"..."}}
+    if (config.from_json(body)) {
+        server_.send(200, "application/json", "{\"ok\":true}");
+    } else {
+        server_.send(400, "application/json", "{\"error\":\"invalid json\"}");
+    }
 }
 
 // ── Alert handlers ────────────────────────────────────────────────────────────

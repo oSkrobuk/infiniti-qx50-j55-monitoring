@@ -29,6 +29,10 @@ public:
     // Если ключ или поле не найдены — возвращает 0.0f
     float get(const char *section, const char *field) const;
 
+    // Получить строковое значение поля (например, WiFi ssid/password)
+    // Если поле не найдено — возвращает пустую строку ""
+    String get_str(const char *section, const char *field) const;
+
 private:
     // Все текущие значения конфига — произвольная вложенная структура
     JsonDocument data_;
