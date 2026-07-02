@@ -163,7 +163,8 @@ void AlertManager::update(const CanMetrics &m)
     }
 
     // E08: давление масла (напряжение датчика) ниже нормы для текущих оборотов
-    if (m.oil_pressure_volt_ts != 0 && m.engine_rpm_ts != 0) {
+    // При оборотах == 0 (двигатель заглушен) проверку не выполняем
+    if (m.oil_pressure_volt_ts != 0 && m.engine_rpm_ts != 0 && m.engine_rpm != 0.0f) {
         float min_volt = (m.engine_rpm < checks_[7].param1)
             ? checks_[7].param2
             : checks_[7].param3;
