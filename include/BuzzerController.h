@@ -1,7 +1,8 @@
 #pragma once
 #include <Arduino.h>
 
-constexpr uint8_t CAN_BUZZER_PIN = 26;
+// Пин бузера задаётся через build_flags в platformio.ini: BUZZER_PIN_NUM=26
+static constexpr uint8_t CAN_BUZZER_PIN = static_cast<uint8_t>(BUZZER_PIN_NUM);
 
 class BuzzerController
 {

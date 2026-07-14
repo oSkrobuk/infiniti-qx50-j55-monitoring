@@ -3,10 +3,18 @@
 
 #include "CanBusManager.h"
 #include "ConfigManager.h"
-#include "DisplayManager.h"
 #include "WebManager.h"
 #include "BuzzerController.h"
 #include "AlertManager.h"
+
+// Выбор менеджера дисплея в зависимости от целевой платформы
+#if defined(DISPLAY_WT32_S3)
+#include "DisplayManagerWT32.h"
+DisplayManagerWT32 display;
+#else
+#include "DisplayManager.h"
+DisplayManager     display;
+#endif
 
 // Вернуть значение из CAN если оно свежее (обновлено не позднее stale_ms мс из конфига),
 // иначе вернуть 0. Таймстамп 0 означает «ни разу не получено» — тоже 0
@@ -20,7 +28,6 @@ static float can_value(float value, uint32_t ts)
 // Версия прошивки — отображается внизу дисплея
 static constexpr const char *s_app_version = "2026.2.5";
 
-DisplayManager   display;
 WebManager       web;
 BuzzerController buzzer;
 
