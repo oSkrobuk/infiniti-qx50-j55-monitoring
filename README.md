@@ -97,7 +97,7 @@
 
 > На WT32-SC01 Plus GPIO 26 доступен на разъёме расширения.
 
-![Diagram](docs/diagram.png)
+![Diagram](docs/diagram_.png)
 
 ---
 
