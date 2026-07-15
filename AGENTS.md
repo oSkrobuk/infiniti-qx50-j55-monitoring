@@ -49,6 +49,37 @@ All C++ source files (`.cpp`, `.h`) in this project **must** follow the
 - **Do NOT put a period (`.`) at the end of `Serial.print`/`Serial.println`/`Serial.printf` string literals.**
 -- **Chatting in Russian.**
 
+## Build
+
+PlatformIO CLI не в `PATH`. Исполняемый файл лежит здесь (Windows):
+
+```
+C:\Users\homework\.platformio\penv\Scripts\pio.exe
+```
+
+Из PowerShell удобно вызывать через переменную окружения:
+
+```powershell
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run                        # собрать все окружения
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32s3-wt32         # одно окружение
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32 -e esp32-mock  # несколько окружений
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32s3-wt32 -v      # подробный вывод (видны флаги компилятора)
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32 -t upload      # прошить
+```
+
+### Окружения
+
+| Окружение | Плата | Дисплей | Данные |
+|-----------|-------|---------|--------|
+| `esp32` | ESP32 DEVKIT1 | ST7789 240×240 (SPI) | реальные из CAN |
+| `esp32-mock` | ESP32 DEVKIT1 | ST7789 240×240 (SPI) | имитация (`USE_MOCK_DATA`) |
+| `esp32s3-wt32` | WT32-SC01 Plus (ESP32-S3) | ST7796 320×480 (параллельный 8-бит) | реальные из CAN |
+| `esp32s3-wt32-mock` | WT32-SC01 Plus (ESP32-S3) | ST7796 320×480 (параллельный 8-бит) | имитация (`USE_MOCK_DATA`) |
+
+> `TOUCH_CS` определяется **только** в SPI-окружениях. В параллельном 8-битном
+> режиме (S3) TFT_eSPI не подключает объявления touch, но компилирует `Touch.cpp`
+> по `#ifdef TOUCH_CS` — поэтому определять там `TOUCH_CS` нельзя, иначе сборка падает
+
 ## Project structure
 
 ```

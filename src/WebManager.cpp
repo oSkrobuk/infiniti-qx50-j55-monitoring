@@ -2,6 +2,7 @@
 
 #include "ConfigManager.h"
 #include "AlertManager.h"
+#include "CanBusManager.h"
 #include <Update.h>
 #include <WiFi.h>
 
@@ -53,6 +54,19 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     font-weight: 400;
     margin-top: 4px;
   }
+  .nav-link {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 8px 18px;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.8rem;
+    letter-spacing: 1px;
+    transition: opacity 0.2s;
+  }
+  .nav-link:hover { opacity: 0.75; }
   /* ── Accordion (details/summary) ─────────────────── */
   .sect {
     max-width: 960px;
@@ -406,6 +420,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 <header>
   <h1>&#9670; INFINITI QX50 J55 &#9670;</h1>
   <h2>MONITORING &mdash; Редактор конфигурации</h2>
+  <a class="nav-link" href="/live">&#128202; Онлайн мониторинг &rarr;</a>
 </header>
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
@@ -1319,6 +1334,568 @@ loadAlerts();
 )rawhtml";
 
 // ─────────────────────────────────────────────
+// Страница онлайн мониторинга (GET /live) — хранится во флеш (PROGMEM)
+
+static const char LIVE_HTML[] PROGMEM = R"rawhtml(
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QX50 J55 — Метрики</title>
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --card: #1a1a1a;
+    --border: #2a2a2a;
+    --accent: #c9a84c;
+    --text: #e0e0e0;
+    --muted: #888;
+    --cold: #2196f3;
+    --ok: #4caf50;
+    --warn: #e0b020;
+    --danger: #f44336;
+    --nodata: #555;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', Arial, sans-serif;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  header {
+    text-align: center;
+    padding: 20px 0 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+  header h1 {
+    font-size: 1.3rem;
+    letter-spacing: 3px;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+  .nav-link {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 8px 18px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.8rem;
+    letter-spacing: 1px;
+    transition: opacity 0.2s;
+  }
+  .nav-link:hover { opacity: 0.75; }
+  /* ── Статус-строка ─────────────────────────────── */
+  .status {
+    max-width: 960px;
+    margin: 0 auto 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+  }
+  .status-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--nodata);
+    transition: background 0.3s;
+  }
+  .status.online .status-dot { background: var(--ok); }
+  .status.offline .status-dot { background: var(--danger); }
+  /* ── Сетка карточек ────────────────────────────── */
+  .grid {
+    max-width: 960px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .mcard {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--nodata);
+    border-radius: 10px;
+    padding: 14px 16px;
+    transition: border-color 0.3s;
+  }
+  .m-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .m-label {
+    font-size: 0.75rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .m-name {
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .m-val {
+    margin-top: 12px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .m-num {
+    font-size: 2rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    transition: color 0.3s;
+  }
+  .m-unit {
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  /* Цвета по состоянию */
+  .mcard.st-cold   { border-left-color: var(--cold); }
+  .mcard.st-ok     { border-left-color: var(--ok); }
+  .mcard.st-warn   { border-left-color: var(--warn); }
+  .mcard.st-danger { border-left-color: var(--danger); }
+  .mcard.st-nodata { border-left-color: var(--nodata); }
+  .mcard.st-cold   .m-num { color: var(--cold); }
+  .mcard.st-ok     .m-num { color: var(--ok); }
+  .mcard.st-warn   .m-num { color: var(--warn); }
+  .mcard.st-danger .m-num { color: var(--danger); }
+  .mcard.st-nodata .m-num { color: var(--nodata); }
+  /* ── Баннер ошибок ─────────────────────────────── */
+  .err-banner {
+    max-width: 960px;
+    margin: 16px auto 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 18px;
+    background: rgba(244, 67, 54, 0.12);
+    border: 1px solid var(--danger);
+    border-radius: 10px;
+    color: var(--danger);
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .err-banner[hidden] { display: none; }
+  /* ── История срабатываний ──────────────────────── */
+  .alerts {
+    max-width: 960px;
+    margin: 28px auto 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .alerts-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .alerts-title {
+    font-size: 0.8rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .btn-clear-alerts {
+    flex: 0 0 auto;
+    padding: 8px 16px;
+    font-size: 0.8rem;
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .btn-clear-alerts:hover { opacity: 0.75; }
+  .btn-clear-alerts:disabled { opacity: 0.4; cursor: default; }
+  .alert-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  .alert-table th {
+    color: var(--accent);
+    font-weight: 600;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    font-size: 0.72rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .alert-table td {
+    padding: 7px 8px;
+    border-bottom: 1px solid #1c1c1c;
+    vertical-align: top;
+  }
+  .alert-code {
+    color: var(--danger);
+    font-weight: 700;
+    font-family: monospace;
+    font-size: 0.95rem;
+    white-space: nowrap;
+  }
+  .alert-desc { color: var(--text); }
+  .alert-count {
+    color: var(--accent);
+    font-weight: 700;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .alert-empty {
+    color: var(--muted);
+    font-style: italic;
+    text-align: center;
+    padding: 16px 0;
+  }
+  /* ── Toast ───────────────────────────────────────── */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(120px);
+    background: #222;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-size: 0.9rem;
+    transition: transform 0.4s ease, visibility 0s linear 0.4s;
+    z-index: 100;
+    text-align: center;
+    visibility: hidden;
+  }
+  .toast.show {
+    transform: translateX(-50%) translateY(0);
+    visibility: visible;
+    transition: transform 0.4s ease, visibility 0s linear 0s;
+  }
+  .toast.ok  { border-color: var(--ok);     color: var(--ok); }
+  .toast.err { border-color: var(--danger); color: var(--danger); }
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.75rem;
+    margin-top: 32px;
+    letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>&#128202; Онлайн мониторинг</h1>
+  <a class="nav-link" href="/">&larr; К настройкам</a>
+</header>
+
+<div class="status" id="status">
+  <span class="status-dot"></span>
+  <span id="statusText">Подключение...</span>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<div class="err-banner" id="errBanner" hidden>
+  <span>&#9888;</span>
+  <span id="errBannerText"></span>
+</div>
+
+<div class="alerts">
+  <div class="alerts-hdr">
+    <span class="alerts-title">&#128680; История срабатываний</span>
+    <button type="button" class="btn-clear-alerts" id="btnClearAlerts">
+      &#128465; Очистить историю
+    </button>
+  </div>
+  <table class="alert-table">
+    <thead>
+      <tr>
+        <th>Код</th>
+        <th>Описание</th>
+        <th style="text-align:right;">Кол-во</th>
+      </tr>
+    </thead>
+    <tbody id="alertTableBody">
+      <tr><td colspan="3" class="alert-empty">Загрузка...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<footer>Infiniti QX50 J55 Monitoring &mdash; ESP32</footer>
+
+<script>
+// Интервал опроса метрик, мс
+const POLL_MS = 500;
+
+const grid       = document.getElementById('grid');
+const statusEl   = document.getElementById('status');
+const statusText = document.getElementById('statusText');
+const cards      = {}; // key -> {card, num, unit}
+
+// Форматировать время работы устройства (мс -> ЧЧ:ММ:СС)
+function fmtUptime(ms) {
+  let s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600); s -= h * 3600;
+  const m = Math.floor(s / 60);   s -= m * 60;
+  const pad = n => String(n).padStart(2, '0');
+  return pad(h) + ':' + pad(m) + ':' + pad(s);
+}
+
+// Создать карточку метрики при первом появлении ключа
+function ensureCard(m) {
+  if (cards[m.key]) return cards[m.key];
+  const card = document.createElement('div');
+  card.className = 'mcard st-nodata';
+  card.innerHTML =
+    '<div class="m-top"><span class="m-label"></span></div>' +
+    '<div class="m-name"></div>' +
+    '<div class="m-val"><span class="m-num">&mdash;</span><span class="m-unit"></span></div>';
+  grid.appendChild(card);
+  const o = {
+    card: card,
+    num:  card.querySelector('.m-num'),
+    unit: card.querySelector('.m-unit'),
+  };
+  card.querySelector('.m-label').textContent = m.label;
+  card.querySelector('.m-name').textContent  = m.name;
+  o.unit.textContent = m.unit;
+  cards[m.key] = o;
+  return o;
+}
+
+// Отрисовать очередной ответ /metrics
+function render(data) {
+  data.metrics.forEach(m => {
+    const o = ensureCard(m);
+    o.num.textContent = m.fresh ? m.disp : '—';
+    o.unit.style.visibility = m.fresh ? 'visible' : 'hidden';
+    o.card.className = 'mcard st-' + (m.fresh ? m.state : 'nodata');
+  });
+}
+
+// Обновить индикатор связи
+function setOnline(on, uptimeMs) {
+  statusEl.className = 'status ' + (on ? 'online' : 'offline');
+  if (on) {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const t = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+    statusText.textContent = 'В сети · обновлено ' + t + ' · аптайм ' + fmtUptime(uptimeMs);
+  } else {
+    statusText.textContent = 'Нет связи с устройством';
+  }
+}
+
+// Цикл опроса (setTimeout вместо setInterval — без наложения запросов)
+async function tick() {
+  try {
+    const r = await fetch('/metrics', { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    render(data);
+    setOnline(true, data.uptime_ms);
+  } catch (e) {
+    setOnline(false);
+  } finally {
+    setTimeout(tick, POLL_MS);
+  }
+}
+
+// ── История срабатываний ────────────────────────────────────────────────────
+
+// Интервал обновления истории алертов, мс
+const ALERTS_MS = 5000;
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + type + ' show';
+  setTimeout(() => { t.className = 'toast'; }, 5000);
+}
+
+// Показать/скрыть баннер ошибок по наличию записей в истории
+function updateErrBanner(alerts) {
+  const banner = document.getElementById('errBanner');
+  const txt    = document.getElementById('errBannerText');
+  if (alerts && alerts.length > 0) {
+    const total = alerts.reduce((s, a) => s + (a.count || 0), 0);
+    txt.textContent = 'Зафиксированы ошибки: ' + alerts.length +
+      ' (срабатываний: ' + total + ')';
+    banner.hidden = false;
+  } else {
+    banner.hidden = true;
+  }
+}
+
+async function loadAlerts() {
+  try {
+    const r = await fetch('/alerts', { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const alerts = await r.json();
+    updateErrBanner(alerts);
+    const tbody = document.getElementById('alertTableBody');
+    if (!alerts || alerts.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="3" class="alert-empty">Нет срабатываний</td></tr>';
+      return;
+    }
+    tbody.innerHTML = alerts.map(a => `
+      <tr>
+        <td><span class="alert-code">${a.code}</span></td>
+        <td class="alert-desc">${a.description}</td>
+        <td class="alert-count">${a.count}</td>
+      </tr>`).join('');
+  } catch(e) {
+    const tbody = document.getElementById('alertTableBody');
+    tbody.innerHTML = '<tr><td colspan="3" class="alert-empty">Ошибка загрузки: ' + e.message + '</td></tr>';
+  }
+}
+
+document.getElementById('btnClearAlerts').addEventListener('click', async () => {
+  if (!confirm('Очистить всю историю алертов?')) return;
+  const btn = document.getElementById('btnClearAlerts');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/alerts-clear', { method: 'POST' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    await loadAlerts();
+    showToast('✓ История алертов очищена', 'ok');
+  } catch(e) {
+    showToast('Ошибка: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// Периодическое обновление истории (setTimeout — без наложения запросов)
+async function alertsTick() {
+  await loadAlerts();
+  setTimeout(alertsTick, ALERTS_MS);
+}
+
+tick();
+alertsTick();
+</script>
+</body>
+</html>
+)rawhtml";
+
+// ─────────────────────────────────────────────
+// Расчёт состояния метрики по порогам конфига — зеркалит логику зон DisplayManager,
+// но возвращает строковый код состояния для веб-интерфейса:
+// "cold" (синий), "ok" (зелёный), "warn" (жёлтый), "danger" (красный), "nodata" (серый)
+
+// true если значение получено не позднее stale_ms мс назад
+static bool metric_fresh(uint32_t ts, uint32_t stale_ms)
+{
+    if (ts == 0) return false;
+    return (millis() - ts) <= stale_ms;
+}
+
+// Состояние температурной метрики по порогам min/target/max
+static const char *temp_state(float v, float mn, float tgt, float mx)
+{
+    if (v >= mx)  return "danger";
+    if (v <= mn)  return "cold";
+    if (v >= tgt) return "warn";
+    return "ok";
+}
+
+// Состояние оборотов двигателя
+static const char *rpm_state(float v)
+{
+    const float green_start = config.get("rpm", "green_start");
+    const float green_end   = config.get("rpm", "green_end");
+    const float red_start   = config.get("rpm", "red_start");
+    if (v >= red_start)   return "danger";
+    if (v <= green_start) return "cold";
+    if (v <= green_end)   return "ok";
+    return "warn";
+}
+
+// Состояние давления масла — минимум зависит от текущих оборотов
+static const char *oil_pressure_state(float v, float rpm)
+{
+    const float threshold = config.get("oil_pressure", "rpm_threshold");
+    const float min_p = (rpm < threshold)
+        ? config.get("oil_pressure", "min_low")
+        : config.get("oil_pressure", "min_high");
+    return (v < min_p) ? "danger" : "ok";
+}
+
+// Состояние давления наддува турбины
+static const char *boost_state(float v)
+{
+    const float blue_max  = config.get("boost", "blue_max");
+    const float green_min = config.get("boost", "green_min");
+    if (v <= blue_max)  return "cold";
+    if (v >= green_min) return "ok";
+    return "warn";
+}
+
+// Состояние напряжения бортовой сети
+static const char *battery_state(float v)
+{
+    const float red_low   = config.get("battery", "red_low");
+    const float green_min = config.get("battery", "green_min");
+    const float green_max = config.get("battery", "green_max");
+    const float red_high  = config.get("battery", "red_high");
+    if (v < red_low || v > red_high)              return "danger";
+    if (v >= green_min && v <= green_max)         return "ok";
+    return "warn";
+}
+
+// Состояние периода опроса RPM
+static const char *poll_time_state(float v, float rpm)
+{
+    if (rpm == 0.0f || v == 0.0f) return "cold";
+    const float green_max = config.get("poll_time", "green_max");
+    const float red_min   = config.get("poll_time", "red_min");
+    if (v <= green_max) return "ok";
+    if (v >= red_min)   return "danger";
+    return "warn";
+}
+
+// Добавить один объект метрики в JSON-массив (disp — уже отформатированное значение)
+static void append_metric(String &out, const char *key, const char *label,
+                          const char *name, const char *unit, float value,
+                          int precision, bool fresh, const char *state)
+{
+    char num[16];
+    snprintf(num, sizeof(num), "%.*f", precision, value);
+
+    // Запятая-разделитель между объектами (перед новым объектом уже есть '}')
+    if (out.length() > 0 && out[out.length() - 1] == '}') out += ',';
+
+    out += "{\"key\":\"";     out += key;
+    out += "\",\"label\":\""; out += label;
+    out += "\",\"name\":\"";  out += name;
+    out += "\",\"unit\":\"";  out += unit;
+    out += "\",\"disp\":\"";  out += num;
+    out += "\",\"fresh\":";   out += (fresh ? "true" : "false");
+    out += ",\"state\":\"";   out += state;
+    out += "\"}";
+}
+
+// ─────────────────────────────────────────────
 
 WebManager::WebManager()
     : server_(80)
@@ -1337,6 +1914,8 @@ void WebManager::begin()
     Serial.printf("[WiFi] AP запущен  SSID: %s\r\n", ssid.c_str());
 
     server_.on("/",            HTTP_GET,  [this]() { handle_root(); });
+    server_.on("/live",        HTTP_GET,  [this]() { handle_live_page(); });
+    server_.on("/metrics",     HTTP_GET,  [this]() { handle_get_metrics(); });
     server_.on("/config",      HTTP_GET,  [this]() { handle_get_config(); });
     server_.on("/config",      HTTP_POST, [this]() { handle_post_config(); });
     server_.on("/reset",       HTTP_POST, [this]() { handle_reset(); });
@@ -1405,6 +1984,93 @@ String WebManager::get_ip() const
 void WebManager::handle_root()
 {
     server_.send_P(200, "text/html; charset=utf-8", INDEX_HTML);
+}
+
+void WebManager::handle_live_page()
+{
+    server_.send_P(200, "text/html; charset=utf-8", LIVE_HTML);
+}
+
+void WebManager::handle_get_metrics()
+{
+    const uint32_t stale_ms = static_cast<uint32_t>(config.get("system", "stale_ms"));
+
+    // Обороты нужны для расчёта состояния давления масла и периода опроса
+    const bool  rpm_fresh = metric_fresh(can_metrics.engine_rpm_ts, stale_ms);
+    const float rpm       = rpm_fresh ? can_metrics.engine_rpm : 0.0f;
+
+    String json;
+    json.reserve(1600);
+    json += "{\"uptime_ms\":";
+    json += String(millis());
+    json += ",\"stale_ms\":";
+    json += String(stale_ms);
+    json += ",\"metrics\":[";
+
+    // ── Температуры ──
+    {
+        const bool f = metric_fresh(can_metrics.radiator_coolant_ts, stale_ms);
+        append_metric(json, "radiator", "RAD-ANT", "Антифриз радиатора", "°C",
+            can_metrics.radiator_coolant, 0, f, f ? temp_state(can_metrics.radiator_coolant,
+                config.get("radiator", "min"), config.get("radiator", "target"),
+                config.get("radiator", "max")) : "nodata");
+    }
+    {
+        const bool f = metric_fresh(can_metrics.engine_coolant_ts, stale_ms);
+        append_metric(json, "coolant", "ENG-ANT", "Антифриз ДВС", "°C",
+            can_metrics.engine_coolant, 0, f, f ? temp_state(can_metrics.engine_coolant,
+                config.get("coolant", "min"), config.get("coolant", "target"),
+                config.get("coolant", "max")) : "nodata");
+    }
+    {
+        const bool f = metric_fresh(can_metrics.engine_oil_ts, stale_ms);
+        append_metric(json, "oil", "ENG-OIL", "Масло ДВС", "°C",
+            can_metrics.engine_oil, 0, f, f ? temp_state(can_metrics.engine_oil,
+                config.get("oil", "min"), config.get("oil", "target"),
+                config.get("oil", "max")) : "nodata");
+    }
+
+    // ── Двигатель ──
+    append_metric(json, "rpm", "ENG-RPM", "Обороты двигателя", "об/мин",
+        can_metrics.engine_rpm, 0, rpm_fresh, rpm_fresh ? rpm_state(can_metrics.engine_rpm) : "nodata");
+    {
+        const bool f = metric_fresh(can_metrics.oil_pressure_volt_ts, stale_ms);
+        append_metric(json, "oil_pressure", "OIL-PR-V", "Давление масла", "В",
+            can_metrics.oil_pressure_volt, 2, f,
+            f ? oil_pressure_state(can_metrics.oil_pressure_volt, rpm) : "nodata");
+    }
+    {
+        const bool f = metric_fresh(can_metrics.turbo_boost_volt_ts, stale_ms);
+        append_metric(json, "boost", "TURBO-V", "Наддув турбины", "В",
+            can_metrics.turbo_boost_volt, 2, f,
+            f ? boost_state(can_metrics.turbo_boost_volt) : "nodata");
+    }
+
+    // ── Прочее ──
+    {
+        const bool f = metric_fresh(can_metrics.battery_voltage_ts, stale_ms);
+        append_metric(json, "battery", "BATTERY-V", "Бортовая сеть", "В",
+            can_metrics.battery_voltage, 2, f,
+            f ? battery_state(can_metrics.battery_voltage) : "nodata");
+    }
+    {
+        // Период опроса RPM не ограничиваем stale_ms — это результат последнего замера,
+        // а не живой поток (см. main.cpp)
+        const bool f = (can_metrics.rpm_poll_time_ts != 0);
+        append_metric(json, "poll_time", "RPM-POLL", "Период опроса RPM", "с",
+            can_metrics.rpm_poll_time, 2, f,
+            f ? poll_time_state(can_metrics.rpm_poll_time, rpm) : "nodata");
+    }
+    {
+        const bool f = metric_fresh(can_metrics.cvt_temp_ts, stale_ms);
+        append_metric(json, "cvt", "CVT-FLD", "Масло вариатора", "°C",
+            can_metrics.cvt_temp, 0, f, f ? temp_state(can_metrics.cvt_temp,
+                config.get("transmission", "min"), config.get("transmission", "target"),
+                config.get("transmission", "max")) : "nodata");
+    }
+
+    json += "]}";
+    server_.send(200, "application/json", json);
 }
 
 void WebManager::handle_get_config()
