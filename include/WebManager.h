@@ -25,6 +25,11 @@ private:
     void handle_reset();
     void handle_not_found();
 
+    // Метрики: GET /live — отдельная страница живого просмотра метрик
+    void handle_live_page();
+    // Метрики: GET /metrics — текущие значения метрик с CAN-шины (JSON)
+    void handle_get_metrics();
+
     // WiFi: GET /wifi — текущие ssid/password (JSON)
     void handle_get_wifi();
     // WiFi: POST /wifi — сохранить новые ssid/password, перезагрузить устройство

@@ -26,7 +26,7 @@ static float can_value(float value, uint32_t ts)
 }
 
 // Версия прошивки — отображается внизу дисплея
-static constexpr const char *s_app_version = "2026.2.5";
+static constexpr const char *s_app_version = "2026.3.1";
 
 WebManager       web;
 BuzzerController buzzer;
