@@ -1,5 +1,4 @@
-# Таблица разделов с OTA для ESP32 4MB Flash
-# Два слота OTA по 1.75MB + SPIFFS 448KB
+# Two OTA slots 1.75MB each + SPIFFS 448KB
 # Name,   Type, SubType,  Offset,   Size,    Flags
 nvs,      data, nvs,      0x9000,   0x5000,
 otadata,  data, ota,      0xE000,   0x2000,

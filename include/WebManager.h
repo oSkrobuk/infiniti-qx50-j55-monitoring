@@ -43,4 +43,7 @@ private:
     void handle_get_checks();
     // Проверки: POST /checks — сохранить конфиг проверок (JSON body)
     void handle_post_checks();
+
+    // Метрики: GET /metrics — текущие значения для веб-монитора (JSON)
+    void handle_get_metrics();
 };

@@ -2,8 +2,20 @@
 
 #include "ConfigManager.h"
 #include "AlertManager.h"
+#include "CanBusManager.h"
+
+#include <ArduinoJson.h>
 #include <Update.h>
 #include <WiFi.h>
+
+// Вернуть метрику CAN с учётом таймаута устаревания из конфига
+static float web_can_value(float value, uint32_t ts)
+{
+    if (ts == 0) return 0.0f;
+
+    uint32_t stale_ms = static_cast<uint32_t>(config.get("system", "stale_ms"));
+    return (millis() - ts <= stale_ms) ? value : 0.0f;
+}
 
 // HTML страница хранится во флеш-памяти (PROGMEM), не занимает RAM
 static const char INDEX_HTML[] PROGMEM = R"rawhtml(
@@ -392,12 +404,133 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     font-weight: 500;
   }
   .btn-card-default:hover { opacity: 0.8; }
+  /* ── Вкладки ──────────────────────────────────────── */
+  .tabs {
+    max-width: 960px;
+    margin: 0 auto 10px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .tab-btn {
+    min-width: 0;
+    background: var(--card);
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .tab-btn.active {
+    background: var(--accent);
+    color: #000;
+  }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  /* ── Монитор ──────────────────────────────────────── */
+  .monitor-wrap {
+    max-width: 960px;
+    margin: 0 auto;
+  }
+  .monitor-status {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .monitor-screen {
+    background: #050505;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 10px;
+    box-shadow: inset 0 0 40px rgba(201,168,76,0.08);
+  }
+  .monitor-title {
+    text-align: center;
+    color: #fff;
+    letter-spacing: 2px;
+    font-weight: 700;
+    margin-bottom: 0;
+    font-size: 1rem;
+  }
+  .monitor-subtitle {
+    text-align: center;
+    color: var(--accent);
+    letter-spacing: 3px;
+    font-size: 0.68rem;
+    margin-bottom: 8px;
+  }
+  .monitor-section {
+    border-top: 1px solid #5AEB;
+    padding-top: 6px;
+    margin-top: 8px;
+  }
+  .monitor-section h3 {
+    color: #8ec6c6;
+    text-align: center;
+    font-size: 0.58rem;
+    letter-spacing: 1.5px;
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .monitor-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .metric-tile {
+    background: #0d0d0d;
+    border: 1px solid #1e1e1e;
+    border-radius: 8px;
+    padding: 7px 4px;
+    text-align: center;
+    min-height: 58px;
+  }
+  .metric-label {
+    color: #9CD3;
+    font-size: 0.52rem;
+    letter-spacing: 0.6px;
+    margin-bottom: 3px;
+    white-space: nowrap;
+  }
+  .metric-value {
+    font-size: clamp(1.05rem, 6.5vw, 1.55rem);
+    font-weight: 800;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    line-height: 1;
+  }
+  .metric-unit {
+    color: var(--muted);
+    font-size: 0.52rem;
+    margin-top: 2px;
+  }
+  .metric-blue { color: var(--blue); }
+  .metric-green { color: var(--green); }
+  .metric-red { color: var(--red); }
+  .metric-yellow { color: #ffc107; }
+  .monitor-alert {
+    display: none;
+    margin-bottom: 8px;
+    padding: 8px;
+    border: 1px solid var(--red);
+    border-radius: 10px;
+    color: var(--red);
+    text-align: center;
+    font-weight: 700;
+    letter-spacing: 1px;
+  }
   footer {
     text-align: center;
     color: var(--muted);
     font-size: 0.75rem;
     margin-top: 36px;
     letter-spacing: 1px;
+  }
+  @media (max-width: 620px) {
+    body { padding: 8px; }
+    .tabs { grid-template-columns: 1fr; }
+    .tab-btn { padding: 8px 10px; }
+    .monitor-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   }
 </style>
 </head>
@@ -407,6 +540,13 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
   <h1>&#9670; INFINITI QX50 J55 &#9670;</h1>
   <h2>MONITORING &mdash; Редактор конфигурации</h2>
 </header>
+
+<nav class="tabs">
+  <button type="button" class="tab-btn active" data-tab="settingsTab">1. Настройки</button>
+  <button type="button" class="tab-btn" data-tab="monitorTab">2. Онлайн-монитор</button>
+</nav>
+
+<main id="settingsTab" class="tab-panel active">
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
 <!-- 1. СИСТЕМНЫЕ ПАРАМЕТРЫ                                                  -->
@@ -724,6 +864,49 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
   </div>
 </details>
 
+</main>
+
+<main id="monitorTab" class="tab-panel">
+  <div class="monitor-wrap">
+    <div class="monitor-status">
+      <span id="monitorConn">Связь: ожидание</span>
+      <span id="monitorUpdated">Обновление: --</span>
+    </div>
+    <div class="monitor-alert" id="monitorAlert"></div>
+    <div class="monitor-screen">
+      <div class="monitor-title">INFINITI QX50 J55</div>
+      <div class="monitor-subtitle">MONITORING</div>
+
+      <div class="monitor-section">
+        <h3>TEMPERATURE, C</h3>
+        <div class="monitor-grid">
+          <div class="metric-tile"><div class="metric-label">RAD-ANT</div><div class="metric-value" id="mRadiator">--</div><div class="metric-unit">°C</div></div>
+          <div class="metric-tile"><div class="metric-label">ENG-ANT</div><div class="metric-value" id="mCoolant">--</div><div class="metric-unit">°C</div></div>
+          <div class="metric-tile"><div class="metric-label">ENG-OIL</div><div class="metric-value" id="mOil">--</div><div class="metric-unit">°C</div></div>
+        </div>
+      </div>
+
+      <div class="monitor-section">
+        <h3>ENGINE</h3>
+        <div class="monitor-grid">
+          <div class="metric-tile"><div class="metric-label">ENG-RPM</div><div class="metric-value" id="mRpm">--</div><div class="metric-unit">об/мин</div></div>
+          <div class="metric-tile"><div class="metric-label">OIL-PR-V</div><div class="metric-value" id="mOilPressure">--</div><div class="metric-unit">В</div></div>
+          <div class="metric-tile"><div class="metric-label">TURBO-V</div><div class="metric-value" id="mBoost">--</div><div class="metric-unit">В</div></div>
+        </div>
+      </div>
+
+      <div class="monitor-section">
+        <h3>OTHER</h3>
+        <div class="monitor-grid">
+          <div class="metric-tile"><div class="metric-label">BATTERY-V</div><div class="metric-value" id="mBattery">--</div><div class="metric-unit">В</div></div>
+          <div class="metric-tile"><div class="metric-label">RPM-POLL</div><div class="metric-value" id="mPollTime">--</div><div class="metric-unit">с</div></div>
+          <div class="metric-tile"><div class="metric-label">CVT-FLD</div><div class="metric-value" id="mTransmission">--</div><div class="metric-unit">°C</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
 <div class="toast" id="toast"></div>
 
 <footer>Infiniti QX50 J55 Monitoring &mdash; ESP32</footer>
@@ -737,6 +920,20 @@ function showToast(msg, type) {
   t.className = 'toast ' + type + ' show';
   setTimeout(() => { t.className = 'toast'; }, 5000);
 }
+
+let currentConfig = null;
+let monitorTimer = null;
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'monitorTab') startMonitor();
+    else stopMonitor();
+  });
+});
 
 // ── Конфиг метрик ──────────────────────────────────────────────────────────
 
@@ -858,11 +1055,112 @@ function validateMetrics(data) {
   return null;
 }
 
+function metricClass(state) {
+  return 'metric-value metric-' + (state || 'blue');
+}
+
+function classifyTemperature(value, section) {
+  const cfg = currentConfig && currentConfig[section];
+  if (!cfg || value === 0) return 'blue';
+  if (value >= cfg.max) return 'red';
+  if (value <= cfg.min) return 'blue';
+  return 'green';
+}
+
+function classifyRpm(value) {
+  const cfg = currentConfig && currentConfig.rpm;
+  if (!cfg || value <= cfg.green_start) return 'blue';
+  if (value >= cfg.red_start) return 'red';
+  if (value <= cfg.green_end) return 'green';
+  return 'yellow';
+}
+
+function classifyOilPressure(value, rpm) {
+  const cfg = currentConfig && currentConfig.oil_pressure;
+  if (!cfg || value === 0) return 'blue';
+  const minValue = rpm < cfg.rpm_threshold ? cfg.min_low : cfg.min_high;
+  return value < minValue ? 'red' : 'green';
+}
+
+function classifyBoost(value) {
+  const cfg = currentConfig && currentConfig.boost;
+  if (!cfg || value <= cfg.blue_max) return 'blue';
+  if (value >= cfg.green_min) return 'green';
+  return 'yellow';
+}
+
+function classifyBattery(value) {
+  const cfg = currentConfig && currentConfig.battery;
+  if (!cfg || value === 0) return 'blue';
+  if (value < cfg.red_low || value > cfg.red_high) return 'red';
+  if (value >= cfg.green_min && value <= cfg.green_max) return 'green';
+  return 'yellow';
+}
+
+function classifyPollTime(value, rpm) {
+  const cfg = currentConfig && currentConfig.poll_time;
+  if (!cfg || value === 0 || rpm === 0) return 'blue';
+  if (value <= cfg.green_max) return 'green';
+  if (value >= cfg.red_min) return 'red';
+  return 'yellow';
+}
+
+function setMetric(id, value, digits, state) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = value === 0 ? '0' : Number(value).toFixed(digits);
+  el.className = metricClass(state);
+}
+
+async function updateMonitor() {
+  try {
+    const r = await fetch('/metrics', { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const m = data.metrics || {};
+
+    setMetric('mRadiator', m.radiator_coolant || 0, 0, classifyTemperature(m.radiator_coolant || 0, 'radiator'));
+    setMetric('mCoolant', m.engine_coolant || 0, 0, classifyTemperature(m.engine_coolant || 0, 'coolant'));
+    setMetric('mOil', m.engine_oil || 0, 0, classifyTemperature(m.engine_oil || 0, 'oil'));
+    setMetric('mRpm', m.engine_rpm || 0, 0, classifyRpm(m.engine_rpm || 0));
+    setMetric('mOilPressure', m.oil_pressure_volt || 0, 2, classifyOilPressure(m.oil_pressure_volt || 0, m.engine_rpm || 0));
+    setMetric('mBoost', m.turbo_boost_volt || 0, 2, classifyBoost(m.turbo_boost_volt || 0));
+    setMetric('mBattery', m.battery_voltage || 0, 2, classifyBattery(m.battery_voltage || 0));
+    setMetric('mPollTime', m.rpm_poll_time || 0, 2, classifyPollTime(m.rpm_poll_time || 0, m.engine_rpm || 0));
+    setMetric('mTransmission', m.cvt_temp || 0, 0, classifyTemperature(m.cvt_temp || 0, 'transmission'));
+
+    const alertBox = document.getElementById('monitorAlert');
+    if (data.alert && data.alert.active) {
+      alertBox.style.display = 'block';
+      alertBox.textContent = data.alert.code + ' — ' + data.alert.description;
+    } else {
+      alertBox.style.display = 'none';
+    }
+
+    document.getElementById('monitorConn').textContent = 'Связь: есть';
+    document.getElementById('monitorUpdated').textContent = 'Обновление: ' + new Date().toLocaleTimeString();
+  } catch(e) {
+    document.getElementById('monitorConn').textContent = 'Связь: ошибка ' + e.message;
+  }
+}
+
+function startMonitor() {
+  updateMonitor();
+  if (!monitorTimer) monitorTimer = setInterval(updateMonitor, 500);
+}
+
+function stopMonitor() {
+  if (!monitorTimer) return;
+  clearInterval(monitorTimer);
+  monitorTimer = null;
+}
+
 async function loadConfig() {
   try {
     const r = await fetch('/config');
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const cfg = await r.json();
+    currentConfig = cfg;
     fillForm(cfg);
   } catch(e) {
     showToast('Ошибка загрузки конфига: ' + e.message, 'err');
@@ -885,6 +1183,7 @@ document.getElementById('configForm').addEventListener('submit', async (e) => {
     });
     const text = await r.text();
     if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + text);
+    currentConfig = Object.assign({}, currentConfig || {}, data);
     showToast('✓ Метрики сохранены!', 'ok');
   } catch(e) {
     showToast('Ошибка: ' + e.message, 'err');
@@ -901,6 +1200,7 @@ document.getElementById('btnDefault').addEventListener('click', async () => {
     const r = await fetch('/reset', { method: 'POST' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const cfg = await r.json();
+    currentConfig = cfg;
     fillForm(cfg);
     showToast('Значения по умолчанию восстановлены', 'ok');
   } catch(e) {
@@ -977,6 +1277,7 @@ document.getElementById('wifiForm').addEventListener('submit', async (e) => {
   }
 
   showToast('✓ Сохранено. Перезагрузка...', 'ok');
+  if (currentConfig) currentConfig.system = { poll_interval_ms: poll_ms, stale_ms: stale_ms };
   setTimeout(async () => {
     try { await fetch('/restart', { method: 'POST' }); } catch(_) {}
   }, 1200);
@@ -1359,6 +1660,7 @@ void WebManager::begin()
     server_.on("/alerts-clear",  HTTP_POST, [this]() { handle_clear_alerts(); });
     server_.on("/checks",        HTTP_GET,  [this]() { handle_get_checks(); });
     server_.on("/checks",        HTTP_POST, [this]() { handle_post_checks(); });
+    server_.on("/metrics",       HTTP_GET,  [this]() { handle_get_metrics(); });
 
     // GET /update — та же страница, что и корень
     server_.on("/update", HTTP_GET, [this]() { handle_update_page(); });
@@ -1568,6 +1870,34 @@ void WebManager::handle_post_checks()
     } else {
         server_.send(400, "application/json", "{\"error\":\"invalid json\"}");
     }
+}
+
+void WebManager::handle_get_metrics()
+{
+    JsonDocument doc;
+    JsonObject metrics = doc["metrics"].to<JsonObject>();
+
+    metrics["engine_coolant"]     = web_can_value(can_metrics.engine_coolant, can_metrics.engine_coolant_ts);
+    metrics["engine_oil"]         = web_can_value(can_metrics.engine_oil, can_metrics.engine_oil_ts);
+    metrics["radiator_coolant"]   = web_can_value(can_metrics.radiator_coolant, can_metrics.radiator_coolant_ts);
+    metrics["engine_rpm"]         = web_can_value(can_metrics.engine_rpm, can_metrics.engine_rpm_ts);
+    metrics["turbo_boost_volt"]   = web_can_value(can_metrics.turbo_boost_volt, can_metrics.turbo_boost_volt_ts);
+    metrics["oil_pressure_volt"]  = web_can_value(can_metrics.oil_pressure_volt, can_metrics.oil_pressure_volt_ts);
+    metrics["battery_voltage"]    = web_can_value(can_metrics.battery_voltage, can_metrics.battery_voltage_ts);
+    metrics["cvt_temp"]           = web_can_value(can_metrics.cvt_temp, can_metrics.cvt_temp_ts);
+    metrics["rpm_poll_time"]      = (can_metrics.rpm_poll_time_ts != 0) ? can_metrics.rpm_poll_time : 0.0f;
+
+    JsonObject alert = doc["alert"].to<JsonObject>();
+    alert["active"] = alert_manager.has_active_alert();
+    alert["code"] = alert_manager.active_code();
+    alert["description"] = alert_manager.active_description();
+    alert["has_log"] = alert_manager.log_count() > 0;
+
+    doc["uptime_ms"] = millis();
+
+    String json;
+    serializeJson(doc, json);
+    server_.send(200, "application/json", json);
 }
 
 // ── OTA ──────────────────────────────────────────────────────────────────────
