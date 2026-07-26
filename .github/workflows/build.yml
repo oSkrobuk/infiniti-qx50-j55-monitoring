@@ -49,7 +49,7 @@ jobs:
 
     steps:
       - name: Клонировать репозиторий
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Сверить версию прошивки с тегом
         # Версия зашита в src/main.cpp руками, тег ставится отдельно.
@@ -66,7 +66,7 @@ jobs:
           fi
 
       - name: Поставить Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -74,7 +74,7 @@ jobs:
         # без кэша каждая сборка качает ~500 МБ тулчейна xtensa (2-4 минуты),
         # с кэшем — секунды. Ключ завязан на чип и на platformio.ini, поэтому
         # при смене версии платформы кэш автоматически пересобирается
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.platformio/.cache
@@ -115,7 +115,7 @@ jobs:
           fi
 
       - name: Сохранить бинарники
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.env }}
           path: |
@@ -137,7 +137,7 @@ jobs:
 
     steps:
       - name: Забрать бинарники ESP32 DEVKIT1
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: esp32
           path: release/
