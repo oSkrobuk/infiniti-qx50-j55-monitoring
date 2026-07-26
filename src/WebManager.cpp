@@ -864,7 +864,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
       <p class="wifi-note">
         Проверка идет из браузера прямо в GitHub — устройству интернет не нужен.
         Включите на телефоне мобильные данные и разрешите ему оставаться в сети без интернета.
-        <a href="https://github.com/oSkrobuk/infiniti-qx50-j55-monitoring/releases" target="_blank" rel="noopener">Все релизы &rarr;</a>
+        <a href="https://github.com/oSkrobuk/infiniti-qx50-j55-monitoring/releases" target="_blank" rel="noopener">Все релизы</a>
       </p>
     </div>
 
@@ -1496,7 +1496,7 @@ function updCmpVer(a, b) {
 // Ссылка на страницу релизов — фолбэк, который работает и без fetch
 function updPageLink(text) {
   return '<div class="upd-links"><a href="' + UPD_PAGE + '" target="_blank" rel="noopener">' +
-    (text || 'Открыть страницу релизов') + ' &rarr;</a></div>';
+    (text || 'Открыть страницу релизов') + '</a></div>';
 }
 
 function updShow(kind, title, body) {
@@ -1577,9 +1577,9 @@ function updRenderRelease(rel) {
   const date  = rel.published_at ? String(rel.published_at).slice(0, 10) : '';
   const notes = rel.body ? '<div class="upd-notes">' + updEsc(rel.body) + '</div>' : '';
 
-  let links = '<div class="upd-links"><a href="' + page + '" target="_blank" rel="noopener">Страница релиза &rarr;</a>';
+  let links = '<div class="upd-links"><a href="' + page + '" target="_blank" rel="noopener">Страница релиза</a>';
   if (asset) {
-    links += '<a href="' + asset.browser_download_url + '" target="_blank" rel="noopener">Скачать firmware.bin &rarr;</a>';
+    links += '<a href="' + asset.browser_download_url + '" target="_blank" rel="noopener">Скачать firmware.bin</a>';
   }
   links += '</div>';
 
