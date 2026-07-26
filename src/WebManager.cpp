@@ -3,8 +3,24 @@
 #include "ConfigManager.h"
 #include "AlertManager.h"
 #include "CanBusManager.h"
+#include "Version.h"
 #include <Update.h>
 #include <WiFi.h>
+#include <esp_netif.h>
+#include <esp_ota_ops.h>
+
+// Окружение сборки — по нему веб-интерфейс решает, годится ли firmware.bin
+// из релиза для этой платы. CI кладет в релиз бинарники только ESP32 DEVKIT1,
+// поэтому на WT32-SC01 Plus автоустановка не предлагается
+#if defined(DISPLAY_WT32_S3) && defined(USE_MOCK_DATA)
+static constexpr const char *BUILD_ENV = "esp32s3-wt32-mock";
+#elif defined(DISPLAY_WT32_S3)
+static constexpr const char *BUILD_ENV = "esp32s3-wt32";
+#elif defined(USE_MOCK_DATA)
+static constexpr const char *BUILD_ENV = "esp32-mock";
+#else
+static constexpr const char *BUILD_ENV = "esp32";
+#endif
 
 // HTML страница хранится во флеш-памяти (PROGMEM), не занимает RAM
 static const char INDEX_HTML[] PROGMEM = R"rawhtml(
@@ -255,6 +271,79 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     text-align: center;
     letter-spacing: 0.5px;
   }
+  /* ── Проверка обновлений ─────────────────────────── */
+  .upd-card { margin-bottom: 16px; }
+  .upd-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .upd-cur {
+    flex: 1;
+    min-width: 180px;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .upd-cur b { color: var(--text); }
+  .upd-hint {
+    font-size: 0.72rem;
+    color: var(--muted);
+    line-height: 1.4;
+    margin-top: 4px;
+  }
+  .btn-upd {
+    flex: 0 0 auto;
+    min-width: 0;
+    padding: 10px 18px;
+    font-size: 0.85rem;
+    background: var(--border);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+  }
+  .btn-upd:hover { opacity: 0.8; }
+  .btn-upd-install {
+    background: #1565c0;
+    color: #fff;
+    border-color: #1565c0;
+  }
+  .upd-box {
+    display: none;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    background: var(--bg);
+  }
+  .upd-box.show { display: block; }
+  .upd-box.new  { border-color: var(--accent); }
+  .upd-box.ok   { border-color: var(--green); }
+  .upd-box.err  { border-color: var(--red); }
+  .upd-title { font-weight: 600; margin-bottom: 6px; }
+  .upd-box.new .upd-title { color: var(--accent); }
+  .upd-box.ok  .upd-title { color: var(--green); }
+  .upd-box.err .upd-title { color: var(--red); }
+  .upd-notes {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    max-height: 200px;
+    overflow: auto;
+    white-space: pre-wrap;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .upd-links {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 10px;
+  }
+  .upd-links a { color: var(--blue); font-size: 0.8rem; }
   /* ── Toast ───────────────────────────────────────── */
   .toast {
     position: fixed;
@@ -721,6 +810,24 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     <span class="sect-chevron">&#9660;</span>
   </summary>
   <div class="sect-body">
+    <!-- Проверка новой версии на GitHub — запрос уходит из браузера телефона -->
+    <div class="card upd-card">
+      <div class="card-title">&#8635; Проверка обновлений</div>
+      <div class="upd-row">
+        <div class="upd-cur">
+          Текущая версия: <b id="updCur">&mdash;</b>
+          <div class="upd-hint" id="updMeta"></div>
+        </div>
+        <button type="button" class="btn-upd" id="btnUpdCheck">&#8635; Проверить обновления</button>
+      </div>
+      <div class="upd-box" id="updBox"></div>
+      <p class="wifi-note">
+        Проверка идет из браузера прямо в GitHub — устройству интернет не нужен.
+        Включите на телефоне мобильные данные и разрешите ему оставаться в сети без интернета.
+        <a href="https://github.com/oSkrobuk/infiniti-qx50-j55-monitoring/releases" target="_blank" rel="noopener">Все релизы &rarr;</a>
+      </p>
+    </div>
+
     <div class="card">
       <div class="card-title">&#8593; OTA &mdash; Загрузка .bin</div>
       <div class="ota-row">
@@ -1196,17 +1303,16 @@ otaFile.addEventListener('change', () => {
   }
 });
 
-btnOta.addEventListener('click', () => {
-  if (!otaFile.files.length) return;
-  if (!confirm('Загрузить новую прошивку?\nУстройство перезагрузится после прошивки.')) return;
-
+// Отправка прошивки в POST /update — общий код ручной загрузки и автоустановки.
+// file — File из формы или Blob, скачанный с GitHub; btn разблокируется при ошибке
+function sendFirmware(file, name, btn) {
   const formData = new FormData();
-  formData.append('firmware', otaFile.files[0], otaFile.files[0].name);
+  formData.append('firmware', file, name);
 
   const xhr = new XMLHttpRequest();
   xhr.open('POST', '/update');
 
-  btnOta.disabled = true;
+  if (btn) btn.disabled = true;
   otaBar.style.background = 'var(--accent)';
   otaBar.style.width = '0%';
   otaStatus.textContent = 'Подготовка...';
@@ -1231,18 +1337,221 @@ btnOta.addEventListener('click', () => {
     } else {
       otaBar.style.background = 'var(--red)';
       otaStatus.textContent = '✗ Ошибка: ' + xhr.responseText;
-      btnOta.disabled = false;
+      if (btn) btn.disabled = false;
     }
   });
 
   xhr.addEventListener('error', () => {
     otaBar.style.background = 'var(--red)';
     otaStatus.textContent = '✗ Сетевая ошибка';
-    btnOta.disabled = false;
+    if (btn) btn.disabled = false;
   });
 
   xhr.send(formData);
+}
+
+btnOta.addEventListener('click', () => {
+  if (!otaFile.files.length) return;
+  if (!confirm('Загрузить новую прошивку?\nУстройство перезагрузится после прошивки.')) return;
+
+  sendFirmware(otaFile.files[0], otaFile.files[0].name, btnOta);
 });
+
+// ── Проверка обновлений ────────────────────────────────────────────────────
+//
+// Устройство работает точкой доступа и в интернет не выходит, поэтому релизы
+// спрашивает браузер телефона: запрос на 192.168.4.1 идет по WiFi, запрос на
+// api.github.com — по мобильной сети
+
+const UPD_REPO = 'oSkrobuk/infiniti-qx50-j55-monitoring';
+const UPD_PAGE = 'https://github.com/' + UPD_REPO + '/releases';
+const UPD_API  = 'https://api.github.com/repos/' + UPD_REPO + '/releases/latest';
+
+// Таймаут запроса к GitHub, мс. В сети без интернета DNS не отвечает, и без
+// AbortController запрос висел бы десятками секунд
+const UPD_TIMEOUT_MS = 5000;
+
+// Таймаут скачивания firmware.bin, мс — файл около мегабайта
+const UPD_DOWNLOAD_TIMEOUT_MS = 120000;
+
+const updCur      = document.getElementById('updCur');
+const updMeta     = document.getElementById('updMeta');
+const updBox      = document.getElementById('updBox');
+const btnUpdCheck = document.getElementById('btnUpdCheck');
+
+// Версия и окружение прошивки на устройстве — заполняются из GET /version
+let fwVersion = '';
+let fwEnv     = '';
+
+// Экранирование текста из ответа GitHub (описание релиза — произвольный markdown)
+function updEsc(s) {
+  const d = document.createElement('div');
+  d.textContent = (s === undefined || s === null) ? '' : String(s);
+  return d.innerHTML;
+}
+
+// Разбор версии YYYY.M.Z в три числа, префикс v необязателен
+function updParseVer(s) {
+  const parts = String(s || '').trim().replace(/^v/i, '').split('.');
+  return [0, 1, 2].map(i => {
+    const n = parseInt(parts[i], 10);
+    return isNaN(n) ? 0 : n;
+  });
+}
+
+// -1 если a старше b, 0 если совпадают, +1 если a новее b
+function updCmpVer(a, b) {
+  const x = updParseVer(a);
+  const y = updParseVer(b);
+  for (let i = 0; i < 3; i++) {
+    if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
+  }
+  return 0;
+}
+
+// Ссылка на страницу релизов — фолбэк, который работает и без fetch
+function updPageLink(text) {
+  return '<div class="upd-links"><a href="' + UPD_PAGE + '" target="_blank" rel="noopener">' +
+    (text || 'Открыть страницу релизов') + ' &rarr;</a></div>';
+}
+
+function updShow(kind, title, body) {
+  updBox.className = 'upd-box show ' + kind;
+  updBox.innerHTML = '<div class="upd-title">' + title + '</div>' + (body || '');
+}
+
+// Версия прошивки на устройстве
+async function loadVersion() {
+  try {
+    const r = await fetch('/version', { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const v = await r.json();
+    fwVersion = v.version || '';
+    fwEnv     = v.env || '';
+    updCur.textContent  = fwVersion || 'неизвестна';
+    updMeta.textContent = 'сборка ' + (v.build || '?') + ' · слот ' + (v.slot || '?') +
+      (fwEnv ? ' · ' + fwEnv : '');
+  } catch(e) {
+    updCur.textContent  = 'неизвестна';
+    updMeta.textContent = '';
+  }
+}
+
+// Скачать firmware.bin из релиза и отдать его в POST /update.
+// Ссылка на ассет редиректит на objects.githubusercontent.com, где CORS не
+// гарантирован: при любой ошибке остается ручной сценарий — форма ниже
+async function updDownloadAndInstall(url, tag) {
+  const btn = document.getElementById('btnUpdInstall');
+  const st  = document.getElementById('updInstallStatus');
+
+  if (!confirm('Скачать версию ' + tag + ' и прошить устройство?\nПосле записи устройство перезагрузится.')) return;
+
+  btn.disabled   = true;
+  st.textContent = 'Скачиваю firmware.bin...';
+
+  const ctl   = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), UPD_DOWNLOAD_TIMEOUT_MS);
+  let blob = null;
+
+  try {
+    const r = await fetch(url, { cache: 'no-store', signal: ctl.signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    blob = await r.blob();
+    if (!blob.size) throw new Error('пустой файл');
+  } catch(e) {
+    st.textContent = 'Скачать из браузера не удалось. Нажмите «Скачать firmware.bin» выше, ' +
+      'затем выберите файл в форме «OTA — Загрузка .bin» ниже.';
+    btn.disabled = false;
+    return;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  st.textContent = 'Скачано ' + Math.round(blob.size / 1024) + ' KB, прошиваю — прогресс ниже';
+  sendFirmware(blob, 'firmware.bin', btn);
+}
+
+// Отрисовать ответ GitHub о последнем релизе
+function updRenderRelease(rel) {
+  const tag  = String(rel.tag_name || '').replace(/^v/i, '');
+  const page = rel.html_url || UPD_PAGE;
+  const cmp  = updCmpVer(tag, fwVersion);
+
+  if (cmp === 0) {
+    updShow('ok', '✓ Установлена последняя версия ' + updEsc(tag), updPageLink('Страница релиза'));
+    return;
+  }
+  if (cmp < 0) {
+    updShow('ok', 'На устройстве версия новее опубликованной',
+      '<div>Последний релиз на GitHub — ' + updEsc(tag) + ', на устройстве ' + updEsc(fwVersion || '?') + '.</div>' +
+      updPageLink('Страница релизов'));
+    return;
+  }
+
+  // В релиз попадает firmware.bin для ESP32 DEVKIT1
+  const asset = (rel.assets || []).find(a => a.name === 'firmware.bin');
+  const date  = rel.published_at ? String(rel.published_at).slice(0, 10) : '';
+  const notes = rel.body ? '<div class="upd-notes">' + updEsc(rel.body) + '</div>' : '';
+
+  let links = '<div class="upd-links"><a href="' + page + '" target="_blank" rel="noopener">Страница релиза &rarr;</a>';
+  if (asset) {
+    links += '<a href="' + asset.browser_download_url + '" target="_blank" rel="noopener">Скачать firmware.bin &rarr;</a>';
+  }
+  links += '</div>';
+
+  // Автоустановка только для плат, чьи бинарники лежат в релизе
+  let install = '';
+  if (asset && /^esp32(-mock)?$/.test(fwEnv)) {
+    install = '<div class="upd-links">' +
+      '<button type="button" class="btn-upd btn-upd-install" id="btnUpdInstall">&#8595; Скачать и установить</button>' +
+      '<span class="upd-hint" id="updInstallStatus"></span></div>';
+  } else if (asset) {
+    install = '<div class="upd-hint">&#9888; В релизе лежат бинарники только ESP32 DEVKIT1 — ' +
+      'для этой платы (' + updEsc(fwEnv || '?') + ') соберите прошивку из исходников.</div>';
+  }
+
+  updShow('new', 'Доступна версия ' + updEsc(tag) + ' (у вас ' + updEsc(fwVersion || '?') + ')',
+    (date ? '<div>Опубликован ' + updEsc(date) + '</div>' : '') + notes + links + install);
+
+  const btnInstall = document.getElementById('btnUpdInstall');
+  if (btnInstall && asset) {
+    btnInstall.addEventListener('click', () => updDownloadAndInstall(asset.browser_download_url, tag));
+  }
+}
+
+async function checkUpdates() {
+  const label = btnUpdCheck.innerHTML;
+  btnUpdCheck.disabled  = true;
+  btnUpdCheck.textContent = 'Проверяю...';
+
+  const ctl   = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), UPD_TIMEOUT_MS);
+
+  try {
+    const r = await fetch(UPD_API, { cache: 'no-store', signal: ctl.signal });
+    if (r.status === 404) {
+      updShow('err', 'Релизы еще не опубликованы', updPageLink());
+    } else if (r.status === 403) {
+      updShow('err', 'Превышен лимит запросов к GitHub, попробуйте позже',
+        '<div class="upd-hint">Без авторизации GitHub отдает 60 запросов в час на один адрес.</div>' +
+        updPageLink());
+    } else if (!r.ok) {
+      updShow('err', 'GitHub ответил HTTP ' + r.status, updPageLink());
+    } else {
+      updRenderRelease(await r.json());
+    }
+  } catch(e) {
+    updShow('err', 'Нет доступа к интернету',
+      '<div>Включите мобильные данные и разрешите телефону оставаться в сети без интернета.</div>' +
+      updPageLink('Проверить вручную'));
+  } finally {
+    clearTimeout(timer);
+    btnUpdCheck.disabled  = false;
+    btnUpdCheck.innerHTML = label;
+  }
+}
+
+btnUpdCheck.addEventListener('click', checkUpdates);
 
 // ── Сброс карточек к значениям по умолчанию ───────────────────────────────
 
@@ -1325,6 +1634,7 @@ function resetCheckCard(code) {
 loadConfig();
 loadWifi();
 loadChecks();
+loadVersion();
 // Алерты загружаются при открытии секции (toggle event), но при первом открытии
 // секция может быть уже открыта — грузим сразу
 loadAlerts();
@@ -1692,14 +2002,15 @@ function render(data) {
   });
 }
 
-// Обновить индикатор связи
-function setOnline(on, uptimeMs) {
+// Обновить индикатор связи (версия прошивки приходит в том же ответе /metrics)
+function setOnline(on, uptimeMs, version) {
   statusEl.className = 'status ' + (on ? 'online' : 'offline');
   if (on) {
     const now = new Date();
     const pad = n => String(n).padStart(2, '0');
     const t = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
-    statusText.textContent = 'В сети · обновлено ' + t + ' · аптайм ' + fmtUptime(uptimeMs);
+    statusText.textContent = 'В сети · v' + (version || '?') +
+      ' · обновлено ' + t + ' · аптайм ' + fmtUptime(uptimeMs);
   } else {
     statusText.textContent = 'Нет связи с устройством';
   }
@@ -1712,7 +2023,7 @@ async function tick() {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     render(data);
-    setOnline(true, data.uptime_ms);
+    setOnline(true, data.uptime_ms, data.version);
   } catch (e) {
     setOnline(false);
   } finally {
@@ -1902,6 +2213,49 @@ static void append_metric(String &out, const char *key, const char *label,
 
 // ─────────────────────────────────────────────
 
+// Не отдавать клиенту шлюз по DHCP — иначе телефон теряет мобильный интернет.
+//
+// По умолчанию dhcp-сервер softAP отдает опцию 3 (router) со своим адресом
+// 192.168.4.1. Телефон ставит через него маршрут по умолчанию, весь трафик
+// уходит в устройство, у которого интернета нет, и мобильные данные перестают
+// работать до тех пор, пока система сама не решит, что сеть невалидна.
+//
+// Без опции 3 маршрута по умолчанию в нашей сети нет вообще: телефон оставляет
+// основной сетью мобильную, а 192.168.4.1 остается доступен по on-link маршруту
+// своей подсети. Именно это позволяет веб-интерфейсу спрашивать GitHub о новой
+// версии прошивки, не отключаясь от устройства.
+//
+// Опцию 6 (DNS) dhcpserver из IDF 4.4 не умеет не отдавать: сброшенный флаг
+// OFFER_DNS означает «отдать адрес самой точки доступа». Это не мешает — DNS
+// сети без маршрута по умолчанию система для своих запросов не использует
+static void ap_disable_dhcp_router_option()
+{
+    esp_netif_t *ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+    if (ap == nullptr) {
+        Serial.println("[WiFi] Интерфейс AP не найден — опции DHCP оставлены по умолчанию");
+        return;
+    }
+
+    // Менять опции разрешено только на остановленном dhcp-сервере
+    esp_netif_dhcps_stop(ap);
+
+    uint8_t offer = 0; // dhcps_offer_t без флага OFFER_ROUTER
+    esp_err_t err = esp_netif_dhcps_option(ap, ESP_NETIF_OP_SET,
+                                           ESP_NETIF_ROUTER_SOLICITATION_ADDRESS,
+                                           &offer, sizeof(offer));
+    if (err != ESP_OK) {
+        Serial.printf("[WiFi] Опцию DHCP router отключить не удалось: %s\r\n", esp_err_to_name(err));
+    }
+
+    err = esp_netif_dhcps_start(ap);
+    if (err != ESP_OK) {
+        Serial.printf("[WiFi] DHCP-сервер не запустился: %s\r\n", esp_err_to_name(err));
+        return;
+    }
+
+    Serial.println("[WiFi] Шлюз по DHCP не отдается — мобильный интернет у клиента сохраняется");
+}
+
 WebManager::WebManager()
     : server_(80)
 {
@@ -1918,9 +2272,12 @@ void WebManager::begin()
     WiFi.softAP(ssid.c_str(), pass.isEmpty() ? nullptr : pass.c_str());
     Serial.printf("[WiFi] AP запущен  SSID: %s\r\n", ssid.c_str());
 
+    ap_disable_dhcp_router_option();
+
     server_.on("/",            HTTP_GET,  [this]() { handle_root(); });
     server_.on("/live",        HTTP_GET,  [this]() { handle_live_page(); });
     server_.on("/metrics",     HTTP_GET,  [this]() { handle_get_metrics(); });
+    server_.on("/version",     HTTP_GET,  [this]() { handle_get_version(); });
     server_.on("/config",      HTTP_GET,  [this]() { handle_get_config(); });
     server_.on("/config",      HTTP_POST, [this]() { handle_post_config(); });
     server_.on("/reset",       HTTP_POST, [this]() { handle_reset(); });
@@ -1996,6 +2353,29 @@ void WebManager::handle_live_page()
     server_.send_P(200, "text/html; charset=utf-8", LIVE_HTML);
 }
 
+void WebManager::handle_get_version()
+{
+    // Слот, из которого загрузилась работающая прошивка: ota_0 или ota_1
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    const char *slot = (running != nullptr && running->label[0] != '\0') ? running->label : "?";
+
+    String json;
+    json.reserve(192);
+    json += "{\"version\":\"";
+    json += FW_VERSION;
+    json += "\",\"build\":\"";
+    json += __DATE__ " " __TIME__;
+    json += "\",\"slot\":\"";
+    json += slot;
+    json += "\",\"env\":\"";
+    json += BUILD_ENV;
+    json += "\",\"uptime_s\":";
+    json += String(millis() / 1000);
+    json += "}";
+
+    server_.send(200, "application/json", json);
+}
+
 void WebManager::handle_get_metrics()
 {
     const uint32_t stale_ms = static_cast<uint32_t>(config.get("system", "stale_ms"));
@@ -2005,8 +2385,10 @@ void WebManager::handle_get_metrics()
     const float rpm       = rpm_fresh ? can_metrics.engine_rpm : 0.0f;
 
     String json;
-    json.reserve(1600);
-    json += "{\"uptime_ms\":";
+    json.reserve(1700);
+    json += "{\"version\":\"";
+    json += FW_VERSION;
+    json += "\",\"uptime_ms\":";
     json += String(millis());
     json += ",\"stale_ms\":";
     json += String(stale_ms);

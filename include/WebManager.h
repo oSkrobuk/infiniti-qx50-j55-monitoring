@@ -75,6 +75,9 @@ private:
     // Метрики: GET /metrics — текущие значения метрик с CAN-шины (JSON)
     void handle_get_metrics();
 
+    // Версия: GET /version — версия прошивки, метка сборки, слот OTA, окружение, аптайм (JSON)
+    void handle_get_version();
+
     // WiFi: GET /wifi — текущие ssid/password (JSON)
     void handle_get_wifi();
     // WiFi: POST /wifi — сохранить новые ssid/password, перезагрузить устройство
