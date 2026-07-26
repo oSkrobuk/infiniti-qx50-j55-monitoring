@@ -60,7 +60,7 @@ C:\Users\homework\.platformio\penv\Scripts\pio.exe
 Из PowerShell удобно вызывать через переменную окружения:
 
 ```powershell
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run                        # собрать все окружения
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run                        # собрать все прошивки
 & "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32s3-wt32         # одно окружение
 & "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32 -e esp32-mock  # несколько окружений
 & "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32s3-wt32 -v      # подробный вывод (видны флаги компилятора)
@@ -75,21 +75,78 @@ C:\Users\homework\.platformio\penv\Scripts\pio.exe
 | `esp32-mock` | ESP32 DEVKIT1 | ST7789 240×240 (SPI) | имитация (`USE_MOCK_DATA`) |
 | `esp32s3-wt32` | WT32-SC01 Plus (ESP32-S3) | ST7796 320×480 (параллельный 8-бит) | реальные из CAN |
 | `esp32s3-wt32-mock` | WT32-SC01 Plus (ESP32-S3) | ST7796 320×480 (параллельный 8-бит) | имитация (`USE_MOCK_DATA`) |
+| `native` | хост (gcc/clang) | — | юнит-тесты, см. ниже |
+
+`default_envs` в `platformio.ini` перечисляет только четыре прошивки, поэтому
+`pio run` без аргументов `native` не трогает.
 
 > `TOUCH_CS` определяется **только** в SPI-окружениях. В параллельном 8-битном
 > режиме (S3) TFT_eSPI не подключает объявления touch, но компилирует `Touch.cpp`
 > по `#ifdef TOUCH_CS` — поэтому определять там `TOUCH_CS` нельзя, иначе сборка падает
+
+## Tests
+
+Юнит-тесты собираются под хост обычным gcc и выполняются за секунды — ни платы,
+ни xtensa-тулчейна не нужно.
+
+```powershell
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" test -e native                        # все наборы
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" test -e native -f test_alert_manager  # один набор
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" test -e native -vvv                   # подробный вывод
+```
+
+Нужен хостовый компилятор в `PATH`. На этой машине стоит WinLibs MinGW-w64:
+
+```
+C:\Users\homework\AppData\Local\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\mingw64\bin
+```
+
+### Как это устроено
+
+Окружение `native` собирает только те модули прошивки, что не зависят от железа
+(`build_src_filter` в `platformio.ini`), а недостающие Arduino-заголовки
+подменяет заглушками из `test/stubs`:
+
+| Заглушка | Что заменяет |
+|----------|--------------|
+| `Arduino.h` | `millis()` под управлением теста (`mock_set_millis`, `mock_advance_millis`), молчащий `Serial`, GPIO-пустышки |
+| `WString.h` | `String` = `std::string` — ArduinoJson поддерживает его штатно |
+| `Print.h` / `Stream.h` | базовые классы, по которым ArduinoJson выбирает Writer и Reader |
+| `LittleFS.h` | файловая система в памяти + флаги `mock_fs_*` для имитации отказов флеша |
+| `BuzzerStub.h` | глобальный `buzzer` и счётчик срабатываний |
+
+### Правила для тестируемого кода
+
+- Логика, которую хочется покрыть тестами, не должна тянуть `<driver/twai.h>`,
+  `<TFT_eSPI.h>` или `<WebServer.h>` — именно ради этого декодер CAN живёт
+  в `CanDecoder.cpp`, а цветовые зоны в `MetricColors.cpp`.
+- Новый файл, который надо тестировать, добавляется в `build_src_filter`
+  окружения `native`.
+- `BuzzerStub.h` подключается ровно один раз — из главного файла набора тестов.
+  Определения в нём намеренно не `inline`.
 
 ## Project structure
 
 ```
 include/        C++ headers
 src/            C++ implementation files
+test/           Unit tests (PlatformIO + Unity)
+test/stubs/     Host stubs for Arduino.h, LittleFS.h and friends
 docs/           Documentation and images
 partitions.csv  ESP32 OTA partition table
 platformio.ini  PlatformIO build configuration
 AGENTS.md       Agent rules (this file)
 ```
+
+## CI
+
+`.github/workflows/build.yml` идёт строго по порядку:
+
+1. **Юнит-тесты** (`pio test -e native`) плюс сверка версии с тегом. Пока этот
+   job не прошёл, ни одна прошивка не собирается.
+2. **Сборки** четырёх окружений — `max-parallel: 1` и `fail-fast: true`, то есть
+   строго по одной; после первой упавшей остальные не запускаются.
+3. **Черновик релиза** — только на тег `v*`.
 
 ## Hardware
 

@@ -1,9 +1,14 @@
 # Путь в репозитории: .github/workflows/build.yml
 #
 # Что делает:
-#   * при каждом push в main и в каждом PR — собирает все четыре окружения;
+#   * прогоняет юнит-тесты под хостом — это первый и самый быстрый барьер;
+#   * только если тесты прошли, собирает все четыре окружения по очереди;
 #   * при push тега вида v2026.3.2 — сверяет версию в src/main.cpp с тегом и
 #     кладёт бинарники ESP32 DEVKIT1 в черновик релиза на этот тег.
+#
+# Порядок жёсткий и последовательный намеренно: собирать прошивку, зная что
+# логика уже сломана, смысла нет, а после первой упавшей сборки нет смысла
+# ждать остальные — чинить всё равно придётся эту.
 
 name: Build
 
@@ -26,13 +31,66 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test:
+    name: Юнит-тесты
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Клонировать репозиторий
+        uses: actions/checkout@v5
+
+      - name: Сверить версию прошивки с тегом
+        # Версия зашита в src/main.cpp руками, тег ставится отдельно.
+        # Без этой проверки релиз v2026.3.2 мог бы уехать с прошивкой,
+        # которая показывает на дисплее 2026.3.1.
+        # Проверка стоит здесь, а не в сборке: она мгновенная и незачем
+        # гонять четыре тулчейна ради заведомо испорченного релиза
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          SRC=$(grep -oP 's_app_version\s*=\s*"\K[^"]+' src/main.cpp)
+          echo "тег: $TAG, прошивка: $SRC"
+          if [ "$TAG" != "$SRC" ]; then
+            echo "::error::Версия в src/main.cpp ($SRC) не совпадает с тегом ($TAG)"
+            exit 1
+          fi
+
+      - name: Поставить Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Кэш PlatformIO
+        # Окружению native тулчейн не нужен — на runner уже есть gcc.
+        # Кэшируется только ядро PlatformIO и Unity с ArduinoJson
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pio-${{ runner.os }}-native-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-native-
+
+      - name: Поставить PlatformIO
+        # версия зафиксирована, чтобы CI собирал тем же, чем собирают локально
+        run: pip install "platformio==6.1.19"
+
+      - name: Прогнать тесты
+        run: pio test -e native
+
   build:
     name: ${{ matrix.env }}
+    # Ни одна прошивка не собирается, пока тесты не прошли
+    needs: test
     runs-on: ubuntu-latest
     strategy:
-      # не отменять остальные окружения, если одно упало —
-      # хочется видеть сразу все поломки, а не первую
-      fail-fast: false
+      # Первая упавшая сборка отменяет остальные: чинить всё равно нужно её,
+      # а очередь из трёх заведомо ненужных прогонов только жжёт минуты
+      fail-fast: true
+      # Окружения идут строго по одному, а не параллельно — так «следующие
+      # не запускаются» работает буквально, а не «отменяются на полпути»
+      max-parallel: 1
       matrix:
         # chip нужен только для ключа кэша: ESP32 и ESP32-S3 тянут разные
         # тулчейны (xtensa-esp32-elf и xtensa-esp32s3-elf), общий кэш на все
@@ -50,20 +108,6 @@ jobs:
     steps:
       - name: Клонировать репозиторий
         uses: actions/checkout@v5
-
-      - name: Сверить версию прошивки с тегом
-        # Версия зашита в src/main.cpp руками, тег ставится отдельно.
-        # Без этой проверки релиз v2026.3.2 мог бы уехать с прошивкой,
-        # которая показывает на дисплее 2026.3.1
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          SRC=$(grep -oP 's_app_version\s*=\s*"\K[^"]+' src/main.cpp)
-          echo "тег: $TAG, прошивка: $SRC"
-          if [ "$TAG" != "$SRC" ]; then
-            echo "::error::Версия в src/main.cpp ($SRC) не совпадает с тегом ($TAG)"
-            exit 1
-          fi
 
       - name: Поставить Python
         uses: actions/setup-python@v6

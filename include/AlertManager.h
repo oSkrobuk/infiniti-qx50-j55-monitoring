@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
-#include "CanBusManager.h"
+#include "CanTypes.h"
 
 // Максимальное количество уникальных записей в истории алертов
 static constexpr uint8_t ALERT_LOG_MAX = 16;
