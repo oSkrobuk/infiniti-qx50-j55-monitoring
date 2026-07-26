@@ -343,7 +343,47 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     flex-wrap: wrap;
     margin-top: 10px;
   }
-  .upd-links a { color: var(--blue); font-size: 0.8rem; }
+  .upd-links a { color: #64b5f6; font-size: 0.8rem; font-weight: 600; }
+  /* Ссылка «Все релизы» живет в примечании — там штатный цвет браузера
+     на темном фоне почти не читается, поэтому задаем явно */
+  .wifi-note a { color: #64b5f6; font-weight: 600; }
+  /* ── Окно «доступна новая прошивка» ──────────────── */
+  .modal {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.72);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal.show { display: flex; }
+  .modal-card {
+    background: var(--card);
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    padding: 20px 22px;
+    width: 100%;
+    max-width: 420px;
+  }
+  .modal-title {
+    font-size: 0.95rem;
+    letter-spacing: 1px;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .modal-text {
+    font-size: 0.85rem;
+    line-height: 1.55;
+    color: var(--text);
+    margin-bottom: 16px;
+  }
+  .modal-text b { color: var(--accent); }
+  .modal-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn-modal-go    { background: var(--accent); color: #000; }
+  .btn-modal-later { background: var(--border); color: var(--muted); border: 1px solid #444; }
   /* ── Toast ───────────────────────────────────────── */
   .toast {
     position: fixed;
@@ -845,6 +885,18 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     </div>
   </div>
 </details>
+
+<!-- Окно о новой прошивке — показывается только после успешной автопроверки -->
+<div class="modal" id="updModal">
+  <div class="modal-card">
+    <div class="modal-title">&#8593; Доступна новая прошивка</div>
+    <div class="modal-text" id="updModalText"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn-modal-go" id="btnUpdModalGo">Перейти к обновлению</button>
+      <button type="button" class="btn-modal-later" id="btnUpdModalLater">Позже</button>
+    </div>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -1374,6 +1426,15 @@ const UPD_TIMEOUT_MS = 5000;
 // Таймаут скачивания firmware.bin, мс — файл около мегабайта
 const UPD_DOWNLOAD_TIMEOUT_MS = 120000;
 
+// Не чаще одной автопроверки в 5 минут: страницу открывают и обновляют часто,
+// а у GitHub без авторизации всего 60 запросов в час на адрес
+const UPD_AUTO_INTERVAL_MS = 300000;
+
+// Ключ в localStorage со временем последней проверки. Именно localStorage, а не
+// cookie: cookie браузер прикреплял бы к каждому запросу к устройству, включая
+// опрос /metrics раз в полсекунды
+const UPD_LAST_KEY = 'qx50_upd_last_check';
+
 const updCur      = document.getElementById('updCur');
 const updMeta     = document.getElementById('updMeta');
 const updBox      = document.getElementById('updBox');
@@ -1382,6 +1443,29 @@ const btnUpdCheck = document.getElementById('btnUpdCheck');
 // Версия и окружение прошивки на устройстве — заполняются из GET /version
 let fwVersion = '';
 let fwEnv     = '';
+
+// Запас на случай, когда localStorage недоступен (приватный режим): отметка
+// живет хотя бы в пределах одной загрузки страницы
+let updLastFallback = 0;
+
+function updLastCheck() {
+  try {
+    return parseInt(localStorage.getItem(UPD_LAST_KEY), 10) || 0;
+  } catch(e) {
+    return updLastFallback;
+  }
+}
+
+// Вызывается, когда GitHub ответил — неважно, что именно: отказ по лимиту
+// тоже считается проверкой, повторять его каждую перезагрузку незачем
+function updMarkChecked() {
+  updLastFallback = Date.now();
+  try {
+    localStorage.setItem(UPD_LAST_KEY, String(updLastFallback));
+  } catch(e) {
+    // Хранилище недоступно — остаемся с отметкой в памяти
+  }
+}
 
 // Экранирование текста из ответа GitHub (описание релиза — произвольный markdown)
 function updEsc(s) {
@@ -1519,6 +1603,7 @@ function updRenderRelease(rel) {
   }
 }
 
+// Проверка по кнопке — идет всегда, интервал автопроверки ее не ограничивает
 async function checkUpdates() {
   const label = btnUpdCheck.innerHTML;
   btnUpdCheck.disabled  = true;
@@ -1529,6 +1614,7 @@ async function checkUpdates() {
 
   try {
     const r = await fetch(UPD_API, { cache: 'no-store', signal: ctl.signal });
+    updMarkChecked();
     if (r.status === 404) {
       updShow('err', 'Релизы еще не опубликованы', updPageLink());
     } else if (r.status === 403) {
@@ -1552,6 +1638,73 @@ async function checkUpdates() {
 }
 
 btnUpdCheck.addEventListener('click', checkUpdates);
+
+// ── Окно «доступна новая прошивка» ─────────────────────────────────────────
+
+const updModal     = document.getElementById('updModal');
+const updModalText = document.getElementById('updModalText');
+
+function updModalHide() {
+  updModal.classList.remove('show');
+}
+
+function updModalShow(tag) {
+  updModalText.innerHTML = 'На устройстве версия <b>' + updEsc(fwVersion || '?') +
+    '</b>, а на GitHub опубликована <b>' + updEsc(tag) + '</b>.<br>' +
+    'Описание релиза и загрузка — в разделе «Обновление прошивки».';
+  updModal.classList.add('show');
+}
+
+document.getElementById('btnUpdModalLater').addEventListener('click', updModalHide);
+
+document.getElementById('btnUpdModalGo').addEventListener('click', () => {
+  updModalHide();
+  const sect = document.getElementById('sectOta');
+  sect.open = true;
+  sect.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+// Окно не должно мешать работе со страницей: закрывается кликом по затемнению
+// и клавишей Escape
+updModal.addEventListener('click', (e) => {
+  if (e.target === updModal) updModalHide();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') updModalHide();
+});
+
+// Автопроверка при загрузке страницы — тихая: окно и карточка заполняются
+// только если GitHub ответил и версия там новее. Любая ошибка игнорируется,
+// страница работает как обычно.
+//
+// Ходит не чаще UPD_AUTO_INTERVAL_MS: перезагрузка страницы в пределах
+// интервала нового запроса не делает
+async function autoCheckUpdates() {
+  if (!fwVersion) return;
+
+  // Отрицательная разница возможна при переводе часов назад — тогда проверяем
+  const since = Date.now() - updLastCheck();
+  if (since >= 0 && since < UPD_AUTO_INTERVAL_MS) return;
+
+  const ctl   = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), UPD_TIMEOUT_MS);
+
+  try {
+    const r = await fetch(UPD_API, { cache: 'no-store', signal: ctl.signal });
+    updMarkChecked();
+    if (!r.ok) return;
+    const rel = await r.json();
+    const tag = String(rel.tag_name || '').replace(/^v/i, '');
+    if (updCmpVer(tag, fwVersion) <= 0) return;
+    updRenderRelease(rel);
+    updModalShow(tag);
+  } catch(e) {
+    // Нет интернета или GitHub недоступен — молчим, это штатная ситуация
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // ── Сброс карточек к значениям по умолчанию ───────────────────────────────
 
@@ -1634,7 +1787,9 @@ function resetCheckCard(code) {
 loadConfig();
 loadWifi();
 loadChecks();
-loadVersion();
+// Автопроверке нужна версия с устройства, поэтому она идет через then, а не
+// await: загрузка страницы этого не ждет, и обе функции глушат свои ошибки сами
+loadVersion().then(autoCheckUpdates);
 // Алерты загружаются при открытии секции (toggle event), но при первом открытии
 // секция может быть уже открыта — грузим сразу
 loadAlerts();
