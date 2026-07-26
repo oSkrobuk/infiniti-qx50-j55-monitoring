@@ -900,7 +900,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 
 <div class="toast" id="toast"></div>
 
-<footer>Infiniti QX50 J55 Monitoring &mdash; ESP32</footer>
+<footer><a href="https://github.com/oSkrobuk/infiniti-qx50-j55-monitoring" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">Infiniti QX50 J55 Monitoring</a> &mdash; ESP32</footer>
 
 <script>
 // ── Утилиты ────────────────────────────────────────────────────────────────
@@ -2105,7 +2105,7 @@ static const char LIVE_HTML[] PROGMEM = R"rawhtml(
 
 <div class="toast" id="toast"></div>
 
-<footer>Infiniti QX50 J55 Monitoring &mdash; ESP32</footer>
+<footer><a href="https://github.com/oSkrobuk/infiniti-qx50-j55-monitoring" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">Infiniti QX50 J55 Monitoring</a> &mdash; ESP32</footer>
 
 <script>
 // Интервал опроса метрик, мс
