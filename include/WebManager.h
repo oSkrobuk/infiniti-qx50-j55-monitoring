@@ -2,6 +2,51 @@
 #include <Arduino.h>
 #include <WebServer.h>
 
+// Сколько ждать HTTP-запрос от уже принятого соединения, мс
+//
+// WebServer обслуживает одно соединение за раз: приняв сокет, он ждет от него
+// запрос до HTTP_MAX_DATA_WAIT (5 секунд, задано в WebServer.h) и все это время
+// никого больше не принимает. Браузеры при переходе по ссылке открывают
+// спекулятивные соединения (preconnect) и часто не шлют в них ничего — сервер
+// цепляется за такой молчащий сокет, а реальный запрос ждет в очереди accept.
+// Переопределить HTTP_MAX_DATA_WAIT через -D нельзя: в WebServer.h он объявлен
+// без #ifndef, поэтому значение из заголовка все равно перебьет флаг сборки.
+//
+// По локальной сети запрос приходит за единицы миллисекунд, так что трети
+// секунды хватает с запасом даже для телефона в энергосбережении
+static constexpr uint32_t IDLE_CLIENT_TIMEOUT_MS = 300;
+
+// WebServer, который не дает молчащему соединению занимать сервер.
+//
+// Перед каждым шагом конечного автомата рвет соединение, которое дольше
+// IDLE_CLIENT_TIMEOUT_MS не прислало ни байта. Дальше вмешиваться не нужно:
+// закрытый сокет базовый handleClient() уберет сам своей штатной веткой
+// очистки, а следующим вызовом примет из очереди настоящий запрос.
+//
+// Проверка безопасна для загрузки прошивки по OTA: как только в сокете
+// появляются данные, handleClient() сразу уходит из HC_WAIT_READ и читает тело
+// запроса целиком внутри одного вызова — состояние «принят, но не прислал
+// ни байта» за время загрузки не возникает
+class FastWebServer : public WebServer {
+public:
+    explicit FastWebServer(uint16_t port)
+        : WebServer(port)
+    {
+    }
+
+    // Вызывать вместо handleClient()
+    void handle_client()
+    {
+        if (_currentStatus == HC_WAIT_READ &&
+            millis() - _statusChange > IDLE_CLIENT_TIMEOUT_MS &&
+            !_currentClient.available()) {
+            _currentClient.stop();
+        }
+
+        handleClient();
+    }
+};
+
 class WebManager {
 public:
     // Конструктор без аргументов — WiFi ssid/password читаются из конфига в begin()
@@ -17,7 +62,7 @@ public:
     String get_ip() const;
 
 private:
-    WebServer server_;
+    FastWebServer server_;
 
     void handle_root();
     void handle_get_config();

@@ -1,6 +1,10 @@
 #include <Arduino.h>
 #include <math.h>
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+#include <freertos/task.h>
+
 #include "CanBusManager.h"
 #include "ConfigManager.h"
 #include "WebManager.h"
@@ -30,6 +34,87 @@ static constexpr const char *s_app_version = "2026.3.1";
 
 WebManager       web;
 BuzzerController buzzer;
+
+// =============================================================================
+// Веб-сервер в отдельной задаче
+// =============================================================================
+//
+// Конечный автомат WebServer делает один шаг за вызов handleClient(): принять
+// сокет, дождаться запроса, разобрать его, ответить. Пока эти шаги висели в
+// loop(), их темп задавала самая медленная часть цикла — отрисовка дисплея.
+// В своей задаче на ядре 0 шаги идут раз в миллисекунду независимо от loop().
+//
+// Плата за это — общее состояние (config, alert_manager, can_metrics) теперь
+// читается и пишется из двух задач. Мьютекс ниже разводит доступ: веб-задача
+// держит его на время handleClient(), loop() — на время своей итерации.
+// Без мьютекса POST /config, перестраивающий JsonDocument, мог бы совпасть
+// с config.get() из loop() и уронить прошивку
+
+// Стек веб-задачи: обработчикам нужны ArduinoJson, String и буферы OTA
+static constexpr uint32_t WEB_TASK_STACK_BYTES = 8192;
+
+// Ядро для веб-задачи: loopTask Arduino работает на ядре 1
+static constexpr BaseType_t WEB_TASK_CORE = 0;
+
+// Приоритет как у loopTask — веб не должен вытеснять основной цикл
+static constexpr UBaseType_t WEB_TASK_PRIORITY = 1;
+
+// Мьютекс общего состояния между loop() и веб-задачей
+static SemaphoreHandle_t s_state_mutex = nullptr;
+
+// true после успешного запуска веб-задачи. Если задачу или мьютекс создать
+// не удалось, HTTP остается в loop() — интерфейс работает медленно, но работает
+static bool s_web_in_task = false;
+
+// Захват и освобождение общего состояния. Пока мьютекса нет (setup до запуска
+// веб-задачи) вызовы безопасно превращаются в no-op
+static inline void state_lock()
+{
+    if (s_state_mutex != nullptr) xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+}
+
+static inline void state_unlock()
+{
+    if (s_state_mutex != nullptr) xSemaphoreGive(s_state_mutex);
+}
+
+static void web_task(void *)
+{
+    for (;;) {
+        state_lock();
+        web.handle();
+        state_unlock();
+
+        // Пауза обязательна: без нее задача с приоритетом loopTask не пускает
+        // к работе idle-задачу ядра 0 и срабатывает Task WDT. Один тик FreeRTOS
+        // (1 мс) на шаг автомата — на порядок быстрее прежней привязки к loop()
+        vTaskDelay(1);
+    }
+}
+
+// Запустить HTTP-сервер в отдельной задаче. Вызывать в конце setup(), когда
+// конфиг, журнал алертов и CAN уже инициализированы: обработчики читают их
+// сразу после первого же запроса
+static void web_task_start()
+{
+    s_state_mutex = xSemaphoreCreateMutex();
+    if (s_state_mutex == nullptr) {
+        Serial.println("[Web] Мьютекс не создан — сервер остается в loop()");
+        return;
+    }
+
+    if (xTaskCreatePinnedToCore(web_task, "web", WEB_TASK_STACK_BYTES, nullptr,
+                                WEB_TASK_PRIORITY, nullptr, WEB_TASK_CORE) != pdPASS) {
+        vSemaphoreDelete(s_state_mutex);
+        s_state_mutex = nullptr;
+        Serial.println("[Web] Задача не создана — сервер остается в loop()");
+        return;
+    }
+
+    s_web_in_task = true;
+    Serial.printf("[Web] Сервер вынесен в отдельную задачу на ядре %d\r\n",
+                  static_cast<int>(WEB_TASK_CORE));
+}
 
 // =============================================================================
 // Планировщик UDS-опроса
@@ -168,6 +253,9 @@ void setup()
     s_last_tp_ms   = millis();
 #endif
 
+    // Все общее состояние готово — можно пускать HTTP-обработчики в свою задачу
+    web_task_start();
+
     Serial.printf("[Web] Адрес веб-интерфейса: http://%s\r\n", web.get_ip().c_str());
     Serial.println("=====================================");
 
@@ -177,11 +265,18 @@ void setup()
 
 void loop()
 {
+    // Общее состояние делим с веб-задачей — держим мьютекс всю итерацию.
+    // Итерация короткая (десятки микросекунд, раз в 100 мс — отрисовка),
+    // поэтому веб-задача почти никогда не ждет на этом мьютексе
+    state_lock();
+
     // Ждем триггера для бузера
     buzzer.update();
 
-    // Обрабатываем HTTP запросы
-    web.handle();
+    // Обрабатываем HTTP запросы, если веб-задачу поднять не удалось
+    if (!s_web_in_task) {
+        web.handle();
+    }
 
     // Читаем фреймы с CAN-шины автомобиля (без delay — чтобы не терять фреймы)
     can_bus.handle();
@@ -294,4 +389,6 @@ void loop()
             display.clear_alert();
         }
     }
+
+    state_unlock();
 }

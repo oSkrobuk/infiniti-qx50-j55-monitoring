@@ -1791,8 +1791,13 @@ async function alertsTick() {
   setTimeout(alertsTick, ALERTS_MS);
 }
 
-tick();
-alertsTick();
+// Стартовые запросы идут последовательно, а не параллельно: HTTP-сервер
+// обслуживает одно соединение за раз, и второй запрос на загрузке страницы
+// просто ждал бы своей очереди, задерживая появление данных в карточках
+(async () => {
+  await tick();
+  alertsTick();
+})();
 </script>
 </body>
 </html>
@@ -1973,7 +1978,7 @@ void WebManager::begin()
 
 void WebManager::handle()
 {
-    server_.handleClient();
+    server_.handle_client();
 }
 
 String WebManager::get_ip() const
