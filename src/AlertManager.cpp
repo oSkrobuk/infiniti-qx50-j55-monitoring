@@ -100,7 +100,6 @@ AlertManager::AlertManager()
     active_dname_[0] = '\0';
     apply_check_defaults_();
     memset(last_trigger_ms_, 0, sizeof(last_trigger_ms_));
-    memset(shown_once_,      0, sizeof(shown_once_));
     memset(log_, 0, sizeof(log_));
 }
 
@@ -187,11 +186,25 @@ void AlertManager::update(const CanMetrics &m)
     }
 }
 
+int16_t AlertManager::find_log_index_(const char *code) const
+{
+    for (uint8_t i = 0; i < log_count_; ++i) {
+        if (strncmp(log_[i].code, code, sizeof(log_[0].code)) == 0) {
+            return static_cast<int16_t>(i);
+        }
+    }
+    return -1;
+}
+
 void AlertManager::try_trigger_(uint8_t idx, bool triggered)
 {
     if (!triggered) return;
 
     uint32_t now = millis();
+
+    // Запись журнала ищем заранее: в однократном режиме именно ее наличие,
+    // а не флаг сессии, запрещает повторное срабатывание
+    int16_t log_idx = find_log_index_(CHECK_DEFS[idx].code);
 
     if (checks_[idx].enabled) {
         // Режим повтора: антидребезг — не повторять чаще ALERT_RETRIGGER_MS
@@ -200,9 +213,10 @@ void AlertManager::try_trigger_(uint8_t idx, bool triggered)
             return;
         }
     } else {
-        // Однократный режим: показываем 1 раз за сессию МК (shown_once_ сбрасывается только при перезагрузке)
-        if (shown_once_[idx]) return;
-        shown_once_[idx] = true;
+        // Однократный режим: алертим, только пока кода нет в журнале.
+        // Признак «уже показывали» — сама запись в памяти, поэтому очистка
+        // журнала из Web UI снова разрешает алерт, не дожидаясь перезагрузки МК
+        if (log_idx >= 0) return;
     }
 
     last_trigger_ms_[idx] = now;
@@ -217,17 +231,10 @@ void AlertManager::try_trigger_(uint8_t idx, bool triggered)
     // Сигнал бузером
     buzzer.trigger_alert();
 
-    // Логируем: ищем запись с этим кодом
-    bool found = false;
-    for (uint8_t i = 0; i < log_count_; ++i) {
-        if (strncmp(log_[i].code, CHECK_DEFS[idx].code, sizeof(log_[i].code)) == 0) {
-            log_[i].count++;
-            found = true;
-            break;
-        }
-    }
-
-    if (!found && log_count_ < ALERT_LOG_MAX) {
+    // Логируем: запись с этим кодом уже нашли выше
+    if (log_idx >= 0) {
+        log_[log_idx].count++;
+    } else if (log_count_ < ALERT_LOG_MAX) {
         strncpy(log_[log_count_].code,        CHECK_DEFS[idx].code,        sizeof(log_[0].code) - 1);
         strncpy(log_[log_count_].description, CHECK_DEFS[idx].description, sizeof(log_[0].description) - 1);
         log_[log_count_].code[sizeof(log_[0].code) - 1]               = '\0';
@@ -293,6 +300,11 @@ bool AlertManager::clear_log()
     active_code_[0]  = '\0';
     active_desc_[0]  = '\0';
     active_dname_[0] = '\0';
+
+    // Сбрасываем и антидребезг: журнал пуст, значит ни одна проверка больше
+    // не считается показанной — при сохраняющейся неисправности алерт
+    // поднимется заново в обоих режимах
+    memset(last_trigger_ms_, 0, sizeof(last_trigger_ms_));
 
     // Удаляем файл журнала (remove() безопасен если файла нет)
     LittleFS.remove(ALERTS_LOG_FILE);

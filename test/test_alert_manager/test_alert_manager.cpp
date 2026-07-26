@@ -54,6 +54,10 @@ static CanMetrics fresh_metrics_with_oil_high()
     return m;
 }
 
+// Конфиг проверок, где E01 переведена в однократный режим (enabled = false)
+static constexpr const char *E01_ONCE_JSON =
+    "{\"E01\":{\"enabled\":false,\"param1\":98.0,\"param2\":0.0,\"param3\":0.0}}";
+
 void setUp(void)
 {
     mock_fs_reset();
@@ -318,9 +322,8 @@ static void test_retrigger_is_debounced(void)
 static void test_once_mode_triggers_only_once(void)
 {
     AlertManager am;
-    // enabled = false переводит проверку в режим «один раз за сессию МК»
-    TEST_ASSERT_TRUE(am.checks_from_json(
-        "{\"E01\":{\"enabled\":false,\"param1\":98.0,\"param2\":0.0,\"param3\":0.0}}"));
+    // enabled = false переводит проверку в режим «один раз, пока код в журнале»
+    TEST_ASSERT_TRUE(am.checks_from_json(E01_ONCE_JSON));
 
     CanMetrics m = fresh_metrics();
     m.engine_oil = 99.0f;
@@ -331,6 +334,55 @@ static void test_once_mode_triggers_only_once(void)
     mock_advance_millis(ALERT_RETRIGGER_MS * 10);
     am.update(fresh_metrics_with_oil_high());
     TEST_ASSERT_EQUAL_UINT32(1, buzzer_alert_count);
+}
+
+static void test_once_mode_alerts_again_after_clear_log(void)
+{
+    // Однократность держится на записи в журнале, а не на флаге сессии:
+    // стерли код из памяти — при сохранившейся неисправности алерт повторяется
+    AlertManager am;
+    TEST_ASSERT_TRUE(am.checks_from_json(E01_ONCE_JSON));
+
+    am.update(fresh_metrics_with_oil_high());
+    TEST_ASSERT_EQUAL_UINT32(1, buzzer_alert_count);
+
+    TEST_ASSERT_TRUE(am.clear_log());
+
+    am.update(fresh_metrics_with_oil_high());
+    TEST_ASSERT_EQUAL_UINT32(2, buzzer_alert_count);
+    TEST_ASSERT_EQUAL_UINT8(1, am.log_count());
+    TEST_ASSERT_EQUAL_STRING("E01", am.active_code());
+}
+
+static void test_once_mode_stays_silent_while_code_in_log(void)
+{
+    // Перезагрузка МК больше не «прощает» код: он загружается из /alerts.json,
+    // значит однократная проверка молчит, пока журнал не очистили
+    mock_fs_files[CHECKS_CONFIG_FILE] = E01_ONCE_JSON;
+    mock_fs_files[ALERTS_LOG_FILE] =
+        "[{\"code\":\"E01\",\"description\":\"Масло\",\"count\":1}]";
+
+    AlertManager am;
+    am.init();
+
+    am.update(fresh_metrics_with_oil_high());
+
+    TEST_ASSERT_EQUAL_UINT32(0, buzzer_alert_count);
+    TEST_ASSERT_FALSE(am.has_active_alert());
+}
+
+static void test_clear_log_resets_retrigger_debounce(void)
+{
+    // В режиме повтора очистка журнала тоже обнуляет антидребезг —
+    // ждать конца 15-секундного окна после очистки не нужно
+    AlertManager am;
+    am.update(fresh_metrics_with_oil_high());
+    TEST_ASSERT_EQUAL_UINT32(1, buzzer_alert_count);
+
+    TEST_ASSERT_TRUE(am.clear_log());
+
+    am.update(fresh_metrics_with_oil_high());
+    TEST_ASSERT_EQUAL_UINT32(2, buzzer_alert_count);
 }
 
 static void test_active_alert_expires(void)
@@ -563,6 +615,9 @@ int main(int, char **)
 
     RUN_TEST(test_retrigger_is_debounced);
     RUN_TEST(test_once_mode_triggers_only_once);
+    RUN_TEST(test_once_mode_alerts_again_after_clear_log);
+    RUN_TEST(test_once_mode_stays_silent_while_code_in_log);
+    RUN_TEST(test_clear_log_resets_retrigger_debounce);
     RUN_TEST(test_active_alert_expires);
     RUN_TEST(test_active_display_name_matches_definition);
 

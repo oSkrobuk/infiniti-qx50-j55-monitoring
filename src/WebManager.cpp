@@ -1067,7 +1067,7 @@ function renderChecks(cfg) {
           <span class="slider"></span>
         </label>
         <span class="toggle-label" id="check_${def.code}_label">
-            ${checkCfg.enabled ? 'При постоянной ошибке повтор раз в 15 сек' : 'Однократно за сессию'}
+            ${checkCfg.enabled ? 'При постоянной ошибке повтор раз в 15 сек' : 'Однократно, пока код в журнале'}
           </span>
       </div>
       ${paramsHtml}`;
@@ -1076,7 +1076,7 @@ function renderChecks(cfg) {
     const chk = document.getElementById(`check_${def.code}_enabled`);
     const lbl = document.getElementById(`check_${def.code}_label`);
     chk.addEventListener('change', () => {
-      lbl.textContent = chk.checked ? 'При постоянной ошибке повтор раз в 15 сек' : 'Однократно за сессию';
+      lbl.textContent = chk.checked ? 'При постоянной ошибке повтор раз в 15 сек' : 'Однократно, пока код в журнале';
     });
   });
 }
@@ -1312,7 +1312,7 @@ function resetCheckCard(code) {
   const labelEl   = document.getElementById(`check_${code}_label`);
   if (enabledEl) {
     enabledEl.checked = d.enabled;
-    if (labelEl) labelEl.textContent = d.enabled ? 'При постоянной ошибке повтор раз в 15 сек' : 'Однократно за сессию';
+    if (labelEl) labelEl.textContent = d.enabled ? 'При постоянной ошибке повтор раз в 15 сек' : 'Однократно, пока код в журнале';
   }
   ['param1', 'param2', 'param3'].forEach(p => {
     const el = document.getElementById(`check_${code}_${p}`);
