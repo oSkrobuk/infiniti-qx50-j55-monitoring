@@ -2,13 +2,13 @@
 #
 # Что делает:
 #   * прогоняет юнит-тесты под хостом — это первый и самый быстрый барьер;
-#   * только если тесты прошли, собирает все четыре окружения по очереди;
+#   * только если тесты прошли, собирает все четыре окружения параллельно;
 #   * при push тега вида v2026.3.2 — сверяет версию в src/main.cpp с тегом и
 #     кладёт бинарники ESP32 DEVKIT1 в черновик релиза на этот тег.
 #
-# Порядок жёсткий и последовательный намеренно: собирать прошивку, зная что
-# логика уже сломана, смысла нет, а после первой упавшей сборки нет смысла
-# ждать остальные — чинить всё равно придётся эту.
+# Тесты идут первыми намеренно: собирать прошивку, зная что логика уже сломана,
+# смысла нет. Сами сборки друг друга не ждут и не отменяют — любая упавшая
+# красит весь прогон в красный, а release не запускается.
 
 name: Build
 
@@ -32,14 +32,14 @@ concurrency:
 
 jobs:
   test:
-    name: Юнит-тесты
+    name: Unit tests
     runs-on: ubuntu-latest
 
     steps:
-      - name: Клонировать репозиторий
+      - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Сверить версию прошивки с тегом
+      - name: Verify firmware version matches tag
         # Версия зашита в src/main.cpp руками, тег ставится отдельно.
         # Без этой проверки релиз v2026.3.2 мог бы уехать с прошивкой,
         # которая показывает на дисплее 2026.3.1.
@@ -55,12 +55,12 @@ jobs:
             exit 1
           fi
 
-      - name: Поставить Python
+      - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
-      - name: Кэш PlatformIO
+      - name: Cache PlatformIO
         # Окружению native тулчейн не нужен — на runner уже есть gcc.
         # Кэшируется только ядро PlatformIO и Unity с ArduinoJson
         uses: actions/cache@v5
@@ -72,11 +72,11 @@ jobs:
           key: pio-${{ runner.os }}-native-${{ hashFiles('platformio.ini') }}
           restore-keys: pio-${{ runner.os }}-native-
 
-      - name: Поставить PlatformIO
+      - name: Install PlatformIO
         # версия зафиксирована, чтобы CI собирал тем же, чем собирают локально
         run: pip install "platformio==6.1.19"
 
-      - name: Прогнать тесты
+      - name: Run tests
         run: pio test -e native
 
   build:
@@ -85,12 +85,11 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     strategy:
-      # Первая упавшая сборка отменяет остальные: чинить всё равно нужно её,
-      # а очередь из трёх заведомо ненужных прогонов только жжёт минуты
-      fail-fast: true
-      # Окружения идут строго по одному, а не параллельно — так «следующие
-      # не запускаются» работает буквально, а не «отменяются на полпути»
-      max-parallel: 1
+      # Не отменять остальные окружения, если одно упало — хочется увидеть
+      # сразу все поломки за один прогон, а не чинить их по очереди.
+      # Общий статус прогона всё равно станет failed, а release не запустится:
+      # он висит на needs: build
+      fail-fast: false
       matrix:
         # chip нужен только для ключа кэша: ESP32 и ESP32-S3 тянут разные
         # тулчейны (xtensa-esp32-elf и xtensa-esp32s3-elf), общий кэш на все
@@ -106,15 +105,15 @@ jobs:
             chip: esp32s3
 
     steps:
-      - name: Клонировать репозиторий
+      - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Поставить Python
+      - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
-      - name: Кэш тулчейнов PlatformIO
+      - name: Cache PlatformIO toolchains
         # без кэша каждая сборка качает ~500 МБ тулчейна xtensa (2-4 минуты),
         # с кэшем — секунды. Ключ завязан на чип и на platformio.ini, поэтому
         # при смене версии платформы кэш автоматически пересобирается
@@ -127,14 +126,14 @@ jobs:
           key: pio-${{ runner.os }}-${{ matrix.chip }}-${{ hashFiles('platformio.ini') }}
           restore-keys: pio-${{ runner.os }}-${{ matrix.chip }}-
 
-      - name: Поставить PlatformIO
+      - name: Install PlatformIO
         # версия зафиксирована, чтобы CI собирал тем же, чем собирают локально
         run: pip install "platformio==6.1.19"
 
-      - name: Собрать ${{ matrix.env }}
+      - name: Build ${{ matrix.env }}
         run: pio run -e ${{ matrix.env }}
 
-      - name: Проверить, что прошивка влезает в OTA-слот
+      - name: Check firmware fits the OTA slot
         # Размер слота берём прямо из partitions.csv, чтобы проверка не
         # разошлась с таблицей разделов, если её когда-нибудь поправят.
         # Если firmware.bin перерастёт слот, OTA-обновление сломается уже
@@ -158,7 +157,7 @@ jobs:
             echo "::warning::Занято больше 90% слота OTA"
           fi
 
-      - name: Сохранить бинарники
+      - name: Upload binaries
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.env }}
@@ -170,7 +169,7 @@ jobs:
           retention-days: 14
 
   release:
-    name: Черновик релиза
+    name: Draft release
     # ждём все четыре окружения: релиз не должен уезжать, если хоть одна
     # сборка сломана
     needs: build
@@ -180,7 +179,7 @@ jobs:
       contents: write
 
     steps:
-      - name: Забрать бинарники ESP32 DEVKIT1
+      - name: Download ESP32 DEVKIT1 binaries
         uses: actions/download-artifact@v7
         with:
           name: esp32
@@ -192,13 +191,13 @@ jobs:
       # Учесть: у ESP32-S3 bootloader.bin шьётся по адресу 0x0, а не 0x1000,
       # как у ESP32 — таблицу адресов в README (раздел 3.3) надо будет дополнить.
       #
-      # - name: Забрать бинарники WT32-SC01 Plus
+      # - name: Download WT32-SC01 Plus binaries
       #   uses: actions/download-artifact@v4
       #   with:
       #     name: esp32s3-wt32
       #     path: esp32s3/
 
-      - name: Прикрепить бинарники к релизу
+      - name: Attach binaries to the release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
