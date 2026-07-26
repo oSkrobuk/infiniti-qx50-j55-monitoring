@@ -634,18 +634,18 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
       </div>
 
       <div class="card">
-        <div class="card-hdr"><div class="card-title">&#128167; EOP &mdash; Давление масла</div><button type="button" class="btn-card-default" onclick="resetCardFields('oil_pressure')">&#8635; Сброс</button></div>
+        <div class="card-hdr"><div class="card-title">&#128167; EOP &mdash; Датчик давления масла</div><button type="button" class="btn-card-default" onclick="resetCardFields('oil_pressure')">&#8635; Сброс</button></div>
         <div class="row3">
           <div class="field">
             <label>Порог RPM</label>
             <input class="f-target" type="number" step="100" name="oil_pressure_rpm_threshold" required>
           </div>
           <div class="field">
-            <label>Мин &lt;порога, бар</label>
+            <label>Мин &lt;порога, В</label>
             <input class="f-min" type="number" step="0.01" name="oil_pressure_min_low" required>
           </div>
           <div class="field">
-            <label>Мин &ge;порога, бар</label>
+            <label>Мин &ge;порога, В</label>
             <input class="f-max" type="number" step="0.01" name="oil_pressure_min_high" required>
           </div>
         </div>
@@ -688,7 +688,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
       </div>
 
       <div class="card">
-        <div class="card-hdr"><div class="card-title">&#9201; RPM-POLL &mdash; Время опроса RPM</div><button type="button" class="btn-card-default" onclick="resetCardFields('poll_time')">&#8635; Сброс</button></div>
+        <div class="card-hdr"><div class="card-title">&#9201; RPM-POLL &mdash; Период обновления RPM</div><button type="button" class="btn-card-default" onclick="resetCardFields('poll_time')">&#8635; Сброс</button></div>
         <div class="row2">
           <div class="field">
             <label>Зелёный до, с</label>
@@ -855,7 +855,7 @@ function validateMetrics(data) {
   if (data.rpm.green_end >= data.rpm.red_start)
     return 'RPM: конец зелёной зоны должен быть меньше начала красной';
   if (data.oil_pressure.min_low <= 0 || data.oil_pressure.min_high <= 0)
-    return 'EOP: минимальное давление должно быть больше 0';
+    return 'EOP: минимальное напряжение должно быть больше 0';
   if (data.oil_pressure.min_low >= data.oil_pressure.min_high)
     return 'EOP: мин при низких оборотах должен быть меньше мин при высоких';
   if (data.boost.blue_max >= data.boost.green_min)
@@ -1067,7 +1067,7 @@ function renderChecks(cfg) {
           <span class="slider"></span>
         </label>
         <span class="toggle-label" id="check_${def.code}_label">
-            ${checkCfg.enabled ? 'При постоянной ошибки повтор раз в 15 сек' : 'Однократно за сессию'}
+            ${checkCfg.enabled ? 'При постоянной ошибке повтор раз в 15 сек' : 'Однократно за сессию'}
           </span>
       </div>
       ${paramsHtml}`;
@@ -1076,7 +1076,7 @@ function renderChecks(cfg) {
     const chk = document.getElementById(`check_${def.code}_enabled`);
     const lbl = document.getElementById(`check_${def.code}_label`);
     chk.addEventListener('change', () => {
-      lbl.textContent = chk.checked ? 'При постоянной ошибки повтор раз в 15 сек' : 'Однократно за сессию';
+      lbl.textContent = chk.checked ? 'При постоянной ошибке повтор раз в 15 сек' : 'Однократно за сессию';
     });
   });
 }
@@ -1312,7 +1312,7 @@ function resetCheckCard(code) {
   const labelEl   = document.getElementById(`check_${code}_label`);
   if (enabledEl) {
     enabledEl.checked = d.enabled;
-    if (labelEl) labelEl.textContent = d.enabled ? 'При постоянной ошибки повтор раз в 15 сек' : 'Однократно за сессию';
+    if (labelEl) labelEl.textContent = d.enabled ? 'При постоянной ошибке повтор раз в 15 сек' : 'Однократно за сессию';
   }
   ['param1', 'param2', 'param3'].forEach(p => {
     const el = document.getElementById(`check_${code}_${p}`);
@@ -1831,7 +1831,7 @@ static const char *rpm_state(float v)
     return "warn";
 }
 
-// Состояние давления масла — минимум зависит от текущих оборотов
+// Состояние датчика давления масла — минимум зависит от текущих оборотов
 static const char *oil_pressure_state(float v, float rpm)
 {
     const float threshold = config.get("oil_pressure", "rpm_threshold");
@@ -1863,7 +1863,7 @@ static const char *battery_state(float v)
     return "warn";
 }
 
-// Состояние периода опроса RPM
+// Состояние периода обновления RPM
 static const char *poll_time_state(float v, float rpm)
 {
     if (rpm == 0.0f || v == 0.0f) return "cold";
@@ -2035,7 +2035,7 @@ void WebManager::handle_get_metrics()
         can_metrics.engine_rpm, 0, rpm_fresh, rpm_fresh ? rpm_state(can_metrics.engine_rpm) : "nodata");
     {
         const bool f = metric_fresh(can_metrics.oil_pressure_volt_ts, stale_ms);
-        append_metric(json, "oil_pressure", "OIL-PR-V", "Давление масла", "В",
+        append_metric(json, "oil_pressure", "OIL-PR-V", "Датчик давления масла", "В",
             can_metrics.oil_pressure_volt, 2, f,
             f ? oil_pressure_state(can_metrics.oil_pressure_volt, rpm) : "nodata");
     }
@@ -2054,10 +2054,10 @@ void WebManager::handle_get_metrics()
             f ? battery_state(can_metrics.battery_voltage) : "nodata");
     }
     {
-        // Период опроса RPM не ограничиваем stale_ms — это результат последнего замера,
+        // Период обновления RPM не ограничиваем stale_ms — это результат последнего замера,
         // а не живой поток (см. main.cpp)
         const bool f = (can_metrics.rpm_poll_time_ts != 0);
-        append_metric(json, "poll_time", "RPM-POLL", "Период опроса RPM", "с",
+        append_metric(json, "poll_time", "RPM-POLL", "Период обновления RPM", "с",
             can_metrics.rpm_poll_time, 2, f,
             f ? poll_time_state(can_metrics.rpm_poll_time, rpm) : "nodata");
     }

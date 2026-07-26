@@ -48,7 +48,9 @@ struct CanMetrics {
     uint32_t cvt_temp_ts;          // Время последнего обновления температуры масла вариатора
 
     uint32_t rpm_request_ts;       // Момент отправки UDS-запроса оборотов (millis)
-    float    rpm_poll_time;        // Время ответа на запрос оборотов, с (0 = нет данных)
+    // Период обновления оборотов, с — интервал между двумя отправками запроса RPM,
+    // равен poll_interval_ms * POLL_COUNT. Это не время ответа ECU (0 = нет данных)
+    float    rpm_poll_time;
     uint32_t rpm_poll_time_ts;     // Время последнего обновления rpm_poll_time
 };
 

@@ -3,6 +3,7 @@
 #include <LittleFS.h>
 
 #include "BuzzerController.h"
+#include "FsUtils.h"
 
 // Бузер объявлен в main.cpp — используем extern для доступа без циклических зависимостей
 extern BuzzerController buzzer;
@@ -116,7 +117,15 @@ void AlertManager::apply_check_defaults_()
 bool AlertManager::init()
 {
     // LittleFS уже смонтирован в config.init() — вызываем только загрузку файлов
-    load_checks_();
+    bool missing = false;
+    load_checks_(missing);
+
+    // Перезаписываем файл только если он отсутствует, повреждён или неполный
+    // (например, после обновления прошивки появилась новая проверка E09)
+    if (missing) {
+        save_checks_();
+    }
+
     load_log_();
     Serial.println("[Alert] AlertManager инициализирован");
     return true;
@@ -185,13 +194,13 @@ void AlertManager::try_trigger_(uint8_t idx, bool triggered)
     uint32_t now = millis();
 
     if (checks_[idx].enabled) {
-        // Проверка включена: антидребезг — не повторять чаще ALERT_RETRIGGER_MS
+        // Режим повтора: антидребезг — не повторять чаще ALERT_RETRIGGER_MS
         if (last_trigger_ms_[idx] != 0 &&
             (now - last_trigger_ms_[idx]) < ALERT_RETRIGGER_MS) {
             return;
         }
     } else {
-        // Проверка отключена: показываем 1 раз за сессию МК (shown_once_ сбрасывается только при перезагрузке)
+        // Однократный режим: показываем 1 раз за сессию МК (shown_once_ сбрасывается только при перезагрузке)
         if (shown_once_[idx]) return;
         shown_once_[idx] = true;
     }
@@ -281,8 +290,9 @@ bool AlertManager::clear_log()
 {
     memset(log_, 0, sizeof(log_));
     log_count_ = 0;
-    active_code_[0] = '\0';
-    active_desc_[0] = '\0';
+    active_code_[0]  = '\0';
+    active_desc_[0]  = '\0';
+    active_dname_[0] = '\0';
 
     // Удаляем файл журнала (remove() безопасен если файла нет)
     LittleFS.remove(ALERTS_LOG_FILE);
@@ -334,11 +344,14 @@ bool AlertManager::checks_from_json(const String &json)
 // ─────────────────────────────────────────────────────────────────────────────
 // Персистентность
 
-bool AlertManager::load_checks_()
+bool AlertManager::load_checks_(bool &missing)
 {
+    missing = false;
+
     if (!LittleFS.exists(CHECKS_CONFIG_FILE)) {
         Serial.println("[Alert] Файл проверок не найден, используем значения по умолчанию");
-        return save_checks_();
+        missing = true;
+        return true;
     }
 
     File f = LittleFS.open(CHECKS_CONFIG_FILE, "r");
@@ -352,35 +365,33 @@ bool AlertManager::load_checks_()
     f.close();
 
     if (err) {
+        // Повреждённый файл — остаёмся на дефолтах и перезаписываем его
         Serial.printf("[Alert] ОШИБКА парсинга файла проверок: %s\r\n", err.c_str());
+        missing = true;
         return false;
     }
 
     for (uint8_t i = 0; i < CHECK_COUNT; ++i) {
         const char *code = CHECK_DEFS[i].code;
-        if (doc[code].is<JsonObject>()) {
-            JsonObjectConst obj = doc[code].as<JsonObjectConst>();
-            if (obj["enabled"].is<bool>()) checks_[i].enabled = obj["enabled"].as<bool>();
-            if (obj["param1"].is<float>()) checks_[i].param1  = obj["param1"].as<float>();
-            if (obj["param2"].is<float>()) checks_[i].param2  = obj["param2"].as<float>();
-            if (obj["param3"].is<float>()) checks_[i].param3  = obj["param3"].as<float>();
+        if (!doc[code].is<JsonObject>()) {
+            // Проверки нет в файле — например, E09 появилась после обновления прошивки
+            missing = true;
+            continue;
         }
+
+        JsonObjectConst obj = doc[code].as<JsonObjectConst>();
+        if (obj["enabled"].is<bool>())  checks_[i].enabled = obj["enabled"].as<bool>();  else missing = true;
+        if (obj["param1"].is<float>())  checks_[i].param1  = obj["param1"].as<float>();  else missing = true;
+        if (obj["param2"].is<float>())  checks_[i].param2  = obj["param2"].as<float>();  else missing = true;
+        if (obj["param3"].is<float>())  checks_[i].param3  = obj["param3"].as<float>();  else missing = true;
     }
 
     Serial.println("[Alert] Конфиг проверок загружен");
-    // Перезаписываем файл, чтобы подхватить новые поля и новые проверки
-    // (например, always_alert или E09 при обновлении прошивки)
-    return save_checks_();
+    return true;
 }
 
 bool AlertManager::save_checks_()
 {
-    File f = LittleFS.open(CHECKS_CONFIG_FILE, "w");
-    if (!f) {
-        Serial.println("[Alert] ОШИБКА: не удалось открыть файл проверок для записи");
-        return false;
-    }
-
     JsonDocument doc;
     for (uint8_t i = 0; i < CHECK_COUNT; ++i) {
         const char *code     = CHECK_DEFS[i].code;
@@ -390,13 +401,12 @@ bool AlertManager::save_checks_()
         doc[code]["param3"]  = checks_[i].param3;
     }
 
-    if (serializeJson(doc, f) == 0) {
-        Serial.println("[Alert] ОШИБКА: не удалось записать файл проверок");
-        f.close();
+    // Пишем атомарно: при пропадании питания прежний файл останется целым
+    if (!fs_write_json_atomic(CHECKS_CONFIG_FILE, doc)) {
+        Serial.println("[Alert] ОШИБКА: не удалось сохранить конфиг проверок");
         return false;
     }
 
-    f.close();
     Serial.println("[Alert] Конфиг проверок сохранён");
     return true;
 }
@@ -448,12 +458,6 @@ bool AlertManager::load_log_()
 
 bool AlertManager::save_log_()
 {
-    File f = LittleFS.open(ALERTS_LOG_FILE, "w");
-    if (!f) {
-        Serial.println("[Alert] ОШИБКА: не удалось открыть файл журнала для записи");
-        return false;
-    }
-
     JsonDocument doc;
     JsonArray arr = doc.to<JsonArray>();
 
@@ -464,12 +468,11 @@ bool AlertManager::save_log_()
         obj["count"]       = log_[i].count;
     }
 
-    if (serializeJson(doc, f) == 0) {
-        Serial.println("[Alert] ОШИБКА: не удалось записать файл журнала");
-        f.close();
+    // Пишем атомарно: журнал переживет пропадание питания в момент записи
+    if (!fs_write_json_atomic(ALERTS_LOG_FILE, doc)) {
+        Serial.println("[Alert] ОШИБКА: не удалось сохранить файл журнала");
         return false;
     }
 
-    f.close();
     return true;
 }

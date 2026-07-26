@@ -17,7 +17,7 @@ static constexpr uint32_t ALERT_RETRIGGER_MS = 15000;
 // Путь к файлу истории алертов (отдельно от конфига)
 static constexpr const char *ALERTS_LOG_FILE = "/alerts.json";
 
-// Путь к файлу конфига проверок (enabled/disabled + пороговые значения)
+// Путь к файлу конфига проверок (режим повтора + пороговые значения)
 static constexpr const char *CHECKS_CONFIG_FILE = "/checks.json";
 
 // Структура одной записи в журнале сработавших алертов
@@ -27,9 +27,11 @@ struct AlertLogEntry {
     uint32_t count;           // Сколько раз сработала эта проверка
 };
 
-// Структура конфигурации одной проверки (хранится в /checks.json)
+// Структура конфигурации одной проверки (хранится в /checks.json).
+// Внимание: enabled задаёт режим повтора, а не включение проверки —
+// сама проверка выполняется всегда, отключить её нельзя
 struct CheckConfig {
-    bool  enabled; // Включена ли проверка
+    bool  enabled; // Режим повтора: true — раз в ALERT_RETRIGGER_MS, false — однократно за сессию МК
     float param1;  // Первый порог (смысл зависит от проверки)
     float param2;  // Второй порог (0 если не используется)
     float param3;  // Третий порог (0 если не используется)
@@ -100,12 +102,13 @@ private:
     char     active_dname_[64];             // Форматированное имя для дисплея (строки через '\n')
     uint32_t active_since_;                 // millis() момента последнего срабатывания
 
-    uint32_t last_trigger_ms_[CHECK_COUNT]; // Таймер антидребезга (enabled=true)
+    uint32_t last_trigger_ms_[CHECK_COUNT]; // Таймер антидребезга (режим повтора, enabled=true)
     // Флаг «уже показали в этой сессии» (enabled=false, сбрасывается только при перезагрузке МК)
     bool     shown_once_[CHECK_COUNT];
 
-    // Загрузить конфиг проверок из файла (defaults если файла нет)
-    bool load_checks_();
+    // Загрузить конфиг проверок из файла (defaults если файла нет).
+    // missing — сюда пишется true, если в файле не хватает проверок или полей
+    bool load_checks_(bool &missing);
 
     // Сохранить конфиг проверок в файл
     bool save_checks_();

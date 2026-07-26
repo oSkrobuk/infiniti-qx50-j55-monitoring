@@ -47,7 +47,7 @@ All C++ source files (`.cpp`, `.h`) in this project **must** follow the
 - **All comments in `.cpp` and `.h` files must be written in Russian.**
 - **Do NOT put a period (`.`) at the end of comments.**
 - **Do NOT put a period (`.`) at the end of `Serial.print`/`Serial.println`/`Serial.printf` string literals.**
--- **Chatting in Russian.**
+- **Chatting in Russian.**
 
 ## Build
 
@@ -95,7 +95,7 @@ AGENTS.md       Agent rules (this file)
 
 - **MCU**: ESP32 (espressif32 @ 6.7.0, Arduino framework)
 - **Display**: ST7789 240×240 TFT (TFT_eSPI, SPI)
-- **CAN**: SN65HVD230 / WVCMCU-230, TWAI controller, 500 kbps, listen-only
+- **CAN**: SN65HVD230 / WVCMCU-230, TWAI controller, 500 kbps, `TWAI_MODE_NORMAL` — the device both receives frames and transmits UDS requests (`0x22`, Tester Present) to ECM/TCM
 - **Storage**: LittleFS for config persistence
 - **OTA**: dual-slot partition layout (ota_0 / ota_1, 1.75 MB each)
 - **Web**: ESP32 built-in WebServer on port 80, WiFi SoftAP

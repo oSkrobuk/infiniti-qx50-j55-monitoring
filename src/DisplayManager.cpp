@@ -79,7 +79,9 @@ void DisplayManager::draw_header_()
 void DisplayManager::init(const char *version)
 {
     tft_.init();
-    tft_.setRotation(90);
+    // TFT_eSPI принимает 0..3 и сам берет остаток от деления на 4:
+    // раньше здесь стояло 90, что давало ту же ориентацию 90 % 4 = 2
+    tft_.setRotation(2);
     tft_.fillScreen(TFT_BLACK);
 
     if (version) {
@@ -418,7 +420,7 @@ void DisplayManager::update_metrics(float coolant, float oil, float coolant_r,
     tft_.drawString(buf, 12, 146, 4);
     tft_.setTextPadding(0);
 
-    // Давление масла
+    // Напряжение датчика давления масла
     tft_.setTextColor(get_oil_pressure_color(oil_pressure, rpm), TFT_BLACK);
     snprintf(buf, sizeof(buf), "%.2f", oil_pressure);
     tft_.drawString(buf, 95, 146, 4);
@@ -437,7 +439,7 @@ void DisplayManager::update_metrics(float coolant, float oil, float coolant_r,
     tft_.drawString(buf, 7, 205, 4);
     tft_.setTextPadding(0);
 
-    // Время опроса RPM
+    // Период обновления RPM
     tft_.setTextColor(get_poll_time_color(poll_time, rpm), TFT_BLACK);
     tft_.setTextPadding(tft_.textWidth("0.60", 4));
     if (rpm == 0.0f || poll_time == 0.0f) {

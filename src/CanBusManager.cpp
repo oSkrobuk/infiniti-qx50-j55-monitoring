@@ -51,7 +51,7 @@ bool CanBusManager::init()
     rx_count_  = 0;
     err_count_ = 0;
 
-    Serial.printf("[CAN] Шина запущена. TX=GPIO%d, RX=GPIO%d, 500 кбит/с, режим: только приём\r\n",
+    Serial.printf("[CAN] Шина запущена. TX=GPIO%d, RX=GPIO%d, 500 кбит/с, режим: приём и передача\r\n",
                   static_cast<int>(CAN_TX_PIN), static_cast<int>(CAN_RX_PIN));
     return true;
 }
@@ -158,10 +158,10 @@ void can_parse_known_frames(const CanFrame &frame)
         case 0x7E8: {
             // Диагностический ответ от ECM (UDS / ISO 14229)
             // Нам физически необходимы минимум 6 байт (индексы d[0]...d[5])
-            if (dlc < 6) break; 
-            
+            if (dlc < 6) break;
+
             // d[1] = 0x62 (Положительный ответ на чтение параметров Service 0x22)
-            if (d[1] == 0x62) { 
+            if (d[1] == 0x62) {
                 // Собираем идентификатор параметра DID из байт 2 и 3 (big-endian)
                 uint16_t did = (static_cast<uint16_t>(d[2]) << 8) | d[3];
 
@@ -192,16 +192,16 @@ void can_parse_known_frames(const CanFrame &frame)
                         can_metrics.turbo_boost_volt    = static_cast<float>(d[4]) / 50.0f;
                         can_metrics.turbo_boost_volt_ts = millis();
                         break;
-                    }  
-                    case 0x1278: { // Датчик давления малса ДВС
+                    }
+                    case 0x1278: { // Датчик давления масла ДВС
                         // Собираем 16-битное значение из d[4] и d[5] (например, 0x014E = 334)
                         uint16_t raw_oil_press = (static_cast<uint16_t>(d[4]) << 8) | d[5];
                         // Переводим в чистые Вольты (334 / 200.0f = 1.67V)
                         can_metrics.oil_pressure_volt    = static_cast<float>(raw_oil_press) / 200.0f;
                         can_metrics.oil_pressure_volt_ts = millis();
                         break;
-                    }                               
-                    case 0x1103: { // Нарпяжение бортовой сети
+                    }
+                    case 0x1103: { // Напряжение бортовой сети
                         // 178 * 0.08f = 14.24 Вольт
                         can_metrics.battery_voltage    = static_cast<float>(d[4]) * 0.08f;
                         can_metrics.battery_voltage_ts = millis();
@@ -230,7 +230,7 @@ void can_parse_known_frames(const CanFrame &frame)
                          * В байте d[4] прилетает сырое значение (например, 0x66 = 102 DEC).
                          * Математика блока Jatco CVT8 HT (JF019E) использует смещение -40:
                          * 102 - 40.0f = 62.0°C (точно совпадает с показаниями сканера Launch).
-                         * 
+                         *
                          * СПРАВОЧНЫЕ ДИАПАЗОНЫ:
                          * < 50°C   - Вариатор не прогрет (масло NS-3 густое, нежелательно нагружать).
                          * 70-90°C  - Идеальная рабочая температура для долгой жизни цепи и конусов.

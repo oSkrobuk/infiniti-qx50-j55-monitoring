@@ -1,0 +1,164 @@
+# Путь в репозитории: .github/workflows/build.yml
+#
+# Что делает:
+#   * при каждом push в main и в каждом PR — собирает все четыре окружения;
+#   * при push тега вида v2026.3.2 — сверяет версию в src/main.cpp с тегом и
+#     кладёт бинарники ESP32 DEVKIT1 в черновик релиза на этот тег.
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Группа включает ref, поэтому у каждой ветки и каждого тега своя очередь.
+# Новый push в main отменяет предыдущую сборку той же ветки — устаревший
+# результат всё равно никому не нужен
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.env }}
+    runs-on: ubuntu-latest
+    strategy:
+      # не отменять остальные окружения, если одно упало —
+      # хочется видеть сразу все поломки, а не первую
+      fail-fast: false
+      matrix:
+        # chip нужен только для ключа кэша: ESP32 и ESP32-S3 тянут разные
+        # тулчейны (xtensa-esp32-elf и xtensa-esp32s3-elf), общий кэш на все
+        # четыре окружения давал попадание только одному из них
+        include:
+          - env: esp32
+            chip: esp32
+          - env: esp32-mock
+            chip: esp32
+          - env: esp32s3-wt32
+            chip: esp32s3
+          - env: esp32s3-wt32-mock
+            chip: esp32s3
+
+    steps:
+      - name: Клонировать репозиторий
+        uses: actions/checkout@v4
+
+      - name: Сверить версию прошивки с тегом
+        # Версия зашита в src/main.cpp руками, тег ставится отдельно.
+        # Без этой проверки релиз v2026.3.2 мог бы уехать с прошивкой,
+        # которая показывает на дисплее 2026.3.1
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          SRC=$(grep -oP 's_app_version\s*=\s*"\K[^"]+' src/main.cpp)
+          echo "тег: $TAG, прошивка: $SRC"
+          if [ "$TAG" != "$SRC" ]; then
+            echo "::error::Версия в src/main.cpp ($SRC) не совпадает с тегом ($TAG)"
+            exit 1
+          fi
+
+      - name: Поставить Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Кэш тулчейнов PlatformIO
+        # без кэша каждая сборка качает ~500 МБ тулчейна xtensa (2-4 минуты),
+        # с кэшем — секунды. Ключ завязан на чип и на platformio.ini, поэтому
+        # при смене версии платформы кэш автоматически пересобирается
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pio-${{ runner.os }}-${{ matrix.chip }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-${{ matrix.chip }}-
+
+      - name: Поставить PlatformIO
+        # версия зафиксирована, чтобы CI собирал тем же, чем собирают локально
+        run: pip install "platformio==6.1.19"
+
+      - name: Собрать ${{ matrix.env }}
+        run: pio run -e ${{ matrix.env }}
+
+      - name: Проверить, что прошивка влезает в OTA-слот
+        # Размер слота берём прямо из partitions.csv, чтобы проверка не
+        # разошлась с таблицей разделов, если её когда-нибудь поправят.
+        # Если firmware.bin перерастёт слот, OTA-обновление сломается уже
+        # у пользователя, а не на сборке. Пусть падает здесь
+        run: |
+          RAW=$(awk -F',' '$1 ~ /^ota_0/ { gsub(/[ \t]/,"",$5); print $5 }' partitions.csv)
+          if [ -z "$RAW" ]; then
+            echo "::error::Не удалось прочитать размер ota_0 из partitions.csv"
+            exit 1
+          fi
+          SLOT=$((RAW))
+          SIZE=$(stat -c%s ".pio/build/${{ matrix.env }}/firmware.bin")
+          PCT=$(( SIZE * 100 / SLOT ))
+          echo "firmware.bin: $SIZE байт из $SLOT ($PCT% слота OTA)"
+          echo "### ${{ matrix.env }}: $SIZE байт ($PCT% слота OTA)" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$SIZE" -gt "$SLOT" ]; then
+            echo "::error::Прошивка не влезает в OTA-слот"
+            exit 1
+          fi
+          if [ "$PCT" -gt 90 ]; then
+            echo "::warning::Занято больше 90% слота OTA"
+          fi
+
+      - name: Сохранить бинарники
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.env }}
+          path: |
+            .pio/build/${{ matrix.env }}/firmware.bin
+            .pio/build/${{ matrix.env }}/bootloader.bin
+            .pio/build/${{ matrix.env }}/partitions.bin
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Черновик релиза
+    # ждём все четыре окружения: релиз не должен уезжать, если хоть одна
+    # сборка сломана
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Забрать бинарники ESP32 DEVKIT1
+        uses: actions/download-artifact@v4
+        with:
+          name: esp32
+          path: release/
+
+      # Когда появятся бинарники для WT32-SC01 Plus — раскомментировать блок
+      # ниже и добавить три файла из esp32s3/ в список files. Имена файлов
+      # у обеих плат одинаковые, поэтому раскладывать их надо по разным папкам.
+      # Учесть: у ESP32-S3 bootloader.bin шьётся по адресу 0x0, а не 0x1000,
+      # как у ESP32 — таблицу адресов в README (раздел 3.3) надо будет дополнить.
+      #
+      # - name: Забрать бинарники WT32-SC01 Plus
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: esp32s3-wt32
+      #     path: esp32s3/
+
+      - name: Прикрепить бинарники к релизу
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            release/bootloader.bin
+            release/partitions.bin
+            release/firmware.bin

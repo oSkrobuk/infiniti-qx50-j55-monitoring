@@ -462,7 +462,7 @@ void DisplayManagerWT32::update_metrics(float coolant, float oil, float coolant_
     snprintf(buf, sizeof(buf), "%.0f", rpm);
     tft_.drawCentreString(buf, COL1_X, ENG_VAL_Y, 4);
 
-    // Давление масла
+    // Напряжение датчика давления масла
     tft_.setTextColor(get_oil_pressure_color(oil_pressure, rpm), TFT_BLACK);
     tft_.setTextPadding(tft_.textWidth("3.50", 4));
     snprintf(buf, sizeof(buf), "%.2f", oil_pressure);
@@ -482,7 +482,7 @@ void DisplayManagerWT32::update_metrics(float coolant, float oil, float coolant_
     snprintf(buf, sizeof(buf), "%.2f", battery_voltage);
     tft_.drawCentreString(buf, COL1_X, OTH_VAL_Y, 4);
 
-    // Время опроса RPM
+    // Период обновления RPM
     tft_.setTextColor(get_poll_time_color(poll_time, rpm), TFT_BLACK);
     tft_.setTextPadding(tft_.textWidth("0.60", 4));
     if (rpm == 0.0f || poll_time == 0.0f) {

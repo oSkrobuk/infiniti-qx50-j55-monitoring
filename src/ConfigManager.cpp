@@ -2,6 +2,8 @@
 
 #include <LittleFS.h>
 
+#include "FsUtils.h"
+
 ConfigManager config;
 
 static bool s_fs_mounted = false;
@@ -37,8 +39,8 @@ static void build_defaults(JsonDocument &doc)
     doc["rpm"]["green_end"]   = 3500.0f;
     doc["rpm"]["red_start"]   = 4500.0f;
 
-    // Давление масла: минимум зависит от оборотов
-    // при RPM < rpm_threshold допустимо min_low бар, при RPM >= threshold — min_high бар
+    // Напряжение датчика давления масла: минимум зависит от оборотов
+    // при RPM < rpm_threshold допустимо min_low В, при RPM >= threshold — min_high В
     doc["oil_pressure"]["rpm_threshold"] = 3000.0f;
     doc["oil_pressure"]["min_low"]       = 1.45f;
     doc["oil_pressure"]["min_high"]      = 3.1f;
@@ -56,7 +58,7 @@ static void build_defaults(JsonDocument &doc)
     doc["battery"]["green_max"] = 14.6f;
     doc["battery"]["red_high"]  = 14.9f;
 
-    // Время опроса RPM: цветовые пороги (секунды)
+    // Период обновления RPM: цветовые пороги (секунды)
     // ≤ green_max → зелёный; ≥ red_min → красный; между — плавный переход
     doc["poll_time"]["green_max"] = 0.2f;
     doc["poll_time"]["red_min"]   = 0.5f;
@@ -74,6 +76,21 @@ static void build_defaults(JsonDocument &doc)
 
 // ── Вспомогательные функции ──────────────────────────────────────────────────
 
+// Документ с заводскими значениями — строится один раз при первом обращении.
+// Нужен как запасной источник для get()/get_str(), если поля нет в текущем конфиге:
+// без него повреждённый или неполный файл давал бы нулевые пороги
+static const JsonDocument &defaults_doc()
+{
+    static JsonDocument s_defaults;
+    static bool         s_built = false;
+
+    if (!s_built) {
+        build_defaults(s_defaults);
+        s_built = true;
+    }
+    return s_defaults;
+}
+
 // CRC32 от строки — используется для автоматического определения
 // изменения значений по умолчанию без ручного версионирования
 static uint32_t crc32(const String &s)
@@ -90,10 +107,8 @@ static uint32_t crc32(const String &s)
 
 static uint32_t defaults_hash()
 {
-    JsonDocument doc;
-    build_defaults(doc);
     String s;
-    serializeJson(doc, s);
+    serializeJson(defaults_doc(), s);
     return crc32(s);
 }
 
@@ -128,13 +143,23 @@ void ConfigManager::apply_defaults()
 
 float ConfigManager::get(const char *section, const char *field) const
 {
-    return data_[section][field] | 0.0f;
+    JsonVariantConst v = data_[section][field];
+    if (v.is<float>()) return v.as<float>();
+
+    // Поля нет в текущем конфиге — откатываемся на заводское значение,
+    // иначе порог молча стал бы нулём и сломал цветовые зоны
+    return defaults_doc()[section][field] | 0.0f;
 }
 
 String ConfigManager::get_str(const char *section, const char *field) const
 {
     JsonVariantConst v = data_[section][field];
     if (v.is<const char *>()) return String(v.as<const char *>());
+
+    // Поля нет в текущем конфиге — откатываемся на заводское значение
+    JsonVariantConst d = defaults_doc()[section][field];
+    if (d.is<const char *>()) return String(d.as<const char *>());
+
     return String("");
 }
 
@@ -202,23 +227,16 @@ bool ConfigManager::save_to_file()
 {
     if (!ensure_mounted()) return false;
 
-    File f = LittleFS.open("/config.json", "w");
-    if (!f) {
-        Serial.println("[Config] ОШИБКА: не удалось открыть файл для записи");
-        return false;
-    }
-
     JsonDocument doc;
     doc["version"] = defaults_hash();
     doc["params"]  = data_;
 
-    if (serializeJson(doc, f) == 0) {
-        Serial.println("[Config] ОШИБКА: не удалось записать JSON");
-        f.close();
+    // Пишем атомарно: при пропадании питания прежний конфиг останется целым
+    if (!fs_write_json_atomic("/config.json", doc)) {
+        Serial.println("[Config] ОШИБКА: не удалось сохранить конфигурацию");
         return false;
     }
 
-    f.close();
     Serial.println("[Config] Конфигурация сохранена");
     return true;
 }
