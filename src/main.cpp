@@ -10,6 +10,7 @@
 #include "WebManager.h"
 #include "BuzzerController.h"
 #include "AlertManager.h"
+#include "Version.h"
 
 // Выбор менеджера дисплея в зависимости от целевой платформы
 #if defined(DISPLAY_WT32_S3)
@@ -28,9 +29,6 @@ static float can_value(float value, uint32_t ts)
     uint32_t stale_ms = static_cast<uint32_t>(config.get("system", "stale_ms"));
     return (millis() - ts <= stale_ms) ? value : 0.0f;
 }
-
-// Версия прошивки — отображается внизу дисплея
-static constexpr const char *s_app_version = "2026.3.1";
 
 WebManager       web;
 BuzzerController buzzer;
@@ -234,7 +232,8 @@ void setup()
 
     config.init();
 
-    display.init(s_app_version);
+    // Версия прошивки (FW_VERSION из include/Version.h) — отображается внизу дисплея
+    display.init(FW_VERSION);
     web.begin();
 
     // Инициализация менеджера алертов (после монтирования LittleFS в config.init())
