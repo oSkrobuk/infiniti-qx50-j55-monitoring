@@ -6,7 +6,8 @@
 #include "AlertManager.h"
 #include "BuzzerStub.h"
 
-// Тесты движка проверок: пороги, режимы повтора, журнал и персистентность.
+// Тесты движка проверок: пороги, подтверждение условия, тайминги, режимы
+// повтора, журнал и персистентность.
 //
 // Каждый тест работает со своим экземпляром AlertManager — конструктор полностью
 // сбрасывает состояние, поэтому глобальный alert_manager из прошивки тесты
@@ -54,6 +55,16 @@ static CanMetrics fresh_metrics_with_oil_high()
     return m;
 }
 
+// Подать метрики так, чтобы нарушенное условие успело подтвердиться: первый
+// вызов только запускает отсчет, алерт поднимается на втором — через
+// ALERT_CONFIRM_MS_DEF. Кратковременный выброс за диапазон алертом не считается
+static void update_confirmed(AlertManager &am, const CanMetrics &m)
+{
+    am.update(m);
+    mock_advance_millis(ALERT_CONFIRM_MS_DEF);
+    am.update(m);
+}
+
 // Конфиг проверок, где E01 переведена в однократный режим (enabled = false)
 static constexpr const char *E01_ONCE_JSON =
     "{\"E01\":{\"enabled\":false,\"param1\":98.0,\"param2\":0.0,\"param3\":0.0}}";
@@ -72,7 +83,7 @@ void tearDown(void) {}
 static void test_normal_metrics_do_not_trigger(void)
 {
     AlertManager am;
-    am.update(fresh_metrics());
+    update_confirmed(am, fresh_metrics());
 
     TEST_ASSERT_FALSE(am.has_active_alert());
     TEST_ASSERT_EQUAL_UINT8(0, am.log_count());
@@ -87,10 +98,218 @@ static void test_zero_timestamp_skips_check(void)
     m.engine_oil = 200.0f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_FALSE(am.has_active_alert());
     TEST_ASSERT_EQUAL_UINT8(0, am.log_count());
+}
+
+// ── Подтверждение условия ────────────────────────────────────────────────────
+
+static void test_alert_needs_full_confirm_window(void)
+{
+    AlertManager am;
+
+    // Первое обнаружение только запускает отсчет
+    am.update(fresh_metrics_with_oil_high());
+    TEST_ASSERT_FALSE(am.has_active_alert());
+
+    // За миллисекунду до конца окна алерта все еще нет
+    mock_advance_millis(ALERT_CONFIRM_MS_DEF - 1);
+    am.update(fresh_metrics_with_oil_high());
+    TEST_ASSERT_FALSE(am.has_active_alert());
+    TEST_ASSERT_EQUAL_UINT32(0, buzzer_alert_count);
+
+    // Ровно на границе условие считается подтвержденным
+    mock_advance_millis(1);
+    am.update(fresh_metrics_with_oil_high());
+    TEST_ASSERT_EQUAL_STRING("E01", am.active_code());
+    TEST_ASSERT_EQUAL_UINT32(1, buzzer_alert_count);
+    TEST_ASSERT_EQUAL_UINT8(1, am.log_count());
+}
+
+static void test_brief_spike_does_not_trigger(void)
+{
+    AlertManager am;
+
+    // Показатель выскочил за порог на 200 мс и вернулся в норму
+    am.update(fresh_metrics_with_oil_high());
+    mock_advance_millis(200);
+    am.update(fresh_metrics());
+
+    // Дальше все в пределах нормы — ни алерта, ни записи в журнале
+    mock_advance_millis(ALERT_CONFIRM_MS_DEF * 2);
+    am.update(fresh_metrics());
+
+    TEST_ASSERT_FALSE(am.has_active_alert());
+    TEST_ASSERT_EQUAL_UINT8(0, am.log_count());
+    TEST_ASSERT_EQUAL_UINT32(0, buzzer_alert_count);
+}
+
+static void test_confirm_window_restarts_after_recovery(void)
+{
+    AlertManager am;
+
+    // Почти дотянули до подтверждения, но показатель вернулся в норму
+    am.update(fresh_metrics_with_oil_high());
+    mock_advance_millis(ALERT_CONFIRM_MS_DEF - 1);
+    am.update(fresh_metrics());
+
+    // Снова вышли за порог — секунду придется отсчитывать заново
+    am.update(fresh_metrics_with_oil_high());
+    mock_advance_millis(ALERT_CONFIRM_MS_DEF - 1);
+    am.update(fresh_metrics_with_oil_high());
+    TEST_ASSERT_EQUAL_UINT32(0, buzzer_alert_count);
+
+    mock_advance_millis(1);
+    am.update(fresh_metrics_with_oil_high());
+    TEST_ASSERT_EQUAL_UINT32(1, buzzer_alert_count);
+}
+
+static void test_missing_data_restarts_confirm_window(void)
+{
+    // Пока по метрике нет кадров, отсчет подтверждения не идет: вернувшееся
+    // запредельное значение снова должно продержаться полную секунду
+    CanMetrics bad = fresh_metrics_with_oil_high();
+
+    AlertManager am;
+    am.update(bad);
+
+    CanMetrics silent    = bad;
+    silent.engine_oil_ts = 0; // кадров по температуре масла больше не приходит
+    mock_advance_millis(ALERT_CONFIRM_MS_DEF);
+    am.update(silent);
+    TEST_ASSERT_EQUAL_UINT32(0, buzzer_alert_count);
+
+    am.update(bad);
+    TEST_ASSERT_EQUAL_UINT32(0, buzzer_alert_count);
+
+    mock_advance_millis(ALERT_CONFIRM_MS_DEF);
+    am.update(bad);
+    TEST_ASSERT_EQUAL_UINT32(1, buzzer_alert_count);
+}
+
+// ── Тайминги из конфига ──────────────────────────────────────────────────────
+
+static void test_timing_defaults(void)
+{
+    AlertManager am;
+
+    TEST_ASSERT_EQUAL_UINT32(1000, am.confirm_ms());
+    TEST_ASSERT_EQUAL_UINT32(15000, am.retrigger_ms());
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, am.checks_to_json()));
+    TEST_ASSERT_EQUAL_UINT32(1000, doc["timing"]["confirm_ms"].as<uint32_t>());
+    TEST_ASSERT_EQUAL_UINT32(15000, doc["timing"]["retrigger_ms"].as<uint32_t>());
+}
+
+static void test_custom_confirm_delays_alert(void)
+{
+    AlertManager am;
+    TEST_ASSERT_TRUE(am.checks_from_json("{\"timing\":{\"confirm_ms\":3000}}"));
+    TEST_ASSERT_EQUAL_UINT32(3000, am.confirm_ms());
+
+    am.update(fresh_metrics_with_oil_high());
+
+    // Заводской секунды теперь мало
+    mock_advance_millis(ALERT_CONFIRM_MS_DEF);
+    am.update(fresh_metrics_with_oil_high());
+    TEST_ASSERT_EQUAL_UINT32(0, buzzer_alert_count);
+
+    mock_advance_millis(2000);
+    am.update(fresh_metrics_with_oil_high());
+    TEST_ASSERT_EQUAL_UINT32(1, buzzer_alert_count);
+}
+
+static void test_zero_confirm_triggers_immediately(void)
+{
+    // Ноль отключает подтверждение — поведение до появления тайминга
+    AlertManager am;
+    TEST_ASSERT_TRUE(am.checks_from_json("{\"timing\":{\"confirm_ms\":0}}"));
+
+    am.update(fresh_metrics_with_oil_high());
+
+    TEST_ASSERT_EQUAL_STRING("E01", am.active_code());
+    TEST_ASSERT_EQUAL_UINT32(1, buzzer_alert_count);
+}
+
+static void test_custom_retrigger_interval(void)
+{
+    AlertManager am;
+    TEST_ASSERT_TRUE(am.checks_from_json("{\"timing\":{\"retrigger_ms\":5000}}"));
+    TEST_ASSERT_EQUAL_UINT32(5000, am.retrigger_ms());
+
+    update_confirmed(am, fresh_metrics_with_oil_high());
+    TEST_ASSERT_EQUAL_UINT32(1, buzzer_alert_count);
+
+    mock_advance_millis(4999);
+    am.update(fresh_metrics_with_oil_high());
+    TEST_ASSERT_EQUAL_UINT32(1, buzzer_alert_count);
+
+    mock_advance_millis(1);
+    am.update(fresh_metrics_with_oil_high());
+    TEST_ASSERT_EQUAL_UINT32(2, buzzer_alert_count);
+}
+
+static void test_timing_values_are_clamped(void)
+{
+    // Из Web UI может прийти что угодно — значения зажимаются в границы
+    AlertManager am;
+    TEST_ASSERT_TRUE(am.checks_from_json(
+        "{\"timing\":{\"confirm_ms\":999999,\"retrigger_ms\":10}}"));
+
+    TEST_ASSERT_EQUAL_UINT32(ALERT_CONFIRM_MS_MAX, am.confirm_ms());
+    TEST_ASSERT_EQUAL_UINT32(ALERT_RETRIGGER_MS_MIN, am.retrigger_ms());
+}
+
+static void test_timing_ignores_garbage(void)
+{
+    // Нечисловое значение не должно обнулять тайминг
+    AlertManager am;
+    TEST_ASSERT_TRUE(am.checks_from_json(
+        "{\"timing\":{\"confirm_ms\":\"быстро\",\"retrigger_ms\":20000}}"));
+
+    TEST_ASSERT_EQUAL_UINT32(ALERT_CONFIRM_MS_DEF, am.confirm_ms());
+    TEST_ASSERT_EQUAL_UINT32(20000, am.retrigger_ms());
+}
+
+static void test_timing_is_persisted(void)
+{
+    AlertManager am;
+    TEST_ASSERT_TRUE(am.checks_from_json(
+        "{\"timing\":{\"confirm_ms\":2500,\"retrigger_ms\":30000}}"));
+
+    TEST_ASSERT_TRUE(mock_fs_files[CHECKS_CONFIG_FILE].find("2500") != std::string::npos);
+    TEST_ASSERT_TRUE(mock_fs_files[CHECKS_CONFIG_FILE].find("30000") != std::string::npos);
+}
+
+static void test_init_loads_timing_from_file(void)
+{
+    mock_fs_files[CHECKS_CONFIG_FILE] =
+        "{\"timing\":{\"confirm_ms\":2000,\"retrigger_ms\":45000},"
+        "\"E01\":{\"enabled\":true,\"param1\":98.0,\"param2\":0.0,\"param3\":0.0}}";
+
+    AlertManager am;
+    am.init();
+
+    TEST_ASSERT_EQUAL_UINT32(2000, am.confirm_ms());
+    TEST_ASSERT_EQUAL_UINT32(45000, am.retrigger_ms());
+}
+
+static void test_init_backfills_missing_timing(void)
+{
+    // Файл от прошивки без таймингов: секция дописывается заводскими значениями
+    mock_fs_files[CHECKS_CONFIG_FILE] =
+        "{\"E01\":{\"enabled\":true,\"param1\":98.0,\"param2\":0.0,\"param3\":0.0}}";
+
+    AlertManager am;
+    am.init();
+
+    TEST_ASSERT_EQUAL_UINT32(ALERT_CONFIRM_MS_DEF, am.confirm_ms());
+    TEST_ASSERT_EQUAL_UINT32(ALERT_RETRIGGER_MS_DEF, am.retrigger_ms());
+    TEST_ASSERT_TRUE(mock_fs_files[CHECKS_CONFIG_FILE].find("confirm_ms") != std::string::npos);
+    TEST_ASSERT_TRUE(mock_fs_files[CHECKS_CONFIG_FILE].find("retrigger_ms") != std::string::npos);
 }
 
 // ── Пороги отдельных проверок ────────────────────────────────────────────────
@@ -101,7 +320,7 @@ static void test_engine_oil_high_triggers_e01(void)
     m.engine_oil = 99.0f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_TRUE(am.has_active_alert());
     TEST_ASSERT_EQUAL_STRING("E01", am.active_code());
@@ -116,7 +335,7 @@ static void test_threshold_is_strict(void)
     m.engine_oil = 98.0f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_FALSE(am.has_active_alert());
 }
@@ -127,7 +346,7 @@ static void test_engine_coolant_high_triggers_e02(void)
     m.engine_coolant = 97.0f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_EQUAL_STRING("E02", am.active_code());
 }
@@ -138,7 +357,7 @@ static void test_radiator_high_triggers_e03(void)
     m.radiator_coolant = 91.0f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_EQUAL_STRING("E03", am.active_code());
 }
@@ -149,7 +368,7 @@ static void test_cvt_high_triggers_e04(void)
     m.cvt_temp   = 101.0f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_EQUAL_STRING("E04", am.active_code());
 }
@@ -163,7 +382,7 @@ static void test_rpm_overspeed_triggers_e05(void)
     m.oil_pressure_volt = 3.5f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_EQUAL_STRING("E05", am.active_code());
 }
@@ -174,7 +393,7 @@ static void test_battery_low_triggers_e06(void)
     m.battery_voltage = 11.0f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_EQUAL_STRING("E06", am.active_code());
 }
@@ -185,7 +404,7 @@ static void test_battery_high_triggers_e07(void)
     m.battery_voltage = 15.5f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_EQUAL_STRING("E07", am.active_code());
 }
@@ -200,7 +419,7 @@ static void test_oil_pressure_low_below_rpm_threshold(void)
     m.oil_pressure_volt = 1.3f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_EQUAL_STRING("E08", am.active_code());
 }
@@ -212,7 +431,7 @@ static void test_oil_pressure_ok_below_rpm_threshold(void)
     m.oil_pressure_volt = 1.5f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_FALSE(am.has_active_alert());
 }
@@ -225,7 +444,7 @@ static void test_oil_pressure_uses_high_threshold_above_rpm_limit(void)
     m.oil_pressure_volt = 2.0f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_EQUAL_STRING("E08", am.active_code());
 }
@@ -237,7 +456,7 @@ static void test_oil_pressure_ok_above_rpm_limit(void)
     m.oil_pressure_volt = 3.0f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_FALSE(am.has_active_alert());
 }
@@ -250,7 +469,7 @@ static void test_oil_pressure_check_skipped_when_engine_stopped(void)
     m.oil_pressure_volt = 0.1f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_FALSE(am.has_active_alert());
 }
@@ -264,7 +483,7 @@ static void test_oil_coolant_delta_triggers_e09(void)
     m.engine_coolant = 78.0f; // дельта 17 при пороге 14
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_EQUAL_STRING("E09", am.active_code());
 }
@@ -277,7 +496,7 @@ static void test_negative_delta_does_not_trigger(void)
     m.engine_coolant = 90.0f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_FALSE(am.has_active_alert());
 }
@@ -291,7 +510,7 @@ static void test_last_triggered_check_wins(void)
     m.engine_coolant = 80.0f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_EQUAL_STRING("E09", am.active_code());
     TEST_ASSERT_EQUAL_UINT8(2, am.log_count());
@@ -305,11 +524,11 @@ static void test_retrigger_is_debounced(void)
     m.engine_oil = 99.0f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
     TEST_ASSERT_EQUAL_UINT32(1, buzzer_alert_count);
 
     // Внутри окна антидребезга повторов нет
-    mock_advance_millis(ALERT_RETRIGGER_MS - 1);
+    mock_advance_millis(ALERT_RETRIGGER_MS_DEF - 1);
     am.update(fresh_metrics_with_oil_high());
     TEST_ASSERT_EQUAL_UINT32(1, buzzer_alert_count);
 
@@ -328,10 +547,10 @@ static void test_once_mode_triggers_only_once(void)
     CanMetrics m = fresh_metrics();
     m.engine_oil = 99.0f;
 
-    am.update(m);
+    update_confirmed(am, m);
     TEST_ASSERT_EQUAL_UINT32(1, buzzer_alert_count);
 
-    mock_advance_millis(ALERT_RETRIGGER_MS * 10);
+    mock_advance_millis(ALERT_RETRIGGER_MS_DEF * 10);
     am.update(fresh_metrics_with_oil_high());
     TEST_ASSERT_EQUAL_UINT32(1, buzzer_alert_count);
 }
@@ -343,11 +562,12 @@ static void test_once_mode_alerts_again_after_clear_log(void)
     AlertManager am;
     TEST_ASSERT_TRUE(am.checks_from_json(E01_ONCE_JSON));
 
-    am.update(fresh_metrics_with_oil_high());
+    update_confirmed(am, fresh_metrics_with_oil_high());
     TEST_ASSERT_EQUAL_UINT32(1, buzzer_alert_count);
 
     TEST_ASSERT_TRUE(am.clear_log());
 
+    // Условие не снималось, отсчет подтверждения давно закончился
     am.update(fresh_metrics_with_oil_high());
     TEST_ASSERT_EQUAL_UINT32(2, buzzer_alert_count);
     TEST_ASSERT_EQUAL_UINT8(1, am.log_count());
@@ -365,7 +585,7 @@ static void test_once_mode_stays_silent_while_code_in_log(void)
     AlertManager am;
     am.init();
 
-    am.update(fresh_metrics_with_oil_high());
+    update_confirmed(am, fresh_metrics_with_oil_high());
 
     TEST_ASSERT_EQUAL_UINT32(0, buzzer_alert_count);
     TEST_ASSERT_FALSE(am.has_active_alert());
@@ -376,7 +596,7 @@ static void test_clear_log_resets_retrigger_debounce(void)
     // В режиме повтора очистка журнала тоже обнуляет антидребезг —
     // ждать конца 15-секундного окна после очистки не нужно
     AlertManager am;
-    am.update(fresh_metrics_with_oil_high());
+    update_confirmed(am, fresh_metrics_with_oil_high());
     TEST_ASSERT_EQUAL_UINT32(1, buzzer_alert_count);
 
     TEST_ASSERT_TRUE(am.clear_log());
@@ -391,7 +611,7 @@ static void test_active_alert_expires(void)
     m.engine_oil = 99.0f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
     TEST_ASSERT_TRUE(am.has_active_alert());
 
     mock_advance_millis(ALERT_DISPLAY_MS - 1);
@@ -407,7 +627,7 @@ static void test_active_display_name_matches_definition(void)
     m.engine_oil = 99.0f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_EQUAL_STRING("ENGINE OIL\nTemperature\nHIGH", am.active_display_name());
     TEST_ASSERT_EQUAL_STRING(AlertManager::CHECK_DEFS[0].description, am.active_description());
@@ -418,9 +638,9 @@ static void test_active_display_name_matches_definition(void)
 static void test_log_deduplicates_by_code(void)
 {
     AlertManager am;
-    am.update(fresh_metrics_with_oil_high());
+    update_confirmed(am, fresh_metrics_with_oil_high());
 
-    mock_advance_millis(ALERT_RETRIGGER_MS);
+    mock_advance_millis(ALERT_RETRIGGER_MS_DEF);
     am.update(fresh_metrics_with_oil_high());
 
     TEST_ASSERT_EQUAL_UINT8(1, am.log_count());
@@ -438,7 +658,7 @@ static void test_log_records_distinct_codes(void)
     m.battery_voltage = 11.0f;
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_EQUAL_UINT8(2, am.log_count());
 }
@@ -446,7 +666,7 @@ static void test_log_records_distinct_codes(void)
 static void test_log_is_persisted(void)
 {
     AlertManager am;
-    am.update(fresh_metrics_with_oil_high());
+    update_confirmed(am, fresh_metrics_with_oil_high());
 
     TEST_ASSERT_TRUE(mock_fs_files.count(ALERTS_LOG_FILE) != 0);
     TEST_ASSERT_TRUE(mock_fs_files[ALERTS_LOG_FILE].find("E01") != std::string::npos);
@@ -457,7 +677,7 @@ static void test_log_is_persisted(void)
 static void test_clear_log_empties_log_and_file(void)
 {
     AlertManager am;
-    am.update(fresh_metrics_with_oil_high());
+    update_confirmed(am, fresh_metrics_with_oil_high());
     TEST_ASSERT_EQUAL_UINT8(1, am.log_count());
 
     TEST_ASSERT_TRUE(am.clear_log());
@@ -493,7 +713,7 @@ static void test_checks_from_json_changes_threshold(void)
     CanMetrics m = fresh_metrics();
     m.engine_oil = 85.0f; // выше нового порога, ниже заводского
 
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_EQUAL_STRING("E01", am.active_code());
 }
@@ -540,7 +760,7 @@ static void test_init_backfills_missing_checks(void)
     // При этом настройка пользователя из файла не потеряна
     CanMetrics m = fresh_metrics();
     m.engine_oil = 43.0f;
-    am.update(m);
+    update_confirmed(am, m);
     TEST_ASSERT_EQUAL_STRING("E01", am.active_code());
 }
 
@@ -582,7 +802,7 @@ static void test_stale_metrics_still_trigger(void)
     mock_advance_millis(3600000); // час без единого кадра
 
     AlertManager am;
-    am.update(m);
+    update_confirmed(am, m);
 
     TEST_ASSERT_EQUAL_STRING("E01", am.active_code());
 }
@@ -593,6 +813,21 @@ int main(int, char **)
 
     RUN_TEST(test_normal_metrics_do_not_trigger);
     RUN_TEST(test_zero_timestamp_skips_check);
+
+    RUN_TEST(test_alert_needs_full_confirm_window);
+    RUN_TEST(test_brief_spike_does_not_trigger);
+    RUN_TEST(test_confirm_window_restarts_after_recovery);
+    RUN_TEST(test_missing_data_restarts_confirm_window);
+
+    RUN_TEST(test_timing_defaults);
+    RUN_TEST(test_custom_confirm_delays_alert);
+    RUN_TEST(test_zero_confirm_triggers_immediately);
+    RUN_TEST(test_custom_retrigger_interval);
+    RUN_TEST(test_timing_values_are_clamped);
+    RUN_TEST(test_timing_ignores_garbage);
+    RUN_TEST(test_timing_is_persisted);
+    RUN_TEST(test_init_loads_timing_from_file);
+    RUN_TEST(test_init_backfills_missing_timing);
 
     RUN_TEST(test_engine_oil_high_triggers_e01);
     RUN_TEST(test_threshold_is_strict);

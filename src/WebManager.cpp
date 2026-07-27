@@ -643,6 +643,30 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     <span class="sect-chevron">&#9660;</span>
   </summary>
   <div class="sect-body">
+    <div class="grid">
+      <div class="card">
+        <div class="card-hdr">
+          <div class="card-title">&#9201; Тайминги алертов</div>
+          <button type="button" class="btn-card-default" onclick="resetCheckTiming()">&#8635; Сброс</button>
+        </div>
+        <div style="font-size:0.75rem;color:var(--muted);margin-bottom:10px;line-height:1.4">
+          Общие для всех проверок. Подтверждение отсекает кратковременные выбросы показаний:
+          алерт поднимется, только если условие продержится указанное время. Повтор задает,
+          как часто напоминать о сохраняющейся неисправности.
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label>Подтверждение, с</label>
+            <input class="f-target" type="number" step="0.1" min="0" max="60" id="check_confirm_s">
+          </div>
+          <div class="field">
+            <label>Повтор алерта, с</label>
+            <input class="f-target" type="number" step="1" min="1" max="3600"
+                   id="check_retrigger_s" oninput="updateRetriggerLabels()">
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="grid" id="checksGrid">
       <!-- Заполняется JavaScript -->
     </div>
@@ -1193,9 +1217,41 @@ const CHECK_DEFS = [
     params:[{label:'Макс. дельта, °C', key:'param1', step:1}] },
 ];
 
+// Тайминги хранятся в мс, а в поля вводятся секунды
+const CHECK_TIMING_DEFAULTS = { confirm_ms: 1000, retrigger_ms: 15000 };
+
+// Подпись режима повтора: интервал берется из поля, а не из константы
+function retriggerLabelText() {
+  const el = document.getElementById('check_retrigger_s');
+  const sec = el && parseFloat(el.value) > 0
+    ? parseFloat(el.value)
+    : CHECK_TIMING_DEFAULTS.retrigger_ms / 1000;
+  return `При постоянной ошибке повтор раз в ${sec} сек`;
+}
+
+// Переписывает подписи всех карточек — вызывается при правке поля повтора
+function updateRetriggerLabels() {
+  CHECK_DEFS.forEach(def => {
+    const chk = document.getElementById(`check_${def.code}_enabled`);
+    const lbl = document.getElementById(`check_${def.code}_label`);
+    if (chk && lbl) {
+      lbl.textContent = chk.checked ? retriggerLabelText() : 'Однократно, пока код в журнале';
+    }
+  });
+}
+
 function renderChecks(cfg) {
   const grid = document.getElementById('checksGrid');
   grid.innerHTML = '';
+
+  // Тайминги заполняем первыми: подписи карточек берут интервал из этих полей
+  const timing = cfg.timing || {};
+  const confirmMs = timing.confirm_ms !== undefined
+    ? timing.confirm_ms : CHECK_TIMING_DEFAULTS.confirm_ms;
+  const retriggerMs = timing.retrigger_ms !== undefined
+    ? timing.retrigger_ms : CHECK_TIMING_DEFAULTS.retrigger_ms;
+  document.getElementById('check_confirm_s').value   = confirmMs / 1000;
+  document.getElementById('check_retrigger_s').value = retriggerMs / 1000;
 
   CHECK_DEFS.forEach(def => {
     const checkCfg = cfg[def.code] || { enabled: true, param1: 0, param2: 0, param3: 0 };
@@ -1226,7 +1282,7 @@ function renderChecks(cfg) {
           <span class="slider"></span>
         </label>
         <span class="toggle-label" id="check_${def.code}_label">
-            ${checkCfg.enabled ? 'При постоянной ошибке повтор раз в 15 сек' : 'Однократно, пока код в журнале'}
+            ${checkCfg.enabled ? retriggerLabelText() : 'Однократно, пока код в журнале'}
           </span>
       </div>
       ${paramsHtml}`;
@@ -1235,13 +1291,18 @@ function renderChecks(cfg) {
     const chk = document.getElementById(`check_${def.code}_enabled`);
     const lbl = document.getElementById(`check_${def.code}_label`);
     chk.addEventListener('change', () => {
-      lbl.textContent = chk.checked ? 'При постоянной ошибке повтор раз в 15 сек' : 'Однократно, пока код в журнале';
+      lbl.textContent = chk.checked ? retriggerLabelText() : 'Однократно, пока код в журнале';
     });
   });
 }
 
 function readChecks() {
-  const result = {};
+  const result = {
+    timing: {
+      confirm_ms:   Math.round((parseFloat(document.getElementById('check_confirm_s').value) || 0) * 1000),
+      retrigger_ms: Math.round((parseFloat(document.getElementById('check_retrigger_s').value) || 0) * 1000)
+    }
+  };
   CHECK_DEFS.forEach(def => {
     const enabledEl = document.getElementById(`check_${def.code}_enabled`);
     if (!enabledEl) return;
@@ -1752,9 +1813,17 @@ function resetAllSystem() {
   resetCardFields('system');
 }
 
-// Сбрасывает все карточки проверок к дефолтам
+// Сбрасывает все карточки проверок и тайминги к дефолтам
 function resetAllChecks() {
+  resetCheckTiming();
   Object.keys(CHECK_DEFAULTS).forEach(code => resetCheckCard(code));
+}
+
+// Сбрасывает карточку таймингов к дефолтам
+function resetCheckTiming() {
+  document.getElementById('check_confirm_s').value   = CHECK_TIMING_DEFAULTS.confirm_ms / 1000;
+  document.getElementById('check_retrigger_s').value = CHECK_TIMING_DEFAULTS.retrigger_ms / 1000;
+  updateRetriggerLabels();
 }
 
 // Сбрасывает WiFi-карточку к дефолтам
@@ -1774,7 +1843,7 @@ function resetCheckCard(code) {
   const labelEl   = document.getElementById(`check_${code}_label`);
   if (enabledEl) {
     enabledEl.checked = d.enabled;
-    if (labelEl) labelEl.textContent = d.enabled ? 'При постоянной ошибке повтор раз в 15 сек' : 'Однократно, пока код в журнале';
+    if (labelEl) labelEl.textContent = d.enabled ? retriggerLabelText() : 'Однократно, пока код в журнале';
   }
   ['param1', 'param2', 'param3'].forEach(p => {
     const el = document.getElementById(`check_${code}_${p}`);

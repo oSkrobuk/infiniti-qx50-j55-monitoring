@@ -90,6 +90,21 @@ const CheckDef AlertManager::CHECK_DEFS[AlertManager::CHECK_COUNT] = {
     },
 };
 
+// Прочитать тайминг из JSON: число в миллисекундах, зажатое в допустимые границы.
+// Если поля нет или это не число — возвращается fallback
+static uint32_t read_timing_ms(JsonVariantConst value, uint32_t fallback, uint32_t lo, uint32_t hi)
+{
+    if (!value.is<float>()) return fallback;
+
+    float ms = value.as<float>();
+    if (ms < 0.0f) ms = 0.0f;
+
+    uint32_t rounded = static_cast<uint32_t>(ms + 0.5f);
+    if (rounded < lo) return lo;
+    if (rounded > hi) return hi;
+    return rounded;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 AlertManager::AlertManager()
@@ -100,11 +115,16 @@ AlertManager::AlertManager()
     active_dname_[0] = '\0';
     apply_check_defaults_();
     memset(last_trigger_ms_, 0, sizeof(last_trigger_ms_));
+    memset(pending_since_, 0, sizeof(pending_since_));
+    memset(pending_active_, 0, sizeof(pending_active_));
     memset(log_, 0, sizeof(log_));
 }
 
 void AlertManager::apply_check_defaults_()
 {
+    confirm_ms_   = ALERT_CONFIRM_MS_DEF;
+    retrigger_ms_ = ALERT_RETRIGGER_MS_DEF;
+
     for (uint8_t i = 0; i < CHECK_COUNT; ++i) {
         checks_[i].enabled = true;
         checks_[i].param1  = CHECK_DEFS[i].param1_def;
@@ -131,59 +151,52 @@ bool AlertManager::init()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Основная функция проверки — вызывается каждые 200 мс
+// Основная функция проверки — вызывается каждые 200 мс.
+//
+// Условие каждой проверки вычисляется целиком, вместе с проверкой наличия
+// данных: если по метрике нет кадров, условие считается ложным и отсчет
+// подтверждения в try_trigger_ обнуляется
 
 void AlertManager::update(const CanMetrics &m)
 {
     // E01: температура масла ДВС выше максимума
-    if (m.engine_oil_ts != 0) {
-        try_trigger_(0, m.engine_oil > checks_[0].param1);
-    }
+    try_trigger_(0, m.engine_oil_ts != 0 && m.engine_oil > checks_[0].param1);
 
     // E02: температура ОЖ ДВС выше максимума
-    if (m.engine_coolant_ts != 0) {
-        try_trigger_(1, m.engine_coolant > checks_[1].param1);
-    }
+    try_trigger_(1, m.engine_coolant_ts != 0 && m.engine_coolant > checks_[1].param1);
 
     // E03: температура ОЖ радиатора выше максимума
-    if (m.radiator_coolant_ts != 0) {
-        try_trigger_(2, m.radiator_coolant > checks_[2].param1);
-    }
+    try_trigger_(2, m.radiator_coolant_ts != 0 && m.radiator_coolant > checks_[2].param1);
 
     // E04: температура масла вариатора выше максимума
-    if (m.cvt_temp_ts != 0) {
-        try_trigger_(3, m.cvt_temp > checks_[3].param1);
-    }
+    try_trigger_(3, m.cvt_temp_ts != 0 && m.cvt_temp > checks_[3].param1);
 
     // E05: обороты выше максимума
-    if (m.engine_rpm_ts != 0) {
-        try_trigger_(4, m.engine_rpm > checks_[4].param1);
-    }
+    try_trigger_(4, m.engine_rpm_ts != 0 && m.engine_rpm > checks_[4].param1);
 
     // E06: напряжение бортовой сети ниже минимума
-    if (m.battery_voltage_ts != 0) {
-        try_trigger_(5, m.battery_voltage < checks_[5].param1);
-    }
+    try_trigger_(5, m.battery_voltage_ts != 0 && m.battery_voltage < checks_[5].param1);
 
     // E07: напряжение бортовой сети выше максимума
-    if (m.battery_voltage_ts != 0) {
-        try_trigger_(6, m.battery_voltage > checks_[6].param1);
-    }
+    try_trigger_(6, m.battery_voltage_ts != 0 && m.battery_voltage > checks_[6].param1);
 
     // E08: давление масла (напряжение датчика) ниже нормы для текущих оборотов
     // При оборотах == 0 (двигатель заглушен) проверку не выполняем
+    bool oil_pressure_low = false;
     if (m.oil_pressure_volt_ts != 0 && m.engine_rpm_ts != 0 && m.engine_rpm != 0.0f) {
         float min_volt = (m.engine_rpm < checks_[7].param1)
             ? checks_[7].param2
             : checks_[7].param3;
-        try_trigger_(7, m.oil_pressure_volt < min_volt);
+        oil_pressure_low = m.oil_pressure_volt < min_volt;
     }
+    try_trigger_(7, oil_pressure_low);
 
     // E09: разница температур масла и антифриза ДВС выше порога
+    bool delta_high = false;
     if (m.engine_oil_ts != 0 && m.engine_coolant_ts != 0) {
-        float delta = m.engine_oil - m.engine_coolant;
-        try_trigger_(8, delta > checks_[8].param1);
+        delta_high = (m.engine_oil - m.engine_coolant) > checks_[8].param1;
     }
+    try_trigger_(8, delta_high);
 }
 
 int16_t AlertManager::find_log_index_(const char *code) const
@@ -198,18 +211,32 @@ int16_t AlertManager::find_log_index_(const char *code) const
 
 void AlertManager::try_trigger_(uint8_t idx, bool triggered)
 {
-    if (!triggered) return;
-
     uint32_t now = millis();
+
+    if (!triggered) {
+        // Условие снялось — следующий выход за диапазон начнет отсчет заново
+        pending_active_[idx] = false;
+        return;
+    }
+
+    // Первый выход за диапазон: запоминаем момент и ждем подтверждения
+    if (!pending_active_[idx]) {
+        pending_active_[idx] = true;
+        pending_since_[idx]  = now;
+    }
+
+    // Показание, выскочившее за диапазон на доли секунды, алертом не считаем:
+    // условие должно продержаться не меньше confirm_ms_ (при нуле алертим сразу)
+    if ((now - pending_since_[idx]) < confirm_ms_) return;
 
     // Запись журнала ищем заранее: в однократном режиме именно ее наличие,
     // а не флаг сессии, запрещает повторное срабатывание
     int16_t log_idx = find_log_index_(CHECK_DEFS[idx].code);
 
     if (checks_[idx].enabled) {
-        // Режим повтора: антидребезг — не повторять чаще ALERT_RETRIGGER_MS
+        // Режим повтора: антидребезг — не повторять чаще retrigger_ms_
         if (last_trigger_ms_[idx] != 0 &&
-            (now - last_trigger_ms_[idx]) < ALERT_RETRIGGER_MS) {
+            (now - last_trigger_ms_[idx]) < retrigger_ms_) {
             return;
         }
     } else {
@@ -317,6 +344,9 @@ String AlertManager::checks_to_json() const
 {
     JsonDocument doc;
 
+    doc[CHECKS_TIMING_KEY]["confirm_ms"]   = confirm_ms_;
+    doc[CHECKS_TIMING_KEY]["retrigger_ms"] = retrigger_ms_;
+
     for (uint8_t i = 0; i < CHECK_COUNT; ++i) {
         const char *code     = CHECK_DEFS[i].code;
         doc[code]["enabled"] = checks_[i].enabled;
@@ -337,6 +367,14 @@ bool AlertManager::checks_from_json(const String &json)
     if (err) {
         Serial.printf("[Alert] ОШИБКА парсинга JSON проверок: %s\r\n", err.c_str());
         return false;
+    }
+
+    if (doc[CHECKS_TIMING_KEY].is<JsonObject>()) {
+        JsonObjectConst timing = doc[CHECKS_TIMING_KEY].as<JsonObjectConst>();
+        confirm_ms_   = read_timing_ms(timing["confirm_ms"], confirm_ms_,
+                                       ALERT_CONFIRM_MS_MIN, ALERT_CONFIRM_MS_MAX);
+        retrigger_ms_ = read_timing_ms(timing["retrigger_ms"], retrigger_ms_,
+                                       ALERT_RETRIGGER_MS_MIN, ALERT_RETRIGGER_MS_MAX);
     }
 
     for (uint8_t i = 0; i < CHECK_COUNT; ++i) {
@@ -383,6 +421,26 @@ bool AlertManager::load_checks_(bool &missing)
         return false;
     }
 
+    // Секция таймингов появилась позже проверок — в файле от старой прошивки
+    // ее нет, поэтому дефолты дописываются туда так же, как новые проверки
+    if (doc[CHECKS_TIMING_KEY].is<JsonObject>()) {
+        JsonObjectConst timing = doc[CHECKS_TIMING_KEY].as<JsonObjectConst>();
+        if (timing["confirm_ms"].is<float>()) {
+            confirm_ms_ = read_timing_ms(timing["confirm_ms"], confirm_ms_,
+                                         ALERT_CONFIRM_MS_MIN, ALERT_CONFIRM_MS_MAX);
+        } else {
+            missing = true;
+        }
+        if (timing["retrigger_ms"].is<float>()) {
+            retrigger_ms_ = read_timing_ms(timing["retrigger_ms"], retrigger_ms_,
+                                           ALERT_RETRIGGER_MS_MIN, ALERT_RETRIGGER_MS_MAX);
+        } else {
+            missing = true;
+        }
+    } else {
+        missing = true;
+    }
+
     for (uint8_t i = 0; i < CHECK_COUNT; ++i) {
         const char *code = CHECK_DEFS[i].code;
         if (!doc[code].is<JsonObject>()) {
@@ -405,6 +463,10 @@ bool AlertManager::load_checks_(bool &missing)
 bool AlertManager::save_checks_()
 {
     JsonDocument doc;
+
+    doc[CHECKS_TIMING_KEY]["confirm_ms"]   = confirm_ms_;
+    doc[CHECKS_TIMING_KEY]["retrigger_ms"] = retrigger_ms_;
+
     for (uint8_t i = 0; i < CHECK_COUNT; ++i) {
         const char *code     = CHECK_DEFS[i].code;
         doc[code]["enabled"] = checks_[i].enabled;

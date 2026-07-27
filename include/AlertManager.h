@@ -11,14 +11,30 @@ static constexpr uint8_t ALERT_LOG_MAX = 16;
 // Длительность показа оверлея на дисплее (мс) после срабатывания алерта
 static constexpr uint32_t ALERT_DISPLAY_MS = 5000;
 
-// Минимальный интервал между повторными срабатываниями одной проверки (мс)
-static constexpr uint32_t ALERT_RETRIGGER_MS = 15000;
+// Заводское значение: минимальный интервал между повторными срабатываниями
+// одной проверки (мс). Меняется в Web UI, хранится в /checks.json
+static constexpr uint32_t ALERT_RETRIGGER_MS_DEF = 15000;
+
+// Заводское значение: сколько мс условие проверки должно держаться, прежде чем
+// поднимется алерт. Отсекает кратковременные выбросы показаний за пределы
+// диапазона. Меняется в Web UI, хранится в /checks.json
+static constexpr uint32_t ALERT_CONFIRM_MS_DEF = 1000;
+
+// Границы, в которые зажимаются тайминги из Web UI (мс).
+// Подтверждение можно свести к нулю — тогда алерт срабатывает сразу
+static constexpr uint32_t ALERT_CONFIRM_MS_MIN   = 0;
+static constexpr uint32_t ALERT_CONFIRM_MS_MAX   = 60000;
+static constexpr uint32_t ALERT_RETRIGGER_MS_MIN = 1000;
+static constexpr uint32_t ALERT_RETRIGGER_MS_MAX = 3600000;
 
 // Путь к файлу истории алертов (отдельно от конфига)
 static constexpr const char *ALERTS_LOG_FILE = "/alerts.json";
 
-// Путь к файлу конфига проверок (режим повтора + пороговые значения)
+// Путь к файлу конфига проверок (тайминги + режим повтора + пороговые значения)
 static constexpr const char *CHECKS_CONFIG_FILE = "/checks.json";
+
+// Ключ секции таймингов в /checks.json (рядом с объектами проверок E01..E09)
+static constexpr const char *CHECKS_TIMING_KEY = "timing";
 
 // Структура одной записи в журнале сработавших алертов
 struct AlertLogEntry {
@@ -31,7 +47,7 @@ struct AlertLogEntry {
 // Внимание: enabled задает режим повтора, а не включение проверки —
 // сама проверка выполняется всегда, отключить ее нельзя
 struct CheckConfig {
-    bool  enabled; // Режим повтора: true — раз в ALERT_RETRIGGER_MS, false — однократно, пока код есть в журнале
+    bool  enabled; // Режим повтора: true — раз в retrigger_ms, false — однократно, пока код есть в журнале
     float param1;  // Первый порог (смысл зависит от проверки)
     float param2;  // Второй порог (0 если не используется)
     float param3;  // Третий порог (0 если не используется)
@@ -73,6 +89,12 @@ public:
     // Форматированное имя активного алерта для дисплея (строки через '\n')
     const char *active_display_name() const;
 
+    // Текущее время подтверждения условия (мс)
+    uint32_t confirm_ms() const { return confirm_ms_; }
+
+    // Текущий интервал повтора алерта (мс)
+    uint32_t retrigger_ms() const { return retrigger_ms_; }
+
     // Сериализовать журнал алертов в JSON-строку для Web API
     String log_to_json() const;
 
@@ -81,7 +103,7 @@ public:
     // снова сработает, даже в однократном режиме
     bool clear_log();
 
-    // Сериализовать конфиг проверок в JSON-строку для Web API
+    // Сериализовать конфиг проверок (тайминги + пороги) в JSON-строку для Web API
     String checks_to_json() const;
 
     // Применить конфиг проверок из JSON-строки (из Web UI) и сохранить
@@ -99,12 +121,17 @@ private:
     AlertLogEntry log_[ALERT_LOG_MAX];      // Журнал уникальных алертов
     uint8_t       log_count_;               // Текущее число записей в журнале
 
+    uint32_t confirm_ms_;                   // Сколько условие должно держаться до алерта
+    uint32_t retrigger_ms_;                 // Интервал повтора алерта в режиме enabled=true
+
     char     active_code_[8];               // Код активного алерта
     char     active_desc_[128];             // Описание активного алерта (русский)
     char     active_dname_[64];             // Форматированное имя для дисплея (строки через '\n')
     uint32_t active_since_;                 // millis() момента последнего срабатывания
 
     uint32_t last_trigger_ms_[CHECK_COUNT]; // Таймер антидребезга (режим повтора, enabled=true)
+    uint32_t pending_since_[CHECK_COUNT];   // millis() момента, когда условие стало истинным
+    bool     pending_active_[CHECK_COUNT];  // true, пока условие проверки нарушено
 
     // Загрузить конфиг проверок из файла (defaults если файла нет).
     // missing — сюда пишется true, если в файле не хватает проверок или полей
@@ -119,14 +146,15 @@ private:
     // Сохранить журнал алертов в файл
     bool save_log_();
 
-    // Применить значения по умолчанию для всех проверок
+    // Применить значения по умолчанию для всех проверок и таймингов
     void apply_check_defaults_();
 
     // Найти запись журнала по коду: индекс или -1, если кода в журнале нет
     int16_t find_log_index_(const char *code) const;
 
     // Выполнить одну проверку: idx — индекс в CHECK_DEFS / checks_
-    // triggered — true если условие сработало, msg — описание для журнала
+    // triggered — true если условие сейчас нарушено. Алерт поднимается, только
+    // когда условие продержалось не меньше confirm_ms_
     void try_trigger_(uint8_t idx, bool triggered);
 };
 
