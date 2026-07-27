@@ -9,4 +9,4 @@
 // CI сверяет это значение с именем тега: .github/workflows/build.yml грепает
 // FW_VERSION именно из этого файла, поэтому переименование константы или
 // переезд в другой файл требует правки workflow
-constexpr const char *FW_VERSION = "2026.3.2";
+constexpr const char *FW_VERSION = "2026.3.3";
