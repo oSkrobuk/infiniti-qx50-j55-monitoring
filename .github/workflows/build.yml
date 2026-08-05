@@ -3,8 +3,9 @@
 # Что делает:
 #   * прогоняет юнит-тесты под хостом — это первый и самый быстрый барьер;
 #   * только если тесты прошли, собирает все четыре окружения параллельно;
-#   * при push тега вида v2026.3.2 — сверяет версию в include/Version.h с тегом и
-#     кладёт бинарники ESP32 DEVKIT1 в черновик релиза на этот тег.
+#   * при push тега вида v2026.3.2 — сверяет версию в include/Version.h с тегом,
+#     кладёт бинарники ESP32 DEVKIT1 в черновик релиза на этот тег и публикует
+#     firmware.bin в ветку firmware, откуда его качает веб-интерфейс устройства.
 #
 # Тесты идут первыми намеренно: собирать прошивку, зная что логика уже сломана,
 # смысла нет. Сами сборки друг друга не ждут и не отменяют — любая упавшая
@@ -48,7 +49,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           TAG="${GITHUB_REF_NAME#v}"
-          SRC=$(grep -oP 'FW_VERSION\s*=\s*"\K[^"]+' include/Version.h)
+          SRC=$(grep -oP '^#define\s+FW_VERSION\s+"\K[^"]+' include/Version.h)
           echo "тег: $TAG, прошивка: $SRC"
           if [ "$TAG" != "$SRC" ]; then
             echo "::error::Версия в include/Version.h ($SRC) не совпадает с тегом ($TAG)"
@@ -205,3 +206,63 @@ jobs:
             release/bootloader.bin
             release/partitions.bin
             release/firmware.bin
+
+  publish-firmware:
+    name: Publish firmware for the web updater
+    # ветка обновляется только после успешной сборки всех окружений
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download ESP32 DEVKIT1 binaries
+        uses: actions/download-artifact@v7
+        with:
+          name: esp32
+          path: bin/
+
+      - name: Push firmware to the firmware branch
+        # Зачем отдельная ветка: кнопка «Скачать и установить» в веб-интерфейсе
+        # тянет .bin запросом из браузера телефона, а ассеты релизов GitHub
+        # отдаёт с хоста release-assets.githubusercontent.com без заголовка
+        # Access-Control-Allow-Origin — браузер такой ответ до JS не допускает.
+        # raw.githubusercontent.com отдаёт файлы репозитория с CORS, поэтому
+        # прошивка публикуется ещё и туда.
+        #
+        # Ветка сиротская (без истории кода) и пересоздаётся на каждом релизе:
+        # хранится ровно одна прошивка в папке с номером версии. Версия в пути
+        # означает, что устройству не может приехать .bin от другого релиза,
+        # а force-push не даёт репозиторию распухать от старых бинарников
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          WORK=$(mktemp -d)
+
+          mkdir -p "$WORK/$VERSION"
+          cp bin/firmware.bin "$WORK/$VERSION/firmware.bin"
+
+          cat > "$WORK/README.md" <<EOF
+          # Ветка firmware
+
+          Служебная ветка: здесь лежит прошивка последнего релиза для ESP32 DEVKIT1,
+          которую скачивает кнопка «Скачать и установить» в веб-интерфейсе устройства.
+
+          Ветку целиком пересоздаёт workflow \`.github/workflows/build.yml\` на каждом
+          теге \`v*\`. Руками сюда коммитить нечего — исходники живут в \`main\`.
+
+          Текущая версия: \`$VERSION\` — [\`$VERSION/firmware.bin\`]($VERSION/firmware.bin)
+          EOF
+
+          cd "$WORK"
+          git init -q -b firmware
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -q -m "Firmware $VERSION for the web updater"
+          git push -q --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" firmware
+
+          echo "### Прошивка $VERSION опубликована в ветку firmware" >> "$GITHUB_STEP_SUMMARY"

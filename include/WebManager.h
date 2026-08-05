@@ -87,6 +87,10 @@ private:
     void handle_update_page();
     // OTA: POST /update — приём .bin файла (chunked multipart upload)
     void handle_update_upload();
+    // OTA: GET /slots — что лежит в обоих слотах прошивки (JSON)
+    void handle_get_slots();
+    // OTA: POST /boot-slot?slot=ota_N — сделать слот загрузочным
+    void handle_post_boot_slot();
 
     // Алерты: GET /alerts — журнал сработавших проверок (JSON)
     void handle_get_alerts();

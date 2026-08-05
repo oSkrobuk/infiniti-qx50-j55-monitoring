@@ -3,24 +3,13 @@
 #include "ConfigManager.h"
 #include "AlertManager.h"
 #include "CanBusManager.h"
+#include "BuildInfo.h"
+#include "OtaSlots.h"
 #include "Version.h"
 #include <Update.h>
 #include <WiFi.h>
 #include <esp_netif.h>
 #include <esp_ota_ops.h>
-
-// Окружение сборки — по нему веб-интерфейс решает, годится ли firmware.bin
-// из релиза для этой платы. CI кладет в релиз бинарники только ESP32 DEVKIT1,
-// поэтому на WT32-SC01 Plus автоустановка не предлагается
-#if defined(DISPLAY_WT32_S3) && defined(USE_MOCK_DATA)
-static constexpr const char *BUILD_ENV = "esp32s3-wt32-mock";
-#elif defined(DISPLAY_WT32_S3)
-static constexpr const char *BUILD_ENV = "esp32s3-wt32";
-#elif defined(USE_MOCK_DATA)
-static constexpr const char *BUILD_ENV = "esp32-mock";
-#else
-static constexpr const char *BUILD_ENV = "esp32";
-#endif
 
 // HTML страница хранится во флеш-памяти (PROGMEM), не занимает RAM
 static const char INDEX_HTML[] PROGMEM = R"rawhtml(
@@ -347,6 +336,47 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
   /* Ссылка «Все релизы» живет в примечании — там штатный цвет браузера
      на темном фоне почти не читается, поэтому задаем явно */
   .wifi-note a { color: #64b5f6; font-weight: 600; }
+  /* ── Слоты прошивки ──────────────────────────────── */
+  .slot-list { display: flex; flex-direction: column; gap: 10px; }
+  .slot {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: var(--bg);
+  }
+  .slot.run { border-color: var(--green); }
+  .slot-head {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .slot-name { font-size: 0.9rem; font-weight: 600; letter-spacing: 1px; }
+  .slot-badge {
+    font-size: 0.68rem;
+    letter-spacing: 0.5px;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--muted);
+  }
+  .slot-badge.run  { border-color: var(--green);  color: var(--green); }
+  .slot-badge.boot { border-color: var(--accent); color: var(--accent); }
+  .btn-slot {
+    flex: 0 0 auto;
+    min-width: 0;
+    margin-left: auto;
+    padding: 7px 14px;
+    font-size: 0.75rem;
+    background: var(--border);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+  }
+  .btn-slot:hover { opacity: 0.8; }
+  .slot-ver { font-size: 0.85rem; color: var(--muted); margin-top: 7px; }
+  .slot-ver b { color: var(--text); }
+  .slot-meta { font-size: 0.72rem; color: var(--muted); margin-top: 3px; }
   /* ── Окно «доступна новая прошивка» ──────────────── */
   .modal {
     display: none;
@@ -889,6 +919,19 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
         Проверка идет из браузера прямо в GitHub — устройству интернет не нужен.
         Включите на телефоне мобильные данные и разрешите ему оставаться в сети без интернета.
         <a href="https://github.com/oSkrobuk/infiniti-qx50-j55-monitoring/releases" target="_blank" rel="noopener">Все релизы</a>
+      </p>
+    </div>
+
+    <!-- Что лежит в обоих слотах OTA и переключение загрузочного -->
+    <div class="card">
+      <div class="card-title">&#8646; Слоты прошивки</div>
+      <div class="slot-list" id="slotList">
+        <div class="upd-hint">Читаю слоты...</div>
+      </div>
+      <p class="wifi-note">
+        Обновление всегда пишется в свободный слот, а прежняя прошивка остается во втором.
+        Переключение меняет только то, откуда устройство загрузится: настройки, журнал алертов
+        и файловая система общие и не затрагиваются.
       </p>
     </div>
 
@@ -1470,6 +1513,102 @@ btnOta.addEventListener('click', () => {
   sendFirmware(otaFile.files[0], otaFile.files[0].name, btnOta);
 });
 
+// ── Слоты прошивки ─────────────────────────────────────────────────────────
+//
+// Список читается при раскрытии раздела: версию соседнего слота устройство
+// ищет прямо в его образе, и на это уходит доля секунды
+
+const slotList = document.getElementById('slotList');
+
+// Последний ответ /slots — из него берется версия для подтверждения
+let slotsCache = [];
+
+function slotKB(bytes) {
+  return Math.round(bytes / 1024) + ' KB';
+}
+
+function renderSlots(list) {
+  slotsCache = list;
+
+  if (!list.length) {
+    slotList.innerHTML = '<div class="upd-hint">Слоты OTA не найдены</div>';
+    return;
+  }
+
+  slotList.innerHTML = list.map(s => {
+    let badges = '';
+    if (s.running) badges += '<span class="slot-badge run">работает сейчас</span>';
+    if (s.boot) {
+      badges += '<span class="slot-badge boot">' +
+        (s.running ? 'загрузочный' : 'загрузится после перезагрузки') + '</span>';
+    }
+
+    let ver;
+    if (!s.valid)       ver = 'Слот пуст';
+    else if (s.version) ver = 'Версия <b>' + updEsc(s.version) + '</b>';
+    else                ver = 'Версия <b>неизвестна</b> — прошивка собрана до появления этой страницы';
+
+    const meta = [];
+    if (s.env)   meta.push(updEsc(s.env));
+    if (s.build) meta.push('сборка ' + updEsc(s.build));
+    if (s.used)  meta.push(slotKB(s.used) + ' из ' + slotKB(s.size));
+
+    const btn = (s.valid && !s.boot)
+      ? '<button type="button" class="btn-slot" data-slot="' + updEsc(s.label) +
+        '">&#8646; Загрузиться отсюда</button>'
+      : '';
+
+    return '<div class="slot' + (s.running ? ' run' : '') + '">' +
+      '<div class="slot-head"><span class="slot-name">' + updEsc(s.label) + '</span>' +
+      badges + btn + '</div>' +
+      '<div class="slot-ver">' + ver + '</div>' +
+      (meta.length ? '<div class="slot-meta">' + meta.join(' · ') + '</div>' : '') +
+      '</div>';
+  }).join('');
+
+  slotList.querySelectorAll('.btn-slot').forEach(b => {
+    b.addEventListener('click', () => switchSlot(b.dataset.slot));
+  });
+}
+
+async function loadSlots() {
+  try {
+    const r = await fetch('/slots', { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    renderSlots(d.slots || []);
+  } catch(e) {
+    slotList.innerHTML = '<div class="upd-hint">Не удалось прочитать слоты: ' + updEsc(e.message) + '</div>';
+  }
+}
+
+// Переключение меняет только запись otadata — прошивка из выбранного слота
+// начнет работать после перезагрузки
+async function switchSlot(label) {
+  const s   = slotsCache.find(x => x.label === label) || {};
+  const ver = s.version ? ('версия ' + s.version) : 'версия неизвестна';
+
+  if (!confirm('Загружаться из слота ' + label + ' (' + ver + ')?\nУстройство перезагрузится.')) return;
+
+  try {
+    const r = await fetch('/boot-slot?slot=' + encodeURIComponent(label), { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+  } catch(e) {
+    showToast('Ошибка: ' + e.message, 'err');
+    return;
+  }
+
+  showToast('✓ Слот переключен. Перезагрузка...', 'ok');
+  setTimeout(async () => {
+    try { await fetch('/restart', { method: 'POST' }); } catch(_) {}
+  }, 1200);
+}
+
+document.getElementById('sectOta').addEventListener('toggle', function() {
+  if (this.open) loadSlots();
+});
+
 // ── Проверка обновлений ────────────────────────────────────────────────────
 //
 // Устройство работает точкой доступа и в интернет не выходит, поэтому релизы
@@ -1479,6 +1618,16 @@ btnOta.addEventListener('click', () => {
 const UPD_REPO = 'oSkrobuk/infiniti-qx50-j55-monitoring';
 const UPD_PAGE = 'https://github.com/' + UPD_REPO + '/releases';
 const UPD_API  = 'https://api.github.com/repos/' + UPD_REPO + '/releases/latest';
+
+// Откуда качается прошивка для автоустановки.
+//
+// Не из ассетов релиза: их GitHub отдает с release-assets.githubusercontent.com
+// без заголовка Access-Control-Allow-Origin, и браузер не пускает такой ответ
+// в JS — запрос падает еще до чтения тела. Поэтому CI на каждом теге кладет
+// firmware.bin в ветку firmware, а ее файлы raw.githubusercontent.com отдает
+// с CORS. Ссылки на ассеты остаются: они открываются обычным скачиванием,
+// которому CORS не нужен
+const UPD_RAW = 'https://raw.githubusercontent.com/' + UPD_REPO + '/firmware/';
 
 // Таймаут запроса к GitHub, мс. В сети без интернета DNS не отвечает, и без
 // AbortController запрос висел бы десятками секунд
@@ -1582,10 +1731,10 @@ async function loadVersion() {
   }
 }
 
-// Скачать firmware.bin из релиза и отдать его в POST /update.
-// Ссылка на ассет редиректит на objects.githubusercontent.com, где CORS не
-// гарантирован: при любой ошибке остается ручной сценарий — форма ниже
-async function updDownloadAndInstall(url, tag) {
+// Скачать firmware.bin версии tag из ветки firmware и отдать его в POST /update.
+// Версия входит в путь, поэтому приехать может только прошивка этого релиза.
+// При любой ошибке остается ручной сценарий — ссылка на ассет и форма ниже
+async function updDownloadAndInstall(tag) {
   const btn = document.getElementById('btnUpdInstall');
   const st  = document.getElementById('updInstallStatus');
 
@@ -1599,13 +1748,16 @@ async function updDownloadAndInstall(url, tag) {
   let blob = null;
 
   try {
-    const r = await fetch(url, { cache: 'no-store', signal: ctl.signal });
+    const r = await fetch(UPD_RAW + encodeURIComponent(tag) + '/firmware.bin',
+      { cache: 'no-store', signal: ctl.signal });
+    // 404 — CI еще не выложил сборку этой версии в ветку firmware
+    if (r.status === 404) throw new Error('сборки ' + tag + ' нет в ветке firmware');
     if (!r.ok) throw new Error('HTTP ' + r.status);
     blob = await r.blob();
     if (!blob.size) throw new Error('пустой файл');
   } catch(e) {
-    st.textContent = 'Скачать из браузера не удалось. Нажмите «Скачать firmware.bin» выше, ' +
-      'затем выберите файл в форме «OTA — Загрузка .bin» ниже.';
+    st.textContent = 'Скачать не удалось (' + (e.name === 'AbortError' ? 'долго нет ответа' : e.message) +
+      '). Нажмите «Скачать firmware.bin» выше, затем выберите файл в форме «OTA — Загрузка .bin» ниже.';
     btn.disabled = false;
     return;
   } finally {
@@ -1644,14 +1796,15 @@ function updRenderRelease(rel) {
   }
   links += '</div>';
 
-  // Автоустановка только для плат, чьи бинарники лежат в релизе
+  // Автоустановка только для плат, чьи бинарники публикует CI. Наличие ассета
+  // тут ни при чем: .bin для установки берется из ветки firmware
   let install = '';
-  if (asset && /^esp32(-mock)?$/.test(fwEnv)) {
+  if (/^esp32(-mock)?$/.test(fwEnv)) {
     install = '<div class="upd-links">' +
       '<button type="button" class="btn-upd btn-upd-install" id="btnUpdInstall">&#8595; Скачать и установить</button>' +
       '<span class="upd-hint" id="updInstallStatus"></span></div>';
-  } else if (asset) {
-    install = '<div class="upd-hint">&#9888; В релизе лежат бинарники только ESP32 DEVKIT1 — ' +
+  } else {
+    install = '<div class="upd-hint">&#9888; CI собирает бинарники только для ESP32 DEVKIT1 — ' +
       'для этой платы (' + updEsc(fwEnv || '?') + ') соберите прошивку из исходников.</div>';
   }
 
@@ -1659,8 +1812,8 @@ function updRenderRelease(rel) {
     (date ? '<div>Опубликован ' + updEsc(date) + '</div>' : '') + notes + links + install);
 
   const btnInstall = document.getElementById('btnUpdInstall');
-  if (btnInstall && asset) {
-    btnInstall.addEventListener('click', () => updDownloadAndInstall(asset.browser_download_url, tag));
+  if (btnInstall) {
+    btnInstall.addEventListener('click', () => updDownloadAndInstall(tag));
   }
 }
 
@@ -2525,6 +2678,10 @@ void WebManager::begin()
     server_.on("/checks",        HTTP_GET,  [this]() { handle_get_checks(); });
     server_.on("/checks",        HTTP_POST, [this]() { handle_post_checks(); });
 
+    // Слоты прошивки
+    server_.on("/slots",     HTTP_GET,  [this]() { handle_get_slots(); });
+    server_.on("/boot-slot", HTTP_POST, [this]() { handle_post_boot_slot(); });
+
     // GET /update — та же страница, что и корень
     server_.on("/update", HTTP_GET, [this]() { handle_update_page(); });
 
@@ -2891,4 +3048,57 @@ void WebManager::handle_update_upload()
     default:
         break;
     }
+}
+
+void WebManager::handle_get_slots()
+{
+    OtaSlotInfo slots[2];
+    const size_t count = ota_slots_collect(slots, 2);
+
+    String json;
+    json.reserve(512);
+    json += "{\"slots\":[";
+
+    for (size_t i = 0; i < count; i++) {
+        const OtaSlotInfo &s = slots[i];
+
+        if (i > 0) json += ',';
+
+        json += "{\"label\":\"";
+        json += s.label;
+        json += "\",\"valid\":";
+        json += s.valid ? "true" : "false";
+        json += ",\"running\":";
+        json += s.running ? "true" : "false";
+        json += ",\"boot\":";
+        json += s.boot ? "true" : "false";
+        // Версия, окружение и дата сборки известны только по маркеру в образе:
+        // прошивка старее этой функции маркера не содержит, и поля остаются пустыми
+        json += ",\"version\":\"";
+        if (s.known) json += s.version;
+        json += "\",\"env\":\"";
+        if (s.known) json += s.env;
+        json += "\",\"build\":\"";
+        if (s.known) json += s.build;
+        json += "\",\"size\":";
+        json += String(s.size);
+        json += ",\"used\":";
+        json += String(s.used);
+        json += '}';
+    }
+
+    json += "]}";
+    server_.send(200, "application/json", json);
+}
+
+void WebManager::handle_post_boot_slot()
+{
+    String err;
+
+    if (!ota_slots_set_boot(server_.arg("slot").c_str(), err)) {
+        server_.send(400, "application/json", "{\"error\":\"" + err + "\"}");
+        return;
+    }
+
+    server_.send(200, "application/json", "{\"ok\":true}");
 }
