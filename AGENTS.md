@@ -89,6 +89,16 @@ C:\Users\homework\.platformio\penv\Scripts\pio.exe
 Юнит-тесты собираются под хост обычным gcc и выполняются за секунды — ни платы,
 ни xtensa-тулчейна не нужно.
 
+Проще всего запускать скриптом из корня — он сам подставляет пути к PlatformIO
+и компилятору, а свои аргументы передаёт в `pio test` как есть:
+
+```powershell
+.\run-tests.ps1                     # все наборы
+.\run-tests.ps1 -f test_ota_image   # один набор
+```
+
+То же самое напрямую:
+
 ```powershell
 & "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" test -e native                        # все наборы
 & "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" test -e native -f test_alert_manager  # один набор
@@ -136,6 +146,7 @@ test/stubs/     Host stubs for Arduino.h, LittleFS.h and friends
 docs/           Documentation and images
 partitions.csv  ESP32 OTA partition table
 platformio.ini  PlatformIO build configuration
+run-tests.ps1   Прогон юнит-тестов (обёртка над pio test -e native)
 AGENTS.md       Agent rules (this file)
 ```
 
