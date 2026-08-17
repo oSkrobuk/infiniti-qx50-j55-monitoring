@@ -239,11 +239,11 @@ void setup()
     // Инициализация менеджера алертов (после монтирования LittleFS в config.init())
     alert_manager.init();
 
+#ifndef USE_MOCK_DATA
     // Инициализация CAN-шины (SN65HVD230 / WVCMCU-230)
     can_bus.on_frame(can_print_frame);
     can_bus.init();
 
-#ifndef USE_MOCK_DATA
     // Открываем расширенную диагностическую сессию на ECM и TCM
     poll_open_session();
 

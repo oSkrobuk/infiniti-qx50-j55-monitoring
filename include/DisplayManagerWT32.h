@@ -1,10 +1,24 @@
 #pragma once
+
 #include <Arduino.h>
-#include <TFT_eSPI.h>
+
+#define LGFX_USE_V1
+#include <LovyanGFX.hpp>
 
 // Менеджер дисплея для WT32-SC01 Plus (ESP32-S3)
 // Дисплей: ST7796, 320×480, 8-битная параллельная шина (MCU 8080)
 // Интерфейс полностью идентичен DisplayManager для ESP32 DEVKIT1
+
+class Wt32Display : public lgfx::LGFX_Device {
+public:
+    Wt32Display();
+
+    int32_t text_width(const char *text, uint8_t font);
+
+private:
+    lgfx::Panel_ST7796 panel_;
+    lgfx::Bus_Parallel8 bus_;
+};
 
 class DisplayManagerWT32 {
 public:
@@ -49,7 +63,7 @@ public:
     void update_alert_indicator(bool has_alerts);
 
 private:
-    TFT_eSPI tft_;
+    Wt32Display tft_;
 
     // Буфер версии прошивки, сохраняется для восстановления после очистки оверлея
     char version_buf_[32];

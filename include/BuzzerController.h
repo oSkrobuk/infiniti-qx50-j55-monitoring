@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 
-// Пин бузера задаётся через build_flags в platformio.ini: BUZZER_PIN_NUM=26
+// Пин внешнего пассивного бузера задаётся отдельно для каждой платы через build_flags
 static constexpr uint8_t CAN_BUZZER_PIN = static_cast<uint8_t>(BUZZER_PIN_NUM);
 
 class BuzzerController

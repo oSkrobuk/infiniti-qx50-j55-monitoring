@@ -36,8 +36,56 @@ static constexpr int16_t VER_Y         = 465;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+Wt32Display::Wt32Display()
+{
+    {
+        auto config = bus_.config();
+        config.freq_write = 20000000;
+        config.pin_wr = 47;
+        config.pin_rd = -1;
+        config.pin_rs = 0;
+        config.pin_d0 = 9;
+        config.pin_d1 = 46;
+        config.pin_d2 = 3;
+        config.pin_d3 = 8;
+        config.pin_d4 = 18;
+        config.pin_d5 = 17;
+        config.pin_d6 = 16;
+        config.pin_d7 = 15;
+        bus_.config(config);
+        panel_.setBus(&bus_);
+    }
+
+    {
+        auto config = panel_.config();
+        config.pin_cs = -1;
+        config.pin_rst = 4;
+        config.pin_busy = -1;
+        config.memory_width = 320;
+        config.memory_height = 480;
+        config.panel_width = 320;
+        config.panel_height = 480;
+        config.offset_x = 0;
+        config.offset_y = 0;
+        config.offset_rotation = 0;
+        config.readable = false;
+        config.invert = true;
+        config.rgb_order = false;
+        config.dlen_16bit = false;
+        config.bus_shared = false;
+        panel_.config(config);
+    }
+
+    setPanel(&panel_);
+}
+
+int32_t Wt32Display::text_width(const char *text, uint8_t font)
+{
+    return textWidth(text, lgfx::fontdata[font]);
+}
+
 DisplayManagerWT32::DisplayManagerWT32()
-    : tft_(TFT_eSPI()), alert_visible_(false), alert_indicator_(false)
+    : alert_visible_(false), alert_indicator_(false)
 {
     version_buf_[0]      = '\0';
     drawn_alert_code_[0] = '\0';
@@ -430,7 +478,7 @@ void DisplayManagerWT32::update_metrics(float coolant, float oil, float coolant_
         config.get("radiator", "target"),
         config.get("radiator", "max"));
     tft_.setTextColor(radiator_color, TFT_BLACK);
-    tft_.setTextPadding(tft_.textWidth("125  ", 4));
+    tft_.setTextPadding(tft_.text_width("125  ", 4));
     snprintf(buf, sizeof(buf), "%-5.0f", coolant_r);
     tft_.drawCentreString(buf, COL1_X, TEMP_VAL_Y, 4);
 
@@ -440,7 +488,7 @@ void DisplayManagerWT32::update_metrics(float coolant, float oil, float coolant_
         config.get("coolant", "target"),
         config.get("coolant", "max"));
     tft_.setTextColor(coolant_color, TFT_BLACK);
-    tft_.setTextPadding(tft_.textWidth("125  ", 4));
+    tft_.setTextPadding(tft_.text_width("125  ", 4));
     snprintf(buf, sizeof(buf), "%-5.0f", coolant);
     tft_.drawCentreString(buf, COL2_X, TEMP_VAL_Y, 4);
 
@@ -450,7 +498,7 @@ void DisplayManagerWT32::update_metrics(float coolant, float oil, float coolant_
         config.get("oil", "target"),
         config.get("oil", "max"));
     tft_.setTextColor(oil_color, TFT_BLACK);
-    tft_.setTextPadding(tft_.textWidth("125  ", 4));
+    tft_.setTextPadding(tft_.text_width("125  ", 4));
     snprintf(buf, sizeof(buf), "%-5.0f", oil);
     tft_.drawCentreString(buf, COL3_X, TEMP_VAL_Y, 4);
 
@@ -458,19 +506,19 @@ void DisplayManagerWT32::update_metrics(float coolant, float oil, float coolant_
 
     // Обороты двигателя
     tft_.setTextColor(get_rpm_color(rpm), TFT_BLACK);
-    tft_.setTextPadding(tft_.textWidth("6000", 4));
+    tft_.setTextPadding(tft_.text_width("6000", 4));
     snprintf(buf, sizeof(buf), "%.0f", rpm);
     tft_.drawCentreString(buf, COL1_X, ENG_VAL_Y, 4);
 
     // Напряжение датчика давления масла
     tft_.setTextColor(get_oil_pressure_color(oil_pressure, rpm), TFT_BLACK);
-    tft_.setTextPadding(tft_.textWidth("3.50", 4));
+    tft_.setTextPadding(tft_.text_width("3.50", 4));
     snprintf(buf, sizeof(buf), "%.2f", oil_pressure);
     tft_.drawCentreString(buf, COL2_X, ENG_VAL_Y, 4);
 
     // Давление наддува
     tft_.setTextColor(get_boost_color(boost), TFT_BLACK);
-    tft_.setTextPadding(tft_.textWidth("-0.50", 4));
+    tft_.setTextPadding(tft_.text_width("-0.50", 4));
     snprintf(buf, sizeof(buf), "%.2f", boost);
     tft_.drawCentreString(buf, COL3_X, ENG_VAL_Y, 4);
 
@@ -478,13 +526,13 @@ void DisplayManagerWT32::update_metrics(float coolant, float oil, float coolant_
 
     // Вольтаж бортовой сети
     tft_.setTextColor(get_battery_color(battery_voltage), TFT_BLACK);
-    tft_.setTextPadding(tft_.textWidth("14.99", 4));
+    tft_.setTextPadding(tft_.text_width("14.99", 4));
     snprintf(buf, sizeof(buf), "%.2f", battery_voltage);
     tft_.drawCentreString(buf, COL1_X, OTH_VAL_Y, 4);
 
     // Период обновления RPM
     tft_.setTextColor(get_poll_time_color(poll_time, rpm), TFT_BLACK);
-    tft_.setTextPadding(tft_.textWidth("0.60", 4));
+    tft_.setTextPadding(tft_.text_width("0.60", 4));
     if (rpm == 0.0f || poll_time == 0.0f) {
         snprintf(buf, sizeof(buf), "0");
     } else {
@@ -498,7 +546,7 @@ void DisplayManagerWT32::update_metrics(float coolant, float oil, float coolant_
         config.get("transmission", "target"),
         config.get("transmission", "max"));
     tft_.setTextColor(transmission_color, TFT_BLACK);
-    tft_.setTextPadding(tft_.textWidth("125  ", 4));
+    tft_.setTextPadding(tft_.text_width("125  ", 4));
     snprintf(buf, sizeof(buf), "%-5.0f", transmission);
     tft_.drawCentreString(buf, COL3_X, OTH_VAL_Y, 4);
 

@@ -4,8 +4,7 @@
 
 #include "CanTypes.h"
 
-// Пины CAN-модуля SN65HVD230 (WVCMCU-230) — задаются через build_flags в platformio.ini:
-// CAN_TX_PIN_NUM=32, CAN_RX_PIN_NUM=34 (по умолчанию для ESP32 DEVKIT1 и WT32-SC01 Plus)
+// Пины CAN-модуля SN65HVD230 (WVCMCU-230) задаются отдельно для каждой платы через build_flags
 static constexpr gpio_num_t CAN_TX_PIN = static_cast<gpio_num_t>(CAN_TX_PIN_NUM);
 static constexpr gpio_num_t CAN_RX_PIN = static_cast<gpio_num_t>(CAN_RX_PIN_NUM);
 
