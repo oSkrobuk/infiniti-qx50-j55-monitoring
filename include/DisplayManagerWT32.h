@@ -77,6 +77,9 @@ private:
     // Текущее состояние индикатора алертов — для предотвращения лишних перерисовок
     bool alert_indicator_;
 
+    // Текущее заполнение PWM подсветки — для предотвращения лишних записей
+    uint8_t brightness_duty_;
+
     // Перерисовать все статические элементы экрана (заголовок, подписи, версия)
     // Используется при init() и при clear_alert() для полного восстановления UI
     void draw_static_();
@@ -84,4 +87,21 @@ private:
     // Перерисовать статический заголовок (INFINITI QX50 J55 / MONITORING)
     // Используется при init() и при clear_alert()
     void draw_header_();
+
+    // Нарисовать статическую часть плитки метрики
+    void draw_metric_tile_(uint8_t index, const char *label, const char *unit);
+
+    // Обновить цвет состояния и значение внутри плитки метрики
+    void draw_metric_value_(uint8_t index, const char *value, uint16_t color);
+
+    // Нарисовать сглаженный полужирный текст через масштабируемый спрайт
+    bool draw_smooth_text_(const char *text, int16_t center_x, int16_t center_y,
+                           uint16_t color, float zoom, int16_t sprite_width);
+
+    // Нарисовать значение вместе с фоном одним кадром без мерцания
+    bool draw_smooth_value_(const char *text, int16_t center_x, int16_t center_y,
+                            uint16_t color);
+
+    // Обновить яркость подсветки из системной конфигурации
+    void update_brightness_();
 };

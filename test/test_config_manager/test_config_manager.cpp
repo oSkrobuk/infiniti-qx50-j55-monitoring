@@ -31,6 +31,7 @@ static void test_defaults_applied_on_construction(void)
     TEST_ASSERT_EQUAL_FLOAT(4500.0f, cm.get("rpm", "red_start"));
     TEST_ASSERT_EQUAL_FLOAT(3000.0f, cm.get("oil_pressure", "rpm_threshold"));
     TEST_ASSERT_EQUAL_FLOAT(1000.0f, cm.get("system", "stale_ms"));
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, cm.get("system", "brightness_percent"));
 }
 
 static void test_unknown_field_returns_zero(void)
@@ -61,9 +62,11 @@ static void test_unknown_string_field_returns_empty(void)
 static void test_from_json_updates_value(void)
 {
     ConfigManager cm;
-    TEST_ASSERT_TRUE(cm.from_json("{\"oil\":{\"max\":105.0}}"));
+    TEST_ASSERT_TRUE(cm.from_json(
+        "{\"oil\":{\"max\":105.0},\"system\":{\"brightness_percent\":60}}"));
 
     TEST_ASSERT_EQUAL_FLOAT(105.0f, cm.get("oil", "max"));
+    TEST_ASSERT_EQUAL_FLOAT(60.0f, cm.get("system", "brightness_percent"));
 }
 
 static void test_from_json_keeps_other_fields(void)

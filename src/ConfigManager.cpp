@@ -63,11 +63,13 @@ static void build_defaults(JsonDocument &doc)
     doc["poll_time"]["green_max"] = 0.2f;
     doc["poll_time"]["red_min"]   = 0.5f;
 
-    // Системные параметры CAN-опроса
-    // poll_interval_ms — пауза между отправками UDS-запросов (мс)
-    // stale_ms         — через сколько мс без обновления значение считается устаревшим
-    doc["system"]["poll_interval_ms"] = 30.0f;
-    doc["system"]["stale_ms"]         = 1000.0f;
+    // Системные параметры CAN-опроса и дисплея
+    // poll_interval_ms   — пауза между отправками UDS-запросов (мс)
+    // stale_ms           — через сколько мс без обновления значение считается устаревшим
+    // brightness_percent — яркость подсветки WT32 в процентах
+    doc["system"]["poll_interval_ms"]   = 30.0f;
+    doc["system"]["stale_ms"]           = 1000.0f;
+    doc["system"]["brightness_percent"] = 100.0f;
 
     // Настройки WiFi точки доступа (строки, не участвуют в числовом хеше)
     doc["wifi"]["ssid"]     = "QX50Monitoring";

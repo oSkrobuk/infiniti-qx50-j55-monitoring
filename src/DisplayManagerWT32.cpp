@@ -5,34 +5,36 @@
 #include "ConfigManager.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Константы разметки дисплея 320×480 (портретная ориентация)
+// Константы разметки дисплея 480×320 (альбомная ориентация)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Центры трёх колонок по горизонтали (ширина экрана 320 px)
-static constexpr int16_t COL1_X = 53;
-static constexpr int16_t COL2_X = 160;
-static constexpr int16_t COL3_X = 267;
+static constexpr int16_t SCREEN_WIDTH = 480;
+static constexpr int16_t HEADER_HEIGHT = 49;
+static constexpr int16_t TILE_X[] = {6, 164, 322};
+static constexpr int16_t TILE_Y[] = {52, 132, 212};
+static constexpr int16_t TILE_WIDTH = 152;
+static constexpr int16_t TILE_HEIGHT = 76;
+static constexpr int16_t TILE_RADIUS = 7;
+static constexpr int16_t TILE_LABEL_OFFSET_Y = 6;
+static constexpr int16_t TILE_VALUE_OFFSET_Y = 34;
+static constexpr int16_t TILE_STATUS_WIDTH = 5;
+static constexpr int16_t TILE_STATUS_INSET = 3;
+static constexpr int16_t TILE_STATUS_RADIUS = 3;
+static constexpr int16_t LABEL_SPRITE_WIDTH = 280;
+static constexpr int16_t LABEL_SPRITE_HEIGHT = 44;
+static constexpr float LABEL_SPRITE_ZOOM = 0.5f;
+static constexpr int16_t SMOOTH_SPRITE_WIDTH = 460;
+static constexpr int16_t SMOOTH_SPRITE_HEIGHT = 48;
+static constexpr int16_t VALUE_SPRITE_WIDTH = 132;
+static constexpr float VALUE_TEXT_ZOOM = 1.0f;
+static constexpr int16_t VER_Y = 306;
 
-// Секция TEMPERATURE (y-координаты)
-static constexpr int16_t TEMP_LINE_Y   = 75;  // горизонтальная линия раздела
-static constexpr int16_t TEMP_LABEL_Y  = 66;  // надпись " TEMPERATURE, C "
-static constexpr int16_t TEMP_COL_Y    = 88;  // подписи колонок (RAD-ANT и др.)
-static constexpr int16_t TEMP_VAL_Y    = 105; // значения температур
-
-// Секция ENGINE (y-координаты)
-static constexpr int16_t ENG_LINE_Y    = 160; // горизонтальная линия раздела
-static constexpr int16_t ENG_LABEL_Y   = 151; // надпись " ENGINE "
-static constexpr int16_t ENG_COL_Y     = 173; // подписи колонок (ENG-RPM и др.)
-static constexpr int16_t ENG_VAL_Y     = 190; // значения параметров двигателя
-
-// Секция OTHER (y-координаты)
-static constexpr int16_t OTH_LINE_Y    = 245; // горизонтальная линия раздела
-static constexpr int16_t OTH_LABEL_Y   = 236; // надпись " OTHER "
-static constexpr int16_t OTH_COL_Y     = 258; // подписи колонок (BATTERY-V и др.)
-static constexpr int16_t OTH_VAL_Y     = 275; // значения прочих параметров
-
-// Версия прошивки
-static constexpr int16_t VER_Y         = 465;
+static constexpr uint16_t COLOR_CARD = TFT_BLACK;
+static constexpr uint16_t COLOR_BORDER = 0x2945;
+static constexpr uint16_t COLOR_ACCENT = 0xCE70;
+static constexpr uint16_t COLOR_MUTED = 0x8410;
+static constexpr uint16_t COLOR_NO_DATA = 0x52AA;
+static constexpr uint16_t COLOR_TRANSPARENT = 0xF81F;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -85,7 +87,7 @@ int32_t Wt32Display::text_width(const char *text, uint8_t font)
 }
 
 DisplayManagerWT32::DisplayManagerWT32()
-    : alert_visible_(false), alert_indicator_(false)
+    : alert_visible_(false), alert_indicator_(false), brightness_duty_(0)
 {
     version_buf_[0]      = '\0';
     drawn_alert_code_[0] = '\0';
@@ -93,6 +95,12 @@ DisplayManagerWT32::DisplayManagerWT32()
 
 // Пин подсветки дисплея WT32-SC01 Plus (GPIO45)
 static constexpr uint8_t WT32_BL_PIN = 45;
+static constexpr uint8_t WT32_BL_LEDC_CHANNEL = 2;
+static constexpr uint32_t WT32_BL_LEDC_FREQ_HZ = 5000;
+static constexpr uint8_t WT32_BL_LEDC_BITS = 8;
+static constexpr uint8_t WT32_BL_MAX_DUTY = 255;
+static constexpr float BRIGHTNESS_MIN_PERCENT = 10.0f;
+static constexpr float BRIGHTNESS_MAX_PERCENT = 100.0f;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Внутренний метод: рисует все статические заголовки и лейблы
@@ -100,75 +108,176 @@ static constexpr uint8_t WT32_BL_PIN = 45;
 
 void DisplayManagerWT32::draw_static_()
 {
-    tft_.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft_.drawCentreString("INFINITI QX50 J55", 160, 5, 4);
-    tft_.setTextColor(0xCE70, TFT_BLACK);
-    tft_.drawCentreString("MONITORING", 160, 28, 4);
+    draw_header_();
 
-    // Секция температуры
-    tft_.drawFastHLine(0, TEMP_LINE_Y, 320, 0x5AEB);
-    tft_.setTextColor(0x5AEB, TFT_BLACK);
-    tft_.drawCentreString(" TEMPERATURE, C ", 160, TEMP_LABEL_Y, 2);
-    tft_.setTextColor(0x9CD3, TFT_BLACK);
-    tft_.drawCentreString("RAD-ANT", COL1_X, TEMP_COL_Y, 2);
-    tft_.drawCentreString("ENG-ANT", COL2_X, TEMP_COL_Y, 2);
-    tft_.drawCentreString("ENG-OIL", COL3_X, TEMP_COL_Y, 2);
-
-    // Секция двигателя
-    tft_.drawFastHLine(0, ENG_LINE_Y, 320, 0x5AEB);
-    tft_.setTextColor(0x5AEB, TFT_BLACK);
-    tft_.drawCentreString(" ENGINE ", 160, ENG_LABEL_Y, 2);
-    tft_.setTextColor(0x9CD3, TFT_BLACK);
-    tft_.drawCentreString("ENG-RPM",  COL1_X, ENG_COL_Y, 2);
-    tft_.drawCentreString("OIL-PR-V", COL2_X, ENG_COL_Y, 2);
-    tft_.drawCentreString("TURBO-V",  COL3_X, ENG_COL_Y, 2);
-
-    // Секция прочего
-    tft_.drawFastHLine(0, OTH_LINE_Y, 320, 0x5AEB);
-    tft_.setTextColor(0x5AEB, TFT_BLACK);
-    tft_.drawCentreString(" OTHER ", 160, OTH_LABEL_Y, 2);
-    tft_.setTextColor(0x9CD3, TFT_BLACK);
-    tft_.drawCentreString("BATTERY-V", COL1_X, OTH_COL_Y, 2);
-    tft_.drawCentreString("RPM-POLL",  COL2_X, OTH_COL_Y, 2);
-    tft_.drawCentreString("CVT-FLD",   COL3_X, OTH_COL_Y, 2);
+    draw_metric_tile_(0, "RAD-ANT", "C");
+    draw_metric_tile_(1, "ENG-ANT", "C");
+    draw_metric_tile_(2, "ENG-OIL", "C");
+    draw_metric_tile_(3, "ENG-RPM", "RPM");
+    draw_metric_tile_(4, "OIL-PR-V", "V");
+    draw_metric_tile_(5, "TURBO-V", "V");
+    draw_metric_tile_(6, "BATTERY-V", "V");
+    draw_metric_tile_(7, "RPM-POLL", "S");
+    draw_metric_tile_(8, "CVT-FLD", "C");
 
     // Версия прошивки внизу
     if (version_buf_[0]) {
-        tft_.setTextColor(0xCE70, TFT_BLACK);
-        tft_.drawCentreString(version_buf_, 160, VER_Y, 1);
+        if (!draw_smooth_text_(version_buf_, SCREEN_WIDTH / 2, VER_Y + 4,
+                               COLOR_ACCENT, 0.3f, SMOOTH_SPRITE_WIDTH)) {
+            tft_.setTextColor(COLOR_ACCENT, TFT_BLACK);
+            tft_.drawCentreString(version_buf_, SCREEN_WIDTH / 2, VER_Y, 1);
+        }
     }
 }
 
-// Внутренний метод: перерисовывает только заголовок (верхние ~90 px)
+// Внутренний метод: перерисовывает только заголовок
 // Используется для частичного восстановления интерфейса
 
 void DisplayManagerWT32::draw_header_()
 {
-    tft_.fillRect(0, 0, 320, 95, TFT_BLACK);
+    tft_.fillRect(0, 0, SCREEN_WIDTH, HEADER_HEIGHT, TFT_BLACK);
 
-    tft_.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft_.drawCentreString("INFINITI QX50 J55", 160, 5, 4);
-    tft_.setTextColor(0xCE70, TFT_BLACK);
-    tft_.drawCentreString("MONITORING", 160, 28, 4);
+    lgfx::LGFX_Sprite header_sprite(&tft_);
+    header_sprite.setColorDepth(16);
+    if (header_sprite.createSprite(700, SMOOTH_SPRITE_HEIGHT)) {
+        header_sprite.fillSprite(TFT_BLACK);
+        header_sprite.setFont(&lgfx::fonts::FreeSansBold18pt7b);
+        header_sprite.setTextDatum(lgfx::textdatum_t::middle_center);
+        header_sprite.setTextColor(TFT_WHITE, TFT_BLACK);
+        header_sprite.drawString("INFINITI QX50 J55", 220, SMOOTH_SPRITE_HEIGHT / 2);
+        header_sprite.setTextColor(COLOR_ACCENT, TFT_BLACK);
+        header_sprite.drawString("MONITORING", 555, SMOOTH_SPRITE_HEIGHT / 2);
+        header_sprite.setPivot(350, SMOOTH_SPRITE_HEIGHT / 2);
+        header_sprite.pushRotateZoomWithAA(&tft_, SCREEN_WIDTH / 2, 24, 0.0f, 0.65f, 0.65f);
+        return;
+    }
 
-    tft_.drawFastHLine(0, TEMP_LINE_Y, 320, 0x5AEB);
-    tft_.setTextColor(0x5AEB, TFT_BLACK);
-    tft_.drawCentreString(" TEMPERATURE, C ", 160, TEMP_LABEL_Y, 2);
+    if (!draw_smooth_text_("INFINITI QX50 J55", 155, 24, TFT_WHITE, 0.55f,
+                           SMOOTH_SPRITE_WIDTH)) {
+        tft_.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft_.drawCentreString("INFINITI QX50 J55", 155, 11, 4);
+    }
+    if (!draw_smooth_text_("MONITORING", 370, 24, COLOR_ACCENT, 0.55f, 300)) {
+        tft_.setTextColor(COLOR_ACCENT, TFT_BLACK);
+        tft_.drawCentreString("MONITORING", 370, 11, 4);
+    }
+}
 
-    tft_.setTextColor(0x9CD3, TFT_BLACK);
-    tft_.drawCentreString("RAD-ANT", COL1_X, TEMP_COL_Y, 2);
-    tft_.drawCentreString("ENG-ANT", COL2_X, TEMP_COL_Y, 2);
-    tft_.drawCentreString("ENG-OIL", COL3_X, TEMP_COL_Y, 2);
+bool DisplayManagerWT32::draw_smooth_text_(const char *text, int16_t center_x, int16_t center_y,
+                                            uint16_t color, float zoom, int16_t sprite_width)
+{
+    lgfx::LGFX_Sprite sprite(&tft_);
+    sprite.setColorDepth(16);
+    if (!sprite.createSprite(sprite_width, SMOOTH_SPRITE_HEIGHT)) {
+        return false;
+    }
+
+    sprite.fillSprite(COLOR_TRANSPARENT);
+    sprite.setFont(&lgfx::fonts::FreeSansBold18pt7b);
+    sprite.setTextColor(color, COLOR_TRANSPARENT);
+    sprite.setTextDatum(lgfx::textdatum_t::middle_center);
+    sprite.drawString(text, sprite_width / 2, SMOOTH_SPRITE_HEIGHT / 2);
+    sprite.setPivot(sprite_width / 2, SMOOTH_SPRITE_HEIGHT / 2);
+    sprite.pushRotateZoomWithAA(&tft_, center_x, center_y, 0.0f, zoom, zoom, COLOR_TRANSPARENT);
+    return true;
+}
+
+bool DisplayManagerWT32::draw_smooth_value_(const char *text, int16_t center_x, int16_t center_y,
+                                             uint16_t color)
+{
+    lgfx::LGFX_Sprite sprite(&tft_);
+    sprite.setColorDepth(16);
+    if (!sprite.createSprite(VALUE_SPRITE_WIDTH, SMOOTH_SPRITE_HEIGHT)) {
+        return false;
+    }
+
+    sprite.fillSprite(COLOR_CARD);
+    sprite.setFont(&lgfx::fonts::FreeSansBold18pt7b);
+    sprite.setTextColor(color, COLOR_CARD);
+    sprite.setTextDatum(lgfx::textdatum_t::middle_center);
+    sprite.drawString(text, VALUE_SPRITE_WIDTH / 2, SMOOTH_SPRITE_HEIGHT / 2);
+    sprite.setPivot(VALUE_SPRITE_WIDTH / 2, SMOOTH_SPRITE_HEIGHT / 2);
+    sprite.pushRotateZoomWithAA(&tft_, center_x, center_y, 0.0f,
+                                VALUE_TEXT_ZOOM, VALUE_TEXT_ZOOM);
+    return true;
+}
+
+void DisplayManagerWT32::draw_metric_tile_(uint8_t index, const char *label, const char *unit)
+{
+    const int16_t x = TILE_X[index % 3];
+    const int16_t y = TILE_Y[index / 3];
+    const int16_t center_x = x + (TILE_WIDTH / 2);
+    char unit_buf[12];
+    snprintf(unit_buf, sizeof(unit_buf), ", %s", unit);
+
+    tft_.fillRoundRect(x, y, TILE_WIDTH, TILE_HEIGHT, TILE_RADIUS, COLOR_CARD);
+    tft_.drawRoundRect(x, y, TILE_WIDTH, TILE_HEIGHT, TILE_RADIUS, COLOR_BORDER);
+
+    tft_.fillRoundRect(x + 1, y + TILE_STATUS_INSET, TILE_STATUS_WIDTH,
+                       TILE_HEIGHT - (TILE_STATUS_INSET * 2), TILE_STATUS_RADIUS, COLOR_NO_DATA);
+
+    lgfx::LGFX_Sprite label_sprite(&tft_);
+    label_sprite.setColorDepth(16);
+    if (label_sprite.createSprite(LABEL_SPRITE_WIDTH, LABEL_SPRITE_HEIGHT)) {
+        label_sprite.fillSprite(COLOR_TRANSPARENT);
+        label_sprite.setFont(&lgfx::fonts::FreeSansBold18pt7b);
+        const int32_t label_width = label_sprite.textWidth(label);
+        const int32_t unit_width = label_sprite.textWidth(unit_buf);
+        const int32_t text_x = (LABEL_SPRITE_WIDTH - label_width - unit_width) / 2;
+        label_sprite.setTextDatum(lgfx::textdatum_t::middle_left);
+        label_sprite.setTextColor(COLOR_ACCENT, COLOR_TRANSPARENT);
+        label_sprite.drawString(label, text_x, LABEL_SPRITE_HEIGHT / 2);
+        label_sprite.setTextColor(COLOR_MUTED, COLOR_TRANSPARENT);
+        label_sprite.drawString(unit_buf, text_x + label_width, LABEL_SPRITE_HEIGHT / 2);
+        label_sprite.setPivot(LABEL_SPRITE_WIDTH / 2, LABEL_SPRITE_HEIGHT / 2);
+        label_sprite.pushRotateZoomWithAA(&tft_, center_x, y + TILE_LABEL_OFFSET_Y + 7,
+                                          0.0f, LABEL_SPRITE_ZOOM, LABEL_SPRITE_ZOOM,
+                                          COLOR_TRANSPARENT);
+    } else {
+        const int32_t label_width = tft_.text_width(label, 2);
+        const int32_t unit_width = tft_.text_width(unit_buf, 2);
+        const int32_t text_x = center_x - ((label_width + unit_width) / 2);
+        tft_.setTextColor(COLOR_ACCENT, COLOR_CARD);
+        tft_.drawString(label, text_x, y + TILE_LABEL_OFFSET_Y, 2);
+        tft_.setTextColor(COLOR_MUTED, COLOR_CARD);
+        tft_.drawString(unit_buf, text_x + label_width, y + TILE_LABEL_OFFSET_Y, 2);
+    }
+    label_sprite.deleteSprite();
+
+    if (!draw_smooth_value_("--", center_x, y + TILE_VALUE_OFFSET_Y + 16, COLOR_NO_DATA)) {
+        tft_.setTextColor(COLOR_NO_DATA, COLOR_CARD);
+        tft_.setTextSize(1.35f);
+        tft_.drawCentreString("--", center_x, y + TILE_VALUE_OFFSET_Y, 4);
+        tft_.setTextSize(1.0f);
+    }
+}
+
+void DisplayManagerWT32::draw_metric_value_(uint8_t index, const char *value, uint16_t color)
+{
+    const int16_t x = TILE_X[index % 3];
+    const int16_t y = TILE_Y[index / 3];
+    const int16_t center_x = x + (TILE_WIDTH / 2);
+
+    tft_.fillRoundRect(x + 1, y + TILE_STATUS_INSET, TILE_STATUS_WIDTH,
+                       TILE_HEIGHT - (TILE_STATUS_INSET * 2), TILE_STATUS_RADIUS, color);
+    if (!draw_smooth_value_(value, center_x, y + TILE_VALUE_OFFSET_Y + 16, color)) {
+        tft_.setTextColor(color, COLOR_CARD);
+        tft_.setTextSize(1.35f);
+        tft_.setTextPadding(TILE_WIDTH - 12);
+        tft_.drawCentreString(value, center_x, y + TILE_VALUE_OFFSET_Y, 4);
+        tft_.setTextPadding(0);
+        tft_.setTextSize(1.0f);
+    }
 }
 
 void DisplayManagerWT32::init(const char *version)
 {
-    // Включаем подсветку вручную до инициализации контроллера дисплея
-    pinMode(WT32_BL_PIN, OUTPUT);
-    digitalWrite(WT32_BL_PIN, HIGH);
+    ledcSetup(WT32_BL_LEDC_CHANNEL, WT32_BL_LEDC_FREQ_HZ, WT32_BL_LEDC_BITS);
+    ledcAttachPin(WT32_BL_PIN, WT32_BL_LEDC_CHANNEL);
+    update_brightness_();
 
     tft_.init();
-    tft_.setRotation(0); // портретная ориентация 320×480
+    tft_.setRotation(3); // альбомная ориентация 480×320 с разворотом на 180 градусов
     tft_.fillScreen(TFT_BLACK);
 
     if (version) {
@@ -176,6 +285,24 @@ void DisplayManagerWT32::init(const char *version)
     }
 
     draw_static_();
+}
+
+void DisplayManagerWT32::update_brightness_()
+{
+    float brightness_percent = config.get("system", "brightness_percent");
+    if (brightness_percent < BRIGHTNESS_MIN_PERCENT) {
+        brightness_percent = BRIGHTNESS_MIN_PERCENT;
+    } else if (brightness_percent > BRIGHTNESS_MAX_PERCENT) {
+        brightness_percent = BRIGHTNESS_MAX_PERCENT;
+    }
+
+    const uint8_t duty = static_cast<uint8_t>(
+        ((brightness_percent / 100.0f) * WT32_BL_MAX_DUTY) + 0.5f);
+
+    if (duty != brightness_duty_) {
+        brightness_duty_ = duty;
+        ledcWrite(WT32_BL_LEDC_CHANNEL, brightness_duty_);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -191,12 +318,15 @@ void DisplayManagerWT32::show_alert(const char *code, const char *display_name)
     // Очищаем весь экран
     tft_.fillScreen(TFT_BLACK);
 
-    // Код алерта — золотой, font 4, вверху
-    tft_.setTextColor(0xCE70, TFT_BLACK);
-    tft_.drawCentreString(code, 160, 20, 4);
+    // Код алерта вверху
+    if (!draw_smooth_text_(code, SCREEN_WIDTH / 2, 32, COLOR_ACCENT, 0.8f,
+                           SMOOTH_SPRITE_WIDTH)) {
+        tft_.setTextColor(COLOR_ACCENT, TFT_BLACK);
+        tft_.drawCentreString(code, SCREEN_WIDTH / 2, 18, 4);
+    }
 
     // Разделительная линия
-    tft_.drawFastHLine(10, 62, 300, 0xCE70);
+    tft_.drawFastHLine(10, 58, SCREEN_WIDTH - 20, COLOR_ACCENT);
 
     // Разбиваем display_name по '\n' на три строки (максимум 3)
     // Формат: "LINE1\nLine2\nLINE3"
@@ -220,25 +350,32 @@ void DisplayManagerWT32::show_alert(const char *code, const char *display_name)
         p = nl ? nl + 1 : nullptr;
     }
 
-    // Позиционирование: область ниже разделителя y=62 до y=480 (418 px)
-    // Font 4 — высота ~26 px, отступ между строками 20 px
-    // Блок из 3 строк: 3*26 + 2*20 = 118 px
-    // Центр блока: 62 + 418/2 = 271, верх блока: 271 - 59 = 212
-    static constexpr int16_t LINE_H   = 26;  // высота шрифта 4
-    static constexpr int16_t LINE_GAP = 20;  // отступ между строками
-    static constexpr int16_t Y_START  = 212; // верх первой строки
+    // Позиционирование рассчитано для области ниже разделителя на экране 480×320
+    static constexpr int16_t LINE_H = 26;   // высота шрифта 4
+    static constexpr int16_t LINE_GAP = 18; // отступ между строками
+    static constexpr int16_t Y_START = 132; // верх первой строки
 
     // Строка 1: красная
-    tft_.setTextColor(0xF800, TFT_BLACK);
-    tft_.drawCentreString(line1, 160, Y_START, 4);
+    if (!draw_smooth_text_(line1, SCREEN_WIDTH / 2, Y_START + (LINE_H / 2), 0xF800,
+                           VALUE_TEXT_ZOOM, SMOOTH_SPRITE_WIDTH)) {
+        tft_.setTextColor(0xF800, TFT_BLACK);
+        tft_.drawCentreString(line1, SCREEN_WIDTH / 2, Y_START, 4);
+    }
 
     // Строка 2: белая
-    tft_.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft_.drawCentreString(line2, 160, Y_START + LINE_H + LINE_GAP, 4);
+    if (!draw_smooth_text_(line2, SCREEN_WIDTH / 2, Y_START + LINE_H + LINE_GAP + (LINE_H / 2),
+                           TFT_WHITE, VALUE_TEXT_ZOOM, SMOOTH_SPRITE_WIDTH)) {
+        tft_.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft_.drawCentreString(line2, SCREEN_WIDTH / 2, Y_START + LINE_H + LINE_GAP, 4);
+    }
 
     // Строка 3: красная
-    tft_.setTextColor(0xF800, TFT_BLACK);
-    tft_.drawCentreString(line3, 160, Y_START + (LINE_H + LINE_GAP) * 2, 4);
+    if (!draw_smooth_text_(line3, SCREEN_WIDTH / 2,
+                           Y_START + ((LINE_H + LINE_GAP) * 2) + (LINE_H / 2),
+                           0xF800, VALUE_TEXT_ZOOM, SMOOTH_SPRITE_WIDTH)) {
+        tft_.setTextColor(0xF800, TFT_BLACK);
+        tft_.drawCentreString(line3, SCREEN_WIDTH / 2, Y_START + (LINE_H + LINE_GAP) * 2, 4);
+    }
 
     strncpy(drawn_alert_code_, code, sizeof(drawn_alert_code_) - 1);
     drawn_alert_code_[sizeof(drawn_alert_code_) - 1] = '\0';
@@ -269,9 +406,9 @@ void DisplayManagerWT32::update_alert_indicator(bool has_alerts)
     if (has_alerts == alert_indicator_) return;
     alert_indicator_ = has_alerts;
 
-    // Кружок диаметром 8 px слева от строки «MONITORING» (y=28, font 4 ~ высота 26 px)
+    // Кружок слева от заголовка
     static constexpr int16_t IND_X = 20;
-    static constexpr int16_t IND_Y = 40;
+    static constexpr int16_t IND_Y = 24;
     static constexpr int16_t IND_R = 8;
 
     if (has_alerts) {
@@ -472,83 +609,61 @@ void DisplayManagerWT32::update_metrics(float coolant, float oil, float coolant_
 {
     char buf[12];
 
+    update_brightness_();
+
     // Антифриз радиатора
     uint16_t radiator_color = get_temperature_color(coolant_r,
         config.get("radiator", "min"),
         config.get("radiator", "target"),
         config.get("radiator", "max"));
-    tft_.setTextColor(radiator_color, TFT_BLACK);
-    tft_.setTextPadding(tft_.text_width("125  ", 4));
-    snprintf(buf, sizeof(buf), "%-5.0f", coolant_r);
-    tft_.drawCentreString(buf, COL1_X, TEMP_VAL_Y, 4);
+    snprintf(buf, sizeof(buf), "%.0f", coolant_r);
+    draw_metric_value_(0, buf, radiator_color);
 
     // Антифриз ДВС
     uint16_t coolant_color = get_temperature_color(coolant,
         config.get("coolant", "min"),
         config.get("coolant", "target"),
         config.get("coolant", "max"));
-    tft_.setTextColor(coolant_color, TFT_BLACK);
-    tft_.setTextPadding(tft_.text_width("125  ", 4));
-    snprintf(buf, sizeof(buf), "%-5.0f", coolant);
-    tft_.drawCentreString(buf, COL2_X, TEMP_VAL_Y, 4);
+    snprintf(buf, sizeof(buf), "%.0f", coolant);
+    draw_metric_value_(1, buf, coolant_color);
 
     // Моторное масло
     uint16_t oil_color = get_temperature_color(oil,
         config.get("oil", "min"),
         config.get("oil", "target"),
         config.get("oil", "max"));
-    tft_.setTextColor(oil_color, TFT_BLACK);
-    tft_.setTextPadding(tft_.text_width("125  ", 4));
-    snprintf(buf, sizeof(buf), "%-5.0f", oil);
-    tft_.drawCentreString(buf, COL3_X, TEMP_VAL_Y, 4);
-
-    tft_.setTextPadding(0);
+    snprintf(buf, sizeof(buf), "%.0f", oil);
+    draw_metric_value_(2, buf, oil_color);
 
     // Обороты двигателя
-    tft_.setTextColor(get_rpm_color(rpm), TFT_BLACK);
-    tft_.setTextPadding(tft_.text_width("6000", 4));
     snprintf(buf, sizeof(buf), "%.0f", rpm);
-    tft_.drawCentreString(buf, COL1_X, ENG_VAL_Y, 4);
+    draw_metric_value_(3, buf, get_rpm_color(rpm));
 
     // Напряжение датчика давления масла
-    tft_.setTextColor(get_oil_pressure_color(oil_pressure, rpm), TFT_BLACK);
-    tft_.setTextPadding(tft_.text_width("3.50", 4));
     snprintf(buf, sizeof(buf), "%.2f", oil_pressure);
-    tft_.drawCentreString(buf, COL2_X, ENG_VAL_Y, 4);
+    draw_metric_value_(4, buf, get_oil_pressure_color(oil_pressure, rpm));
 
     // Давление наддува
-    tft_.setTextColor(get_boost_color(boost), TFT_BLACK);
-    tft_.setTextPadding(tft_.text_width("-0.50", 4));
     snprintf(buf, sizeof(buf), "%.2f", boost);
-    tft_.drawCentreString(buf, COL3_X, ENG_VAL_Y, 4);
-
-    tft_.setTextPadding(0);
+    draw_metric_value_(5, buf, get_boost_color(boost));
 
     // Вольтаж бортовой сети
-    tft_.setTextColor(get_battery_color(battery_voltage), TFT_BLACK);
-    tft_.setTextPadding(tft_.text_width("14.99", 4));
     snprintf(buf, sizeof(buf), "%.2f", battery_voltage);
-    tft_.drawCentreString(buf, COL1_X, OTH_VAL_Y, 4);
+    draw_metric_value_(6, buf, get_battery_color(battery_voltage));
 
     // Период обновления RPM
-    tft_.setTextColor(get_poll_time_color(poll_time, rpm), TFT_BLACK);
-    tft_.setTextPadding(tft_.text_width("0.60", 4));
     if (rpm == 0.0f || poll_time == 0.0f) {
         snprintf(buf, sizeof(buf), "0");
     } else {
         snprintf(buf, sizeof(buf), "%.2f", poll_time);
     }
-    tft_.drawCentreString(buf, COL2_X, OTH_VAL_Y, 4);
+    draw_metric_value_(7, buf, get_poll_time_color(poll_time, rpm));
 
     // Масло коробки
     uint16_t transmission_color = get_temperature_color(transmission,
         config.get("transmission", "min"),
         config.get("transmission", "target"),
         config.get("transmission", "max"));
-    tft_.setTextColor(transmission_color, TFT_BLACK);
-    tft_.setTextPadding(tft_.text_width("125  ", 4));
-    snprintf(buf, sizeof(buf), "%-5.0f", transmission);
-    tft_.drawCentreString(buf, COL3_X, OTH_VAL_Y, 4);
-
-    tft_.setTextPadding(0);
+    snprintf(buf, sizeof(buf), "%.0f", transmission);
+    draw_metric_value_(8, buf, transmission_color);
 }

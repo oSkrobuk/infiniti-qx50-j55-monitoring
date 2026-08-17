@@ -143,7 +143,8 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
   }
   .field input[type="number"],
   .field input[type="text"],
-  .field input[type="password"] {
+  .field input[type="password"],
+  .field select {
     width: 100%;
     background: #111;
     border: 1px solid var(--border);
@@ -156,7 +157,8 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     text-align: center;
   }
   .field input[type="text"]:focus,
-  .field input[type="password"]:focus { border-color: var(--accent); }
+  .field input[type="password"]:focus,
+  .field select:focus { border-color: var(--accent); }
   .field input.f-min:focus    { border-color: var(--blue); }
   .field input.f-target:focus { border-color: var(--green); }
   .field input.f-max:focus    { border-color: var(--red); }
@@ -610,10 +612,10 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
         <p class="wifi-note">&#9888; После сохранения устройство перезагрузится. Переподключитесь к новой сети.</p>
       </div>
 
-      <!-- Параметры CAN-опроса -->
+      <!-- Системные параметры -->
       <div class="card">
-        <div class="card-hdr"><div class="card-title">&#9201; CAN &mdash; Параметры опроса</div><button type="button" class="btn-card-default" onclick="resetCardFields('system')">&#8635; Сброс</button></div>
-        <div class="row2">
+        <div class="card-hdr"><div class="card-title">&#9201; Система &mdash; Параметры</div><button type="button" class="btn-card-default" onclick="resetCardFields('system')">&#8635; Сброс</button></div>
+        <div class="row3">
           <div class="field">
             <label>Интервал опроса, мс</label>
             <input class="f-target" type="number" step="1" min="10" name="system_poll_interval_ms" required>
@@ -621,6 +623,16 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
           <div class="field">
             <label>Устаревание CAN, мс</label>
             <input class="f-target" type="number" step="100" min="100" name="system_stale_ms" required>
+          </div>
+          <div class="field">
+            <label>Подсветка, %</label>
+            <select name="system_brightness_percent" required>
+              <option value="10">10</option><option value="20">20</option>
+              <option value="30">30</option><option value="40">40</option>
+              <option value="50">50</option><option value="60">60</option>
+              <option value="70">70</option><option value="80">80</option>
+              <option value="90">90</option><option value="100" selected>100</option>
+            </select>
           </div>
         </div>
       </div>
@@ -1029,8 +1041,10 @@ function fillForm(cfg) {
   if (cfg.system) {
     const pi = document.querySelector('[name="system_poll_interval_ms"]');
     const sm = document.querySelector('[name="system_stale_ms"]');
+    const bp = document.querySelector('[name="system_brightness_percent"]');
     if (pi) pi.value = cfg.system.poll_interval_ms;
     if (sm) sm.value = cfg.system.stale_ms;
+    if (bp) bp.value = cfg.system.brightness_percent;
   }
 }
 
@@ -1176,12 +1190,18 @@ document.getElementById('wifiForm').addEventListener('submit', async (e) => {
 
   const pollEl = document.querySelector('[name="system_poll_interval_ms"]');
   const staleEl = document.querySelector('[name="system_stale_ms"]');
+  const brightnessEl = document.querySelector('[name="system_brightness_percent"]');
   const poll_ms  = parseFloat(pollEl  ? pollEl.value  : 30);
   const stale_ms = parseFloat(staleEl ? staleEl.value : 1000);
+  const brightness_percent = parseFloat(brightnessEl ? brightnessEl.value : 100);
 
   if (poll_ms < 10)  { showToast('⚠ Интервал опроса не может быть меньше 10 мс', 'err'); return; }
   if (stale_ms < 100){ showToast('⚠ Порог устаревания не может быть меньше 100 мс', 'err'); return; }
   if (poll_ms >= stale_ms){ showToast('⚠ Интервал опроса должен быть меньше порога устаревания', 'err'); return; }
+  if (brightness_percent < 10 || brightness_percent > 100 || brightness_percent % 10 !== 0) {
+    showToast('⚠ Яркость должна быть от 10 до 100% с шагом 10%', 'err');
+    return;
+  }
 
   const btn = document.getElementById('btnSaveWifi');
   btn.disabled = true;
@@ -1202,9 +1222,15 @@ document.getElementById('wifiForm').addEventListener('submit', async (e) => {
     return;
   }
 
-  // Сохраняем системные параметры CAN
+  // Сохраняем системные параметры
   try {
-    const sysPayload = { system: { poll_interval_ms: poll_ms, stale_ms: stale_ms } };
+    const sysPayload = {
+      system: {
+        poll_interval_ms: poll_ms,
+        stale_ms: stale_ms,
+        brightness_percent: brightness_percent
+      }
+    };
     const r2 = await fetch('/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1925,7 +1951,7 @@ async function autoCheckUpdates() {
 // Значения по умолчанию совпадают с build_defaults() в ConfigManager.cpp
 const CARD_DEFAULTS = {
   wifi:         { ssid: 'QX50Monitoring', password: 'infiniti' },
-  system:       { poll_interval_ms: 30, stale_ms: 1000 },
+  system:       { poll_interval_ms: 30, stale_ms: 1000, brightness_percent: 100 },
   oil:          { min: 50, target: 90, max: 98 },
   coolant:      { min: 50, target: 90, max: 93 },
   radiator:     { min: 0,  target: 50, max: 90 },
