@@ -202,6 +202,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: true
+          body: |
+            **ESP32 + маленький дисплей на отдельных проводах:**
+            `bootloader.bin`, `partitions.bin`, `firmware.bin`
+
+            **WT32 + большой сенсорный дисплей:**
+            `bootloader_s3.bin`, `partitions_s3.bin`, `firmware_s3.bin`
           files: |
             release/bootloader.bin
             release/partitions.bin
@@ -226,6 +232,12 @@ jobs:
           name: esp32
           path: bin/
 
+      - name: Download WT32-SC01 Plus binaries
+        uses: actions/download-artifact@v7
+        with:
+          name: esp32s3-wt32
+          path: bin-s3/
+
       - name: Push firmware to the firmware branch
         # Зачем отдельная ветка: кнопка «Скачать и установить» в веб-интерфейсе
         # тянет .bin запросом из браузера телефона, а ассеты релизов GitHub
@@ -246,17 +258,22 @@ jobs:
 
           mkdir -p "$WORK/$VERSION"
           cp bin/firmware.bin "$WORK/$VERSION/firmware.bin"
+          cp bin-s3/firmware.bin "$WORK/$VERSION/firmware_s3.bin"
 
           cat > "$WORK/README.md" <<EOF
           # Ветка firmware
 
-          Служебная ветка: здесь лежит прошивка последнего релиза для ESP32 DEVKIT1,
-          которую скачивает кнопка «Скачать и установить» в веб-интерфейсе устройства.
+          Служебная ветка: здесь лежат прошивки последнего релиза для ESP32 DEVKIT1
+          и WT32-SC01 Plus. Нужный файл выбирает кнопка «Скачать и установить»
+          в веб-интерфейсе устройства.
 
           Ветку целиком пересоздаёт workflow \`.github/workflows/build.yml\` на каждом
           теге \`v*\`. Руками сюда коммитить нечего — исходники живут в \`main\`.
 
-          Текущая версия: \`$VERSION\` — [\`$VERSION/firmware.bin\`]($VERSION/firmware.bin)
+          Текущая версия: \`$VERSION\`
+
+          - ESP32 DEVKIT1 — [\`$VERSION/firmware.bin\`]($VERSION/firmware.bin)
+          - WT32-SC01 Plus — [\`$VERSION/firmware_s3.bin\`]($VERSION/firmware_s3.bin)
           EOF
 
           cd "$WORK"

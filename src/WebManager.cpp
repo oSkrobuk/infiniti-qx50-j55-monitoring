@@ -1650,7 +1650,7 @@ const UPD_API  = 'https://api.github.com/repos/' + UPD_REPO + '/releases/latest'
 // Не из ассетов релиза: их GitHub отдает с release-assets.githubusercontent.com
 // без заголовка Access-Control-Allow-Origin, и браузер не пускает такой ответ
 // в JS — запрос падает еще до чтения тела. Поэтому CI на каждом теге кладет
-// firmware.bin в ветку firmware, а ее файлы raw.githubusercontent.com отдает
+// OTA-образы в ветку firmware, а ее файлы raw.githubusercontent.com отдает
 // с CORS. Ссылки на ассеты остаются: они открываются обычным скачиванием,
 // которому CORS не нужен
 const UPD_RAW = 'https://raw.githubusercontent.com/' + UPD_REPO + '/firmware/';
@@ -1659,7 +1659,7 @@ const UPD_RAW = 'https://raw.githubusercontent.com/' + UPD_REPO + '/firmware/';
 // AbortController запрос висел бы десятками секунд
 const UPD_TIMEOUT_MS = 5000;
 
-// Таймаут скачивания firmware.bin, мс — файл около мегабайта
+// Таймаут скачивания OTA-образа, мс — файл около мегабайта
 const UPD_DOWNLOAD_TIMEOUT_MS = 120000;
 
 // Не чаще одной автопроверки в 5 минут: страницу открывают и обновляют часто,
@@ -1757,24 +1757,34 @@ async function loadVersion() {
   }
 }
 
-// Скачать firmware.bin версии tag из ветки firmware и отдать его в POST /update.
+// Выбрать OTA-образ для окружения сборки
+function updFirmwareName() {
+  if (/^esp32s3-wt32(-mock)?$/.test(fwEnv)) return 'firmware_s3.bin';
+  if (/^esp32(-mock)?$/.test(fwEnv)) return 'firmware.bin';
+  return '';
+}
+
+// Скачать OTA-образ версии tag из ветки firmware и отдать его в POST /update.
 // Версия входит в путь, поэтому приехать может только прошивка этого релиза.
 // При любой ошибке остается ручной сценарий — ссылка на ассет и форма ниже
 async function updDownloadAndInstall(tag) {
   const btn = document.getElementById('btnUpdInstall');
   const st  = document.getElementById('updInstallStatus');
+  const firmwareName = updFirmwareName();
+
+  if (!firmwareName) return;
 
   if (!confirm('Скачать версию ' + tag + ' и прошить устройство?\nПосле записи устройство перезагрузится.')) return;
 
   btn.disabled   = true;
-  st.textContent = 'Скачиваю firmware.bin...';
+  st.textContent = 'Скачиваю ' + firmwareName + '...';
 
   const ctl   = new AbortController();
   const timer = setTimeout(() => ctl.abort(), UPD_DOWNLOAD_TIMEOUT_MS);
   let blob = null;
 
   try {
-    const r = await fetch(UPD_RAW + encodeURIComponent(tag) + '/firmware.bin',
+    const r = await fetch(UPD_RAW + encodeURIComponent(tag) + '/' + firmwareName,
       { cache: 'no-store', signal: ctl.signal });
     // 404 — CI еще не выложил сборку этой версии в ветку firmware
     if (r.status === 404) throw new Error('сборки ' + tag + ' нет в ветке firmware');
@@ -1783,7 +1793,7 @@ async function updDownloadAndInstall(tag) {
     if (!blob.size) throw new Error('пустой файл');
   } catch(e) {
     st.textContent = 'Скачать не удалось (' + (e.name === 'AbortError' ? 'долго нет ответа' : e.message) +
-      '). Нажмите «Скачать firmware.bin» выше, затем выберите файл в форме «OTA — Загрузка .bin» ниже.';
+      '). Нажмите «Скачать ' + firmwareName + '» выше, затем выберите файл в форме «OTA — Загрузка .bin» ниже.';
     btn.disabled = false;
     return;
   } finally {
@@ -1791,7 +1801,7 @@ async function updDownloadAndInstall(tag) {
   }
 
   st.textContent = 'Скачано ' + Math.round(blob.size / 1024) + ' KB, прошиваю — прогресс ниже';
-  sendFirmware(blob, 'firmware.bin', btn);
+  sendFirmware(blob, firmwareName, btn);
 }
 
 // Отрисовать ответ GitHub о последнем релизе
@@ -1811,27 +1821,27 @@ function updRenderRelease(rel) {
     return;
   }
 
-  // В релиз попадает firmware.bin для ESP32 DEVKIT1
-  const asset = (rel.assets || []).find(a => a.name === 'firmware.bin');
+  const firmwareName = updFirmwareName();
+  const asset = (rel.assets || []).find(a => a.name === firmwareName);
   const date  = rel.published_at ? String(rel.published_at).slice(0, 10) : '';
   const notes = rel.body ? '<div class="upd-notes">' + updEsc(rel.body) + '</div>' : '';
 
   let links = '<div class="upd-links"><a href="' + page + '" target="_blank" rel="noopener">Страница релиза</a>';
   if (asset) {
-    links += '<a href="' + asset.browser_download_url + '" target="_blank" rel="noopener">Скачать firmware.bin</a>';
+    links += '<a href="' + asset.browser_download_url + '" target="_blank" rel="noopener">Скачать ' +
+      updEsc(firmwareName) + '</a>';
   }
   links += '</div>';
 
-  // Автоустановка только для плат, чьи бинарники публикует CI. Наличие ассета
-  // тут ни при чем: .bin для установки берется из ветки firmware
+  // Автоустановка доступна для известных окружений, чьи OTA-образы публикует CI
   let install = '';
-  if (/^esp32(-mock)?$/.test(fwEnv)) {
+  if (firmwareName) {
     install = '<div class="upd-links">' +
       '<button type="button" class="btn-upd btn-upd-install" id="btnUpdInstall">&#8595; Скачать и установить</button>' +
       '<span class="upd-hint" id="updInstallStatus"></span></div>';
   } else {
-    install = '<div class="upd-hint">&#9888; CI собирает бинарники только для ESP32 DEVKIT1 — ' +
-      'для этой платы (' + updEsc(fwEnv || '?') + ') соберите прошивку из исходников.</div>';
+    install = '<div class="upd-hint">&#9888; Неизвестная платформа (' + updEsc(fwEnv || '?') +
+      '), выберите совместимый .bin вручную.</div>';
   }
 
   updShow('new', 'Доступна версия ' + updEsc(tag) + ' (у вас ' + updEsc(fwVersion || '?') + ')',

@@ -5,172 +5,174 @@
 All C++ source files (`.cpp`, `.h`) in this project **must** follow the
 [Espressif IoT Development Framework Style Guide](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/contribute/style-guide.html).
 
-### Key formatting rules
+### Main Formatting Rules
 
 | Rule | Convention |
 |------|------------|
-| Indentation | 4 spaces (no tabs) |
-| Function definition brace | Opening `{` on a **new line** (Allman) |
-| Control-flow brace (`if`/`else`/`while`/`for`/`switch`) | Opening `{` on the **same line** (K&R) |
-| Line length | ≤ 120 characters |
-| `public:` / `private:` labels | At **same** indentation level as `class` keyword |
-| Class opening brace | On the **same line** as the class name |
+| Indentation | 4 spaces, no tabs |
+| Opening brace in a function definition | On a **new line** (Allman style) |
+| Opening brace in a control statement (`if`/`else`/`while`/`for`/`switch`) | On the **same line** (K&R style) |
+| Line length | No more than 120 characters |
+| `public:` / `private:` labels | At the **same** indentation level as the `class` keyword |
+| Opening brace of a class | On the **same line** as the class name |
 
-### Naming conventions
+### Naming Conventions
 
 | Kind | Convention | Example |
-|------|-----------|---------|
-| Classes / structs | `PascalCase` | `CanBusManager`, `CanFrame` |
-| Methods (public & private) | `snake_case` | `get_rpm_color()`, `init()` |
-| Free-standing functions | `snake_case` | `can_print_frame()` |
+|------|------------|---------|
+| Classes / structures | `PascalCase` | `CanBusManager`, `CanFrame` |
+| Public and private methods | `snake_case` | `get_rpm_color()`, `init()` |
+| Free functions | `snake_case` | `can_print_frame()` |
 | Local variables | `snake_case` | `green_start`, `file_hash` |
 | Private member variables | `snake_case_` (trailing `_`) | `running_`, `rx_count_` |
-| File-scope `static` variables | `s_` prefix + `snake_case` | `s_fs_mounted`, `s_ap_ssid` |
-| Global (extern) variables | `snake_case` | `can_bus`, `config` |
+| File-level `static` variables | `s_` prefix + `snake_case` | `s_fs_mounted`, `s_ap_ssid` |
+| Global (`extern`) variables | `snake_case` | `can_bus`, `config` |
 | `constexpr` / compile-time constants | `UPPER_SNAKE_CASE` | `CAN_TX_PIN`, `CAN_TIMING` |
 
-### Includes order (each group separated by a blank line)
+### Include Order
+
+Separate the following groups with blank lines:
 
 1. Corresponding header (`"WebManager.h"`)
-2. C/C++ standard headers (`<math.h>`, `<cstdint>`)
+2. Standard C/C++ headers (`<math.h>`, `<cstdint>`)
 3. Third-party / Arduino headers (`<Arduino.h>`, `<WiFi.h>`)
 4. Project headers (`"ConfigManager.h"`)
 
-### Other rules
+### Other Rules
 
-- Use `#pragma once` for all header guards.
-- Prefer `static_cast<type>()` over C-style casts.
-- All `.h` files live in `include/`, all `.cpp` files in `src/`.
-- HTML/CSS/JS embedded in `PROGMEM` strings is exempt from C++ style rules.
-- Use `//` for single-line comments; `//` or `/* */` for multi-line.
-- File-scope `static` variables must be prefixed with `s_` (e.g., `static bool s_fs_mounted`).
-- **All comments in `.cpp` and `.h` files must be written in Russian.**
-- **Do NOT put a period (`.`) at the end of comments.**
-- **Do NOT put a period (`.`) at the end of `Serial.print`/`Serial.println`/`Serial.printf` string literals.**
-- **Chatting in Russian.**
+- Use `#pragma once` in all header files instead of include guards
+- Prefer `static_cast<type>()` over C-style casts
+- Keep all `.h` files in `include/` and all `.cpp` files in `src/`
+- HTML/CSS/JS inside `PROGMEM` strings does not follow the C++ style rules
+- Use `//` for single-line comments; use `//` or `/* */` for multi-line comments
+- File-level `static` variables must use the `s_` prefix, for example `static bool s_fs_mounted`
+- **All comments in `.cpp` and `.h` files must be written in Russian**
+- **Do not put a period (`.`) at the end of comments**
+- **Do not put a period (`.`) at the end of `Serial.print`/`Serial.println`/`Serial.printf` string literals**
+- **Communicate with the user in Russian**
 
-## Build
+## Building
 
-PlatformIO CLI не в `PATH`. Исполняемый файл лежит здесь (Windows):
+PlatformIO CLI is not in `PATH`. Its executable is located here on Windows:
 
 ```
 C:\Users\homework\.platformio\penv\Scripts\pio.exe
 ```
 
-Из PowerShell удобно вызывать через переменную окружения:
+Convenient PowerShell commands using an environment variable:
 
 ```powershell
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run                        # собрать все прошивки
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32s3-wt32         # одно окружение
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32 -e esp32-mock  # несколько окружений
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32s3-wt32 -v      # подробный вывод (видны флаги компилятора)
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32 -t upload      # прошить
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run                        # build all firmware variants
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32s3-wt32         # build one environment
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32 -e esp32-mock  # build several environments
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32s3-wt32 -v      # verbose output with compiler flags
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32 -t upload      # flash a device
 ```
 
-### Окружения
+### Environments
 
-| Окружение | Плата | Дисплей | Данные |
-|-----------|-------|---------|--------|
-| `esp32` | ESP32 DEVKIT1 | ST7789 240×240 (SPI) | реальные из CAN |
-| `esp32-mock` | ESP32 DEVKIT1 | ST7789 240×240 (SPI) | имитация (`USE_MOCK_DATA`) |
-| `esp32s3-wt32` | WT32-SC01 Plus (ESP32-S3) | ST7796 320×480 (параллельный 8-бит) | реальные из CAN |
-| `esp32s3-wt32-mock` | WT32-SC01 Plus (ESP32-S3) | ST7796 320×480 (параллельный 8-бит) | имитация (`USE_MOCK_DATA`) |
-| `native` | хост (gcc/clang) | — | юнит-тесты, см. ниже |
+| Environment | Board | Display | Data |
+|-------------|-------|---------|------|
+| `esp32` | ESP32 DEVKIT1 | ST7789 240×240 (SPI) | Real CAN data |
+| `esp32-mock` | ESP32 DEVKIT1 | ST7789 240×240 (SPI) | Simulated (`USE_MOCK_DATA`) |
+| `esp32s3-wt32` | WT32-SC01 Plus (ESP32-S3) | ST7796 320×480 (parallel 8-bit) | Real CAN data |
+| `esp32s3-wt32-mock` | WT32-SC01 Plus (ESP32-S3) | ST7796 320×480 (parallel 8-bit) | Simulated (`USE_MOCK_DATA`) |
+| `native` | Host (gcc/clang) | — | Unit tests, see below |
 
-`default_envs` в `platformio.ini` перечисляет только четыре прошивки, поэтому
-`pio run` без аргументов `native` не трогает.
+`default_envs` in `platformio.ini` lists only the four firmware environments, so
+`pio run` without arguments does not touch `native`.
 
-> `TOUCH_CS` определяется **только** в SPI-окружениях. В параллельном 8-битном
-> режиме (S3) TFT_eSPI не подключает объявления touch, но компилирует `Touch.cpp`
-> по `#ifdef TOUCH_CS` — поэтому определять там `TOUCH_CS` нельзя, иначе сборка падает
+> `TOUCH_CS` is defined **only** in SPI environments. In parallel 8-bit mode (S3),
+> TFT_eSPI does not include touch input declarations, but it compiles `Touch.cpp`
+> under `#ifdef TOUCH_CS`. Therefore, `TOUCH_CS` must not be defined there, or the build will fail
 
 ## Tests
 
-Юнит-тесты собираются под хост обычным gcc и выполняются за секунды — ни платы,
-ни xtensa-тулчейна не нужно.
+Unit tests are built on the host with regular gcc and run in seconds. No board or xtensa toolchain is required.
 
-Проще всего запускать скриптом из корня — он сам подставляет пути к PlatformIO
-и компилятору, а свои аргументы передаёт в `pio test` как есть:
-
-```powershell
-.\run-tests.ps1                     # все наборы
-.\run-tests.ps1 -f test_ota_image   # один набор
-```
-
-То же самое напрямую:
+The easiest way to run them is with the script in the project root. It configures the PlatformIO and compiler
+paths automatically and passes its own arguments to `pio test` unchanged:
 
 ```powershell
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" test -e native                        # все наборы
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" test -e native -f test_alert_manager  # один набор
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" test -e native -vvv                   # подробный вывод
+.\run-tests.ps1                     # all suites
+.\run-tests.ps1 -f test_ota_image   # one suite
 ```
 
-Нужен хостовый компилятор в `PATH`. На этой машине стоит WinLibs MinGW-w64:
+The equivalent direct commands are:
+
+```powershell
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" test -e native                        # all suites
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" test -e native -f test_alert_manager  # one suite
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" test -e native -vvv                   # verbose output
+```
+
+A host compiler must be available in `PATH`. This machine has WinLibs MinGW-w64 installed here:
 
 ```
 C:\Users\homework\AppData\Local\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\mingw64\bin
 ```
 
-### Как это устроено
+### Known Test Exception
 
-Окружение `native` собирает только те модули прошивки, что не зависят от железа
-(`build_src_filter` в `platformio.ini`), а недостающие Arduino-заголовки
-подменяет заглушками из `test/stubs`:
+- Ignore the `test/test_can_diag` error `Nothing to build`. This is an empty test suite and must not be treated
+  as a failed project test
 
-| Заглушка | Что заменяет |
-|----------|--------------|
-| `Arduino.h` | `millis()` под управлением теста (`mock_set_millis`, `mock_advance_millis`), молчащий `Serial`, GPIO-пустышки |
-| `WString.h` | `String` = `std::string` — ArduinoJson поддерживает его штатно |
-| `Print.h` / `Stream.h` | базовые классы, по которым ArduinoJson выбирает Writer и Reader |
-| `LittleFS.h` | файловая система в памяти + флаги `mock_fs_*` для имитации отказов флеша |
-| `BuzzerStub.h` | глобальный `buzzer` и счётчик срабатываний |
+### How It Works
 
-### Правила для тестируемого кода
+The `native` environment builds only firmware modules that do not depend on hardware (`build_src_filter` in
+`platformio.ini`). Missing Arduino headers are replaced with stubs from `test/stubs`:
 
-- Логика, которую хочется покрыть тестами, не должна тянуть `<driver/twai.h>`,
-  `<TFT_eSPI.h>`, `<WebServer.h>` или `<esp_ota_ops.h>` — именно ради этого декодер CAN
-  живёт в `CanDecoder.cpp`, цветовые зоны в `MetricColors.cpp`, а разбор образа
-  прошивки в `OtaImage.cpp` (работа с разделами при этом осталась в `OtaSlots.cpp`).
-- Новый файл, который надо тестировать, добавляется в `build_src_filter`
-  окружения `native`.
-- `BuzzerStub.h` подключается ровно один раз — из главного файла набора тестов.
-  Определения в нём намеренно не `inline`.
+| Stub | Replacement behavior |
+|------|----------------------|
+| `Arduino.h` | Test-controlled `millis()` (`mock_set_millis`, `mock_advance_millis`), silent `Serial`, and GPIO no-ops |
+| `WString.h` | `String` = `std::string`, which ArduinoJson supports natively |
+| `Print.h` / `Stream.h` | Base classes used by ArduinoJson to select Writer and Reader implementations |
+| `LittleFS.h` | In-memory filesystem plus `mock_fs_*` flags for simulating flash failures |
+| `BuzzerStub.h` | Global `buzzer` and trigger counter |
 
-## Project structure
+### Rules for Testable Code
+
+- Logic intended for unit testing must not pull in `<driver/twai.h>`, `<TFT_eSPI.h>`, `<WebServer.h>`, or
+  `<esp_ota_ops.h>`. This is why the CAN decoder lives in `CanDecoder.cpp`, color zones in `MetricColors.cpp`,
+  and firmware image parsing in `OtaImage.cpp`, while partition operations remain in `OtaSlots.cpp`
+- Add every new file that needs tests to `build_src_filter` in the `native` environment
+- Include `BuzzerStub.h` exactly once, from the main file of a test suite. Its definitions are intentionally
+  not `inline`
+
+## Project Structure
 
 ```
-include/        C++ headers
+include/        C++ header files
 src/            C++ implementation files
 test/           Unit tests (PlatformIO + Unity)
-test/stubs/     Host stubs for Arduino.h, LittleFS.h and friends
+test/stubs/     Host stubs for Arduino.h, LittleFS.h, and other files
 docs/           Documentation and images
 partitions.csv  ESP32 OTA partition table
 platformio.ini  PlatformIO build configuration
-run-tests.ps1   Прогон юнит-тестов (обёртка над pio test -e native)
+run-tests.ps1   Unit test runner (wrapper around pio test -e native)
 AGENTS.md       Agent rules (this file)
 ```
 
-## CI
+## Continuous Integration (CI)
 
-`.github/workflows/build.yml` идёт строго по порядку:
+`.github/workflows/build.yml` runs strictly in this order:
 
-1. **Юнит-тесты** (`pio test -e native`) плюс сверка версии с тегом. Пока этот
-   job не прошёл, ни одна прошивка не собирается.
-2. **Сборки** четырёх окружений — параллельно, `fail-fast: false`, чтобы за один
-   прогон были видны все поломки. Любая упавшая сборка делает весь прогон
-   красным.
-3. **Черновик релиза** — только на тег `v*`, через `needs: build`.
-4. **Публикация прошивки** в ветку `firmware` — тоже только на тег `v*`. Ветка
-   сиротская и пересоздаётся force-push’ем: в ней лежит `<версия>/firmware.bin`
-   для ESP32 DEVKIT1. Оттуда его качает кнопка «Скачать и установить»
-   в веб-интерфейсе — ассеты релизов GitHub отдаёт без CORS, и браузеру они
-   недоступны.
+1. **Unit tests** (`pio test -e native`) plus firmware version verification against the tag. No firmware is
+   built until this job passes
+2. **Four firmware builds** run in parallel with `fail-fast: false`, so one run exposes all failures. Any failed
+   build makes the entire workflow fail
+3. **Draft release** runs only for a `v*` tag through `needs: build`
+4. **Firmware publication** to the `firmware` branch also runs only for a `v*` tag. The branch has no parent
+   history and is recreated with a force push. It contains `<version>/firmware.bin` for ESP32 DEVKIT1 and
+   `<version>/firmware_s3.bin` for WT32-SC01 Plus. The web UI's Download and Install button fetches the correct
+   image from there because GitHub release assets are served without CORS access for browser JavaScript
 
 ## Hardware
 
-- **MCU**: ESP32 (espressif32 @ 6.7.0, Arduino framework)
+- **Microcontroller**: ESP32 (espressif32 @ 6.7.0, Arduino framework)
 - **Display**: ST7789 240×240 TFT (TFT_eSPI, SPI)
-- **CAN**: SN65HVD230 / WVCMCU-230, TWAI controller, 500 kbps, `TWAI_MODE_NORMAL` — the device both receives frames and transmits UDS requests (`0x22`, Tester Present) to ECM/TCM
-- **Storage**: LittleFS for config persistence
-- **OTA**: dual-slot partition layout (ota_0 / ota_1, 1.75 MB each)
-- **Web**: ESP32 built-in WebServer on port 80, WiFi SoftAP
+- **CAN**: SN65HVD230 / WVCMCU-230, TWAI controller, 500 kbit/s, `TWAI_MODE_NORMAL`. The device receives frames
+  and sends UDS requests (`0x22`, Tester Present) to the ECM/TCM modules
+- **Storage**: LittleFS for persistent configuration
+- **OTA**: Dual-partition layout (ota_0 / ota_1, 1.75 MB each)
+- **Web UI**: Built-in ESP32 WebServer on port 80, WiFi SoftAP
