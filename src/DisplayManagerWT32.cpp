@@ -277,7 +277,7 @@ void DisplayManagerWT32::init(const char *version)
     update_brightness_();
 
     tft_.init();
-    tft_.setRotation(3); // альбомная ориентация 480×320 с разворотом на 180 градусов
+    tft_.setRotation(1); // альбомная ориентация 480×320
     tft_.fillScreen(TFT_BLACK);
 
     if (version) {
