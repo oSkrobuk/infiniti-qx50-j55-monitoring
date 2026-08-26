@@ -2,6 +2,8 @@
 #include <Arduino.h>
 #include <WebServer.h>
 
+#include "OtaImage.h"
+
 // Сколько ждать HTTP-запрос от уже принятого соединения, мс
 //
 // WebServer обслуживает одно соединение за раз: приняв сокет, он ждет от него
@@ -63,6 +65,9 @@ public:
 
 private:
     FastWebServer server_;
+    OtaTagStream  ota_upload_tag_;
+    String        ota_upload_error_;
+    bool          ota_upload_ok_;
 
     void handle_root();
     void handle_get_config();

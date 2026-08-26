@@ -2670,7 +2670,7 @@ static void ap_disable_dhcp_router_option()
 }
 
 WebManager::WebManager()
-    : server_(80)
+    : server_(80), ota_upload_tag_(), ota_upload_error_(), ota_upload_ok_(false)
 {
 }
 
@@ -2724,16 +2724,16 @@ void WebManager::begin()
     // POST /update — загрузка .bin (два обработчика: завершение + чанки данных)
     server_.on("/update", HTTP_POST,
         [this]() { // вызывается ПОСЛЕ завершения загрузки файла
-            bool ok = !Update.hasError();
             server_.sendHeader("Connection", "close");
-            if (ok) {
+            if (ota_upload_ok_) {
                 server_.send(200, "application/json", "{\"ok\":true}");
                 Serial.println("[OTA] Успех — перезагрузка...");
                 delay(300);
                 ESP.restart();
             } else {
-                String err = Update.errorString();
-                server_.send(500, "application/json",
+                const bool validation_error = !ota_upload_error_.isEmpty();
+                String err = validation_error ? ota_upload_error_ : Update.errorString();
+                server_.send(validation_error ? 400 : 500, "application/json",
                     "{\"error\":\"" + err + "\"}");
                 Serial.printf("[OTA] Ошибка: %s\r\n", err.c_str());
             }
@@ -3055,6 +3055,9 @@ void WebManager::handle_update_upload()
 
     switch (upload.status) {
     case UPLOAD_FILE_START:
+        ota_upload_tag_.reset();
+        ota_upload_error_ = "";
+        ota_upload_ok_    = false;
         Serial.printf("[OTA] Начало: %s\r\n", upload.filename.c_str());
         // UPDATE_SIZE_UNKNOWN — Update сам определит конец по закрытию соединения
         if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
@@ -3063,13 +3066,32 @@ void WebManager::handle_update_upload()
         break;
 
     case UPLOAD_FILE_WRITE:
+        ota_upload_tag_.feed(upload.buf, upload.currentSize);
         if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
             Serial.printf("[OTA] write() ошибка: %s\r\n", Update.errorString());
         }
         break;
 
     case UPLOAD_FILE_END:
+        if (!Update.isRunning()) break;
+
+        if (!ota_upload_tag_.found()) {
+            ota_upload_error_ = "В образе нет маркера QX50-FW-TAG";
+            Update.abort();
+            Serial.println("[OTA] Образ отклонен: маркер QX50-FW-TAG не найден");
+            break;
+        }
+
+        if (!ota_envs_compatible(BUILD_ENV, ota_upload_tag_.tag().env.c_str())) {
+            ota_upload_error_ = "Прошивка предназначена для другой платы";
+            Serial.printf("[OTA] Образ отклонен: устройство %s, образ %s\r\n",
+                          BUILD_ENV, ota_upload_tag_.tag().env.c_str());
+            Update.abort();
+            break;
+        }
+
         if (Update.end(true)) { // true = финализировать (проверить MD5/размер)
+            ota_upload_ok_ = true;
             Serial.printf("[OTA] Завершено: %u байт\r\n", upload.totalSize);
         } else {
             Serial.printf("[OTA] end() ошибка: %s\r\n", Update.errorString());
@@ -3077,7 +3099,8 @@ void WebManager::handle_update_upload()
         break;
 
     case UPLOAD_FILE_ABORTED:
-        Update.abort();
+        if (Update.isRunning()) Update.abort();
+        ota_upload_error_ = "Загрузка прервана";
         Serial.println("[OTA] Загрузка прервана");
         break;
 

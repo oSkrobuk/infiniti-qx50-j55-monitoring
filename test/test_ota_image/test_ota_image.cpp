@@ -5,6 +5,7 @@
 #include <Arduino.h>
 
 #include "BuzzerStub.h"
+#include "BuildInfo.h"
 #include "OtaImage.h"
 #include "Version.h"
 
@@ -205,6 +206,77 @@ static void test_does_not_look_past_max_length(void)
     OtaTag tag;
 
     TEST_ASSERT_FALSE(ota_tag_parse(buf, len, tag));
+}
+
+// ── Потоковый поиск маркера ─────────────────────────────────────────────────
+
+static void test_stream_finds_tag_in_one_chunk(void)
+{
+    uint8_t image[256];
+    memset(image, 0xff, sizeof(image));
+    memcpy(image + 80, FW_IMAGE_TAG, strlen(FW_IMAGE_TAG));
+
+    OtaTagStream stream;
+    stream.feed(image, sizeof(image));
+
+    TEST_ASSERT_TRUE(stream.found());
+    TEST_ASSERT_EQUAL_STRING(FW_VERSION, stream.tag().version.c_str());
+}
+
+static void test_stream_finds_tag_across_chunks(void)
+{
+    uint8_t image[256];
+    memset(image, 0xff, sizeof(image));
+    memcpy(image + 80, FW_IMAGE_TAG, strlen(FW_IMAGE_TAG));
+
+    OtaTagStream stream;
+    stream.feed(image, 85);
+    stream.feed(image + 85, 9);
+    stream.feed(image + 94, sizeof(image) - 94);
+
+    TEST_ASSERT_TRUE(stream.found());
+    TEST_ASSERT_EQUAL_STRING(BUILD_ENV, stream.tag().env.c_str());
+}
+
+static void test_stream_finds_tag_byte_by_byte(void)
+{
+    const uint8_t *tag = reinterpret_cast<const uint8_t *>(FW_IMAGE_TAG);
+    OtaTagStream stream;
+
+    for (size_t i = 0; i < strlen(FW_IMAGE_TAG); i++) {
+        stream.feed(tag + i, 1);
+    }
+
+    TEST_ASSERT_TRUE(stream.found());
+    TEST_ASSERT_EQUAL_STRING(FW_VERSION, stream.tag().version.c_str());
+}
+
+static void test_stream_rejects_missing_and_truncated_tag(void)
+{
+    uint8_t image[256];
+    memset(image, 0xff, sizeof(image));
+
+    OtaTagStream stream;
+    stream.feed(image, sizeof(image));
+    TEST_ASSERT_FALSE(stream.found());
+
+    stream.reset();
+    stream.feed(reinterpret_cast<const uint8_t *>(FW_IMAGE_TAG), OTA_TAG_SIG_LEN + 5);
+    TEST_ASSERT_FALSE(stream.found());
+}
+
+static void test_ota_env_compatibility(void)
+{
+    TEST_ASSERT_TRUE(ota_envs_compatible("esp32", "esp32"));
+    TEST_ASSERT_TRUE(ota_envs_compatible("esp32", "esp32-mock"));
+    TEST_ASSERT_TRUE(ota_envs_compatible("esp32-mock", "esp32"));
+    TEST_ASSERT_TRUE(ota_envs_compatible("esp32s3-wt32", "esp32s3-wt32-mock"));
+    TEST_ASSERT_TRUE(ota_envs_compatible("esp32s3-wt32-mock", "esp32s3-wt32"));
+
+    TEST_ASSERT_FALSE(ota_envs_compatible("esp32", "esp32s3-wt32"));
+    TEST_ASSERT_FALSE(ota_envs_compatible("esp32s3-wt32", "esp32"));
+    TEST_ASSERT_FALSE(ota_envs_compatible("esp32", "unknown"));
+    TEST_ASSERT_FALSE(ota_envs_compatible(nullptr, "esp32"));
 }
 
 // ── Длина образа ─────────────────────────────────────────────────────────────
@@ -476,6 +548,12 @@ int main(int, char **)
     RUN_TEST(test_rejects_truncated_tag);
     RUN_TEST(test_rejects_input_shorter_than_signature);
     RUN_TEST(test_does_not_look_past_max_length);
+
+    RUN_TEST(test_stream_finds_tag_in_one_chunk);
+    RUN_TEST(test_stream_finds_tag_across_chunks);
+    RUN_TEST(test_stream_finds_tag_byte_by_byte);
+    RUN_TEST(test_stream_rejects_missing_and_truncated_tag);
+    RUN_TEST(test_ota_env_compatibility);
 
     RUN_TEST(test_counts_segments_and_hash);
     RUN_TEST(test_counts_image_without_hash);

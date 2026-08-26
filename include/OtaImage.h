@@ -37,10 +37,40 @@ struct OtaTag {
     String build;
 };
 
+// Потоковый поиск маркера во время OTA-загрузки
+//
+// HTTPUpload отдает образ частями, причем граница части может пройти в любом
+// месте маркера. Класс держит только небольшое окно и собранный маркер, поэтому
+// размер прошивки не влияет на расход оперативной памяти
+class OtaTagStream {
+public:
+    OtaTagStream();
+
+    void reset();
+    void feed(const uint8_t *data, size_t len);
+
+    bool found() const;
+    const OtaTag &tag() const;
+
+private:
+    uint8_t signature_[OTA_TAG_SIG_LEN];
+    size_t  signature_len_;
+    char    candidate_[OTA_TAG_MAX_LEN + 1];
+    size_t  candidate_len_;
+    uint8_t separator_count_;
+    bool    collecting_;
+    bool    found_;
+    OtaTag  tag_;
+};
+
 // Разобрать маркер, на который указывает tag; len — сколько байт доступно
 // за указателем. В чужом образе за сигнатурой может оказаться что угодно,
 // поэтому поля принимаются только из печатного ASCII
 bool ota_tag_parse(const char *tag, size_t len, OtaTag &out);
+
+// Проверить совместимость окружений для OTA
+// real и mock одной платы совместимы, ESP32 DEVKIT1 и WT32-SC01 Plus — нет
+bool ota_envs_compatible(const char *running_env, const char *image_env);
 
 // Найти начало маркера в первых len байтах блока, вернуть смещение или -1.
 // Сигнатура должна помещаться в блок целиком

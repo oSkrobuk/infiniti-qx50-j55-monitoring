@@ -50,6 +50,109 @@ bool ota_tag_parse(const char *tag, size_t len, OtaTag &out)
     return true;
 }
 
+OtaTagStream::OtaTagStream()
+{
+    reset();
+}
+
+void OtaTagStream::reset()
+{
+    signature_len_  = 0;
+    candidate_len_  = 0;
+    separator_count_ = 0;
+    collecting_     = false;
+    found_          = false;
+    tag_            = OtaTag();
+}
+
+void OtaTagStream::feed(const uint8_t *data, size_t len)
+{
+    if (data == nullptr || len == 0 || found_) return;
+
+    for (size_t i = 0; i < len; i++) {
+        const uint8_t byte = data[i];
+
+        if (collecting_) {
+            if (candidate_len_ >= OTA_TAG_MAX_LEN) {
+                candidate_len_   = 0;
+                separator_count_ = 0;
+                collecting_      = false;
+                signature_len_   = 0;
+                continue;
+            }
+
+            candidate_[candidate_len_++] = static_cast<char>(byte);
+
+            if (byte == '|') {
+                separator_count_++;
+
+                if (separator_count_ == 3) {
+                    candidate_[candidate_len_] = '\0';
+
+                    OtaTag parsed;
+                    if (ota_tag_parse(candidate_, candidate_len_, parsed)) {
+                        tag_   = parsed;
+                        found_ = true;
+                        return;
+                    }
+
+                    candidate_len_   = 0;
+                    separator_count_ = 0;
+                    collecting_      = false;
+                    signature_len_   = 0;
+                }
+            }
+
+            continue;
+        }
+
+        if (signature_len_ < OTA_TAG_SIG_LEN) {
+            signature_[signature_len_++] = byte;
+        } else {
+            memmove(signature_, signature_ + 1, OTA_TAG_SIG_LEN - 1);
+            signature_[OTA_TAG_SIG_LEN - 1] = byte;
+        }
+
+        if (signature_len_ == OTA_TAG_SIG_LEN &&
+            memcmp(signature_, FW_IMAGE_TAG, OTA_TAG_SIG_LEN) == 0) {
+            memcpy(candidate_, signature_, OTA_TAG_SIG_LEN);
+            candidate_len_   = OTA_TAG_SIG_LEN;
+            separator_count_ = 0;
+            collecting_      = true;
+            signature_len_   = 0;
+        }
+    }
+}
+
+bool OtaTagStream::found() const
+{
+    return found_;
+}
+
+const OtaTag &OtaTagStream::tag() const
+{
+    return tag_;
+}
+
+static uint8_t ota_env_family(const char *env)
+{
+    if (env == nullptr) return 0;
+
+    if (strcmp(env, "esp32") == 0 || strcmp(env, "esp32-mock") == 0) return 1;
+
+    if (strcmp(env, "esp32s3-wt32") == 0 || strcmp(env, "esp32s3-wt32-mock") == 0) return 2;
+
+    return 0;
+}
+
+bool ota_envs_compatible(const char *running_env, const char *image_env)
+{
+    const uint8_t running_family = ota_env_family(running_env);
+    const uint8_t image_family   = ota_env_family(image_env);
+
+    return running_family != 0 && running_family == image_family;
+}
+
 int ota_tag_find(const uint8_t *buf, size_t len)
 {
     if (buf == nullptr || len < OTA_TAG_SIG_LEN) return -1;
