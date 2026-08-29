@@ -81,15 +81,17 @@ GPIO 12, то есть к контакту 5 слева разъема `EXT_IO_1
 
 ![Схема подключения WT32-SC01 Plus](diagram_wt32.png)
 
-## Первичная прошивка ESP32 DEVKIT1
+## Первичная прошивка ESP32 DEVKIT1 из WSL
 
-Плата может использовать USB-UART преобразователь CP2102, CH340 или CH9102. Если Windows не
-создала COM-порт автоматически, установите драйвер своего преобразователя и проверьте появление
-порта в диспетчере устройств.
+Плата может использовать USB-UART преобразователь CP2102, CH340 или CH9102. Передайте USB-устройство
+в WSL и проверьте, что появился порт `/dev/ttyUSB0` либо `/dev/ttyACM0`:
 
-Для прошивки без PlatformIO используйте
-[ESP32 Flash Download Tool](https://docs.espressif.com/projects/esp-test-tools/en/latest/esp32/production_stage/tools/flash_download_tool.html).
-В релизе потребуются `bootloader.bin`, `partitions.bin` и `firmware.bin`.
+```bash
+ls -l /dev/ttyUSB* /dev/ttyACM* 2>/dev/null
+```
+
+Для прошивки без PlatformIO установите `esptool`. В релизе потребуются `bootloader.bin`,
+`partitions.bin` и `firmware.bin`.
 
 | Файл | Адрес |
 |------|-------|
@@ -97,13 +99,19 @@ GPIO 12, то есть к контакту 5 слева разъема `EXT_IO_1
 | `partitions.bin` | `0x8000` |
 | `firmware.bin` | `0x10000` |
 
-Выберите `ESP32`, режим `Develop`, SPI Speed `40 MHz`, SPI Mode `DIO`, нужный COM-порт и скорость
-`921600`. Сначала нажмите `ERASE`, затем `START`. После завершения перезапустите плату кнопкой
-`EN`. Если запись не начинается, удерживайте `BOOT` при нажатии `START`, а затем отпустите её.
+Команды прошивки выполняет только владелец устройства:
 
-![Пример настройки ESP32 Flash Download Tool](flash-tool.png)
+```bash
+python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 921600 erase_flash
+python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 921600 \
+  write_flash --flash_mode dio --flash_freq 40m \
+  0x1000 bootloader.bin 0x8000 partitions.bin 0x10000 firmware.bin
+```
 
-## Первичная прошивка WT32-SC01 Plus
+После завершения перезапустите плату кнопкой `EN`. Если запись не начинается, удерживайте
+`BOOT` при запуске команды и отпустите ее после начала соединения.
+
+## Первичная прошивка WT32-SC01 Plus из WSL
 
 Для WT32-SC01 Plus в релизе используются отдельные файлы с постфиксом `_s3`. Не прошивайте в
 WT32 загрузчик `bootloader.bin` от ESP32 DEVKIT1.
@@ -114,35 +122,41 @@ WT32 загрузчик `bootloader.bin` от ESP32 DEVKIT1.
 | `partitions_s3.bin` | `0x8000` |
 | `firmware_s3.bin` | `0x10000` |
 
-В ESP32 Flash Download Tool выберите `ESP32-S3`, режим `Develop`, SPI Speed `80 MHz`, SPI Mode
-`QIO`, Flash Size `16 MB` (`128 Mbit`), нужный COM-порт и скорость `460800`.
-
 Для входа в режим загрузки подключите плату по USB-C, зажмите `BOOT`, нажмите и отпустите `RESET`,
-затем отпустите `BOOT`. Сначала нажмите `ERASE` и дождитесь `FINISH`, после этого нажмите `START`.
+затем отпустите `BOOT`. Обычно встроенный USB Serial/JTAG появляется как `/dev/ttyACM0`.
+Команды прошивки выполняет только владелец устройства:
+
+```bash
+python3 -m esptool --chip esp32s3 --port /dev/ttyACM0 --baud 460800 erase_flash
+python3 -m esptool --chip esp32s3 --port /dev/ttyACM0 --baud 460800 \
+  write_flash --flash_mode qio --flash_freq 80m --flash_size 16MB \
+  0x0000 bootloader_s3.bin 0x8000 partitions_s3.bin 0x10000 firmware_s3.bin
+```
+
 По завершении нажмите `RESET` или переподключите USB-C.
 
 ## Сборка из исходников
 
 Проект собирается с помощью [PlatformIO](https://platformio.org/). Установите PlatformIO Core и
-убедитесь, что команда `pio` доступна в `PATH`.
+убедитесь, что команда `platformio` доступна в WSL `PATH`.
 
-```powershell
-pio run
-pio run -e esp32
-pio run -e esp32s3-wt32
+```bash
+platformio run
+platformio run -e esp32
+platformio run -e esp32s3-wt32
 ```
 
 Для записи ESP32 DEVKIT1:
 
-```powershell
-pio run -e esp32 -t upload
+```bash
+platformio run -e esp32 -t upload
 ```
 
 Для первой записи WT32-SC01 Plus подключите USB-C, удерживайте `BOOT`, нажмите и отпустите
 `RESET`, затем отпустите `BOOT` и выполните:
 
-```powershell
-pio run -e esp32s3-wt32 -t upload
+```bash
+platformio run -e esp32s3-wt32 -t upload
 ```
 
 Готовые OTA-образы находятся в `.pio/build/<окружение>/firmware.bin`.
@@ -151,15 +165,15 @@ pio run -e esp32s3-wt32 -t upload
 
 Хостовые тесты не требуют платы или Xtensa toolchain. Из корня проекта выполните:
 
-```powershell
-.\run-tests.ps1
-.\run-tests.ps1 -f test_ota_image
+```bash
+./run-tests.sh
+./run-tests.sh -f test_ota_image
 ```
 
 Либо вызовите PlatformIO напрямую:
 
-```powershell
-pio test -e native
+```bash
+platformio test -e native
 ```
 
 ## Обновление готового устройства

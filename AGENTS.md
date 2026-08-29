@@ -53,21 +53,16 @@ Separate the following groups with blank lines:
 
 ## Building
 
-PlatformIO CLI is not in `PATH`. Its executable is located here on Windows:
+Work only in WSL. PlatformIO must be available as `platformio` in the Linux `PATH`:
 
-```
-C:\Users\homework\.platformio\penv\Scripts\pio.exe
+```bash
+platformio run                                      # build all firmware variants
+platformio run -e esp32s3-wt32                     # build one environment
+platformio run -e esp32 -e esp32-mock              # build several environments
+platformio run -e esp32s3-wt32 -v                  # verbose output with compiler flags
 ```
 
-Convenient PowerShell commands using an environment variable:
-
-```powershell
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run                        # build all firmware variants
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32s3-wt32         # build one environment
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32 -e esp32-mock  # build several environments
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32s3-wt32 -v      # verbose output with compiler flags
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e esp32 -t upload      # flash a device
-```
+Never run `upload`, `flash`, `erase`, or any other command that writes to a device.
 
 ### Environments
 
@@ -80,7 +75,7 @@ Convenient PowerShell commands using an environment variable:
 | `native` | Host (gcc/clang) | — | Unit tests, see below |
 
 `default_envs` in `platformio.ini` lists only the four firmware environments, so
-`pio run` without arguments does not touch `native`.
+`platformio run` without arguments does not touch `native`.
 
 > `TOUCH_CS` is defined **only** in SPI environments. In parallel 8-bit mode (S3),
 > TFT_eSPI does not include touch input declarations, but it compiles `Touch.cpp`
@@ -90,27 +85,23 @@ Convenient PowerShell commands using an environment variable:
 
 Unit tests are built on the host with regular gcc and run in seconds. No board or xtensa toolchain is required.
 
-The easiest way to run them is with the script in the project root. It configures the PlatformIO and compiler
-paths automatically and passes its own arguments to `pio test` unchanged:
+The easiest way to run them is with the Linux script in the project root. It passes its own arguments to
+`platformio test` unchanged:
 
-```powershell
-.\run-tests.ps1                     # all suites
-.\run-tests.ps1 -f test_ota_image   # one suite
+```bash
+./run-tests.sh                     # all suites
+./run-tests.sh -f test_ota_image   # one suite
 ```
 
 The equivalent direct commands are:
 
-```powershell
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" test -e native                        # all suites
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" test -e native -f test_alert_manager  # one suite
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" test -e native -vvv                   # verbose output
+```bash
+platformio test -e native                        # all suites
+platformio test -e native -f test_alert_manager  # one suite
+platformio test -e native -vvv                   # verbose output
 ```
 
-A host compiler must be available in `PATH`. This machine has WinLibs MinGW-w64 installed here:
-
-```
-C:\Users\homework\AppData\Local\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\mingw64\bin
-```
+A Linux host compiler such as `g++` must be available in the WSL `PATH`.
 
 ### Known Test Exception
 
@@ -149,7 +140,7 @@ test/stubs/     Host stubs for Arduino.h, LittleFS.h, and other files
 docs/           Documentation and images
 partitions.csv  ESP32 OTA partition table
 platformio.ini  PlatformIO build configuration
-run-tests.ps1   Unit test runner (wrapper around pio test -e native)
+run-tests.sh    Unit test runner (wrapper around platformio test -e native)
 AGENTS.md       Agent rules (this file)
 ```
 
@@ -157,7 +148,7 @@ AGENTS.md       Agent rules (this file)
 
 `.github/workflows/build.yml` runs strictly in this order:
 
-1. **Unit tests** (`pio test -e native`) plus firmware version verification against the tag. No firmware is
+1. **Unit tests** (`platformio test -e native`) plus firmware version verification against the tag. No firmware is
    built until this job passes
 2. **Four firmware builds** run in parallel with `fail-fast: false`, so one run exposes all failures. Any failed
    build makes the entire workflow fail
