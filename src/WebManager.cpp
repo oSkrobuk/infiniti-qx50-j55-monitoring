@@ -213,6 +213,19 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     line-height: 1.35;
     white-space: normal;
   }
+  .brightness-box {
+    margin-top: 10px;
+    padding: 12px;
+    background: #111;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .brightness-box .field {
+    max-width: 260px;
+  }
+  .brightness-box .field label {
+    white-space: normal;
+  }
   /* ── OTA ─────────────────────────────────────────── */
   .ota-row {
     display: flex;
@@ -595,16 +608,14 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 </header>
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
-<!-- 1. СИСТЕМНЫЕ ПАРАМЕТРЫ                                                  -->
+<!-- 1. НАСТРОЙКА WIFI                                                       -->
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
-<details class="sect" id="sectSystem">
+<details class="sect" id="sectWifi">
   <summary>
-    <span class="sect-title">&#9881; 1. Системные параметры</span>
+    <span class="sect-title">&#128267; 1. Настройка WiFi</span>
     <span class="sect-chevron">&#9660;</span>
   </summary>
   <div class="sect-body">
-
-    <!-- WiFi -->
     <form id="wifiForm">
     <div class="grid">
       <div class="card">
@@ -621,11 +632,29 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
         </div>
         <p class="wifi-note">&#9888; После сохранения устройство перезагрузится. Переподключитесь к новой сети.</p>
       </div>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn-default" onclick="resetWifiCard()">&#8635; Сбросить</button>
+      <button type="submit" class="btn-save" id="btnSaveWifi">&#10003; Сохранить WiFi</button>
+    </div>
+    </form>
+  </div>
+</details>
 
-      <!-- Системные параметры -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- 2. СИСТЕМНЫЕ ПАРАМЕТРЫ                                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<details class="sect" id="sectSystem">
+  <summary>
+    <span class="sect-title">&#9881; 2. Системные параметры</span>
+    <span class="sect-chevron">&#9660;</span>
+  </summary>
+  <div class="sect-body">
+    <form id="systemForm">
+    <div class="grid">
       <div class="card">
         <div class="card-hdr"><div class="card-title">&#9201; Система &mdash; Параметры</div><button type="button" class="btn-card-default" onclick="resetCardFields('system')">&#8635; Сброс</button></div>
-        <div class="row3">
+        <div class="row2">
           <div class="field">
             <label>Интервал опроса, мс</label>
             <input class="f-target" type="number" step="1" min="10" name="system_poll_interval_ms" required>
@@ -634,14 +663,16 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
             <label>Устаревание CAN, мс</label>
             <input class="f-target" type="number" step="100" min="100" name="system_stale_ms" required>
           </div>
+        </div>
+        <div class="brightness-box">
           <div class="field">
-            <label>Яркость подсветки, %</label>
+            <label>Яркость подсветки</label>
             <select name="system_brightness_percent" required>
-              <option value="10">10</option><option value="20">20</option>
-              <option value="30">30</option><option value="40">40</option>
-              <option value="50">50</option><option value="60">60</option>
-              <option value="70">70</option><option value="80">80</option>
-              <option value="90">90</option><option value="100" selected>100</option>
+              <option value="10">10%</option><option value="20">20%</option>
+              <option value="30">30%</option><option value="40">40%</option>
+              <option value="50">50%</option><option value="60">60%</option>
+              <option value="70">70%</option><option value="80">80%</option>
+              <option value="90">90%</option><option value="100" selected>100%</option>
             </select>
             <span class="hint">Регулировка работает только на дисплеях с входом BLK</span>
           </div>
@@ -650,8 +681,8 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     </div>
 
     <div class="actions">
-      <button type="button" class="btn-default" onclick="resetAllSystem()">&#8635; Сбросить все</button>
-      <button type="submit" class="btn-save" id="btnSaveWifi">&#10003; Сохранить WiFi &amp; систему</button>
+      <button type="button" class="btn-default" onclick="resetCardFields('system')">&#8635; Сбросить все</button>
+      <button type="submit" class="btn-save" id="btnSaveSystem">&#10003; Сохранить параметры</button>
     </div>
     </form>
 
@@ -659,11 +690,11 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 </details>
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
-<!-- 2. ИСТОРИЯ СРАБАТЫВАНИЙ                                                 -->
+<!-- 3. ИСТОРИЯ СРАБАТЫВАНИЙ                                                 -->
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
 <details class="sect" id="sectAlerts">
   <summary>
-    <span class="sect-title">&#128680; 2. История срабатываний</span>
+    <span class="sect-title">&#128680; 3. История срабатываний</span>
     <span class="sect-chevron">&#9660;</span>
   </summary>
   <div class="sect-body">
@@ -688,11 +719,11 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 </details>
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
-<!-- 3. КОНФИГУРАЦИЯ ПРОВЕРОК                                                -->
+<!-- 4. КОНФИГУРАЦИЯ ПРОВЕРОК                                                -->
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
 <details class="sect" id="sectChecks">
   <summary>
-    <span class="sect-title">&#9888; 3. Конфигурация проверок</span>
+    <span class="sect-title">&#9888; 4. Конфигурация проверок</span>
     <span class="sect-chevron">&#9660;</span>
   </summary>
   <div class="sect-body">
@@ -731,11 +762,11 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 </details>
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
-<!-- 4. КОНФИГУРАЦИЯ МЕТРИК                                                  -->
+<!-- 5. КОНФИГУРАЦИЯ МЕТРИК                                                  -->
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
 <details class="sect" id="sectMetrics">
   <summary>
-    <span class="sect-title">&#128202; 4. Конфигурация метрик</span>
+    <span class="sect-title">&#128202; 5. Конфигурация метрик</span>
     <span class="sect-chevron">&#9660;</span>
   </summary>
   <div class="sect-body">
@@ -919,11 +950,11 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 </details>
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
-<!-- 5. ОБНОВЛЕНИЕ ПРОШИВКИ                                                  -->
+<!-- 6. ОБНОВЛЕНИЕ ПРОШИВКИ                                                  -->
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
 <details class="sect" id="sectOta">
   <summary>
-    <span class="sect-title">&#8593; 5. Обновление прошивки</span>
+    <span class="sect-title">&#8593; 6. Обновление прошивки</span>
     <span class="sect-chevron">&#9660;</span>
   </summary>
   <div class="sect-body">
@@ -1176,7 +1207,7 @@ document.getElementById('btnDefault').addEventListener('click', async () => {
   }
 });
 
-// ── WiFi + система ─────────────────────────────────────────────────────────
+// ── WiFi и системные параметры ─────────────────────────────────────────────
 
 async function loadWifi() {
   try {
@@ -1193,31 +1224,15 @@ async function loadWifi() {
 }
 
 document.getElementById('wifiForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
+    e.preventDefault();
 
   const ssid = document.getElementById('wifi_ssid').value.trim();
   const pass  = document.getElementById('wifi_password').value;
   if (!ssid) { showToast('⚠ SSID не может быть пустым', 'err'); return; }
 
-  const pollEl = document.querySelector('[name="system_poll_interval_ms"]');
-  const staleEl = document.querySelector('[name="system_stale_ms"]');
-  const brightnessEl = document.querySelector('[name="system_brightness_percent"]');
-  const poll_ms  = parseFloat(pollEl  ? pollEl.value  : 30);
-  const stale_ms = parseFloat(staleEl ? staleEl.value : 1000);
-  const brightness_percent = parseFloat(brightnessEl ? brightnessEl.value : 100);
-
-  if (poll_ms < 10)  { showToast('⚠ Интервал опроса не может быть меньше 10 мс', 'err'); return; }
-  if (stale_ms < 100){ showToast('⚠ Порог устаревания не может быть меньше 100 мс', 'err'); return; }
-  if (poll_ms >= stale_ms){ showToast('⚠ Интервал опроса должен быть меньше порога устаревания', 'err'); return; }
-  if (brightness_percent < 10 || brightness_percent > 100 || brightness_percent % 10 !== 0) {
-    showToast('⚠ Яркость должна быть от 10 до 100% с шагом 10%', 'err');
-    return;
-  }
-
   const btn = document.getElementById('btnSaveWifi');
   btn.disabled = true;
 
-  // Сохраняем WiFi
   try {
     const payload = { wifi: { ssid: ssid, password: pass } };
     const r = await fetch('/wifi', {
@@ -1233,7 +1248,35 @@ document.getElementById('wifiForm').addEventListener('submit', async (e) => {
     return;
   }
 
-  // Сохраняем системные параметры
+  showToast('✓ WiFi сохранен. Перезагрузка...', 'ok');
+  setTimeout(async () => {
+    try { await fetch('/restart', { method: 'POST' }); } catch(_) {}
+  }, 1200);
+});
+
+document.getElementById('systemForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const pollEl = document.querySelector('[name="system_poll_interval_ms"]');
+  const staleEl = document.querySelector('[name="system_stale_ms"]');
+  const brightnessEl = document.querySelector('[name="system_brightness_percent"]');
+  const poll_ms = parseFloat(pollEl ? pollEl.value : 30);
+  const stale_ms = parseFloat(staleEl ? staleEl.value : 1000);
+  const brightness_percent = parseFloat(brightnessEl ? brightnessEl.value : 100);
+
+  if (poll_ms < 10) { showToast('⚠ Интервал опроса не может быть меньше 10 мс', 'err'); return; }
+  if (stale_ms < 100) { showToast('⚠ Порог устаревания не может быть меньше 100 мс', 'err'); return; }
+  if (poll_ms >= stale_ms) {
+    showToast('⚠ Интервал опроса должен быть меньше порога устаревания', 'err');
+    return;
+  }
+  if (brightness_percent < 10 || brightness_percent > 100 || brightness_percent % 10 !== 0) {
+    showToast('⚠ Яркость должна быть от 10 до 100% с шагом 10%', 'err');
+    return;
+  }
+
+  const btn = document.getElementById('btnSaveSystem');
+  btn.disabled = true;
   try {
     const sysPayload = {
       system: {
@@ -1242,22 +1285,18 @@ document.getElementById('wifiForm').addEventListener('submit', async (e) => {
         brightness_percent: brightness_percent
       }
     };
-    const r2 = await fetch('/config', {
+    const r = await fetch('/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(sysPayload)
     });
-    if (!r2.ok) throw new Error('HTTP ' + r2.status);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    showToast('✓ Системные параметры сохранены', 'ok');
   } catch(e) {
     showToast('Ошибка сохранения системных параметров: ' + e.message, 'err');
+  } finally {
     btn.disabled = false;
-    return;
   }
-
-  showToast('✓ Сохранено. Перезагрузка...', 'ok');
-  setTimeout(async () => {
-    try { await fetch('/restart', { method: 'POST' }); } catch(_) {}
-  }, 1200);
 });
 
 // ── Проверки ───────────────────────────────────────────────────────────────
@@ -2005,12 +2044,6 @@ function resetCardFields(section) {
     const el = document.querySelector(`[name="${section}_${key}"]`);
     if (el) el.value = val;
   });
-}
-
-// Сбрасывает все поля раздела «Системные параметры» к дефолтам
-function resetAllSystem() {
-  resetWifiCard();
-  resetCardFields('system');
 }
 
 // Сбрасывает все карточки проверок и тайминги к дефолтам
