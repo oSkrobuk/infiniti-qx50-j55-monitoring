@@ -9,9 +9,16 @@ CanBusManager can_bus;
 // он не зависит от TWAI и потому собирается под хостом для юнит-тестов
 
 CanBusManager::CanBusManager()
-    : running_(false)
+    : driver_installed_(false)
+    , running_(false)
     , rx_count_(0)
     , err_count_(0)
+    , bus_off_count_(0)
+    , recovery_count_(0)
+    , last_rx_ts_(0)
+    , last_ecm_response_ts_(0)
+    , last_tcm_response_ts_(0)
+    , state_(TWAI_STATE_STOPPED)
     , callback_(nullptr)
 {
 }
@@ -38,18 +45,26 @@ bool CanBusManager::init()
         Serial.printf("[CAN] Ошибка установки драйвера: %s\r\n", esp_err_to_name(err));
         return false;
     }
+    driver_installed_ = true;
 
     // Запуск контроллера
     err = twai_start();
     if (err != ESP_OK) {
         Serial.printf("[CAN] Ошибка запуска TWAI: %s\r\n", esp_err_to_name(err));
         twai_driver_uninstall();
+        driver_installed_ = false;
         return false;
     }
 
     running_   = true;
+    state_     = TWAI_STATE_RUNNING;
     rx_count_  = 0;
     err_count_ = 0;
+    bus_off_count_ = 0;
+    recovery_count_ = 0;
+    last_rx_ts_ = 0;
+    last_ecm_response_ts_ = 0;
+    last_tcm_response_ts_ = 0;
 
     Serial.printf("[CAN] Шина запущена. TX=GPIO%d, RX=GPIO%d, 500 кбит/с, режим: приём и передача\r\n",
                   static_cast<int>(CAN_TX_PIN), static_cast<int>(CAN_RX_PIN));
@@ -58,11 +73,13 @@ bool CanBusManager::init()
 
 void CanBusManager::stop()
 {
-    if (!running_) return;
+    if (!driver_installed_) return;
 
-    twai_stop();
+    if (running_) twai_stop();
     twai_driver_uninstall();
+    driver_installed_ = false;
     running_ = false;
+    state_ = TWAI_STATE_STOPPED;
     Serial.println("[CAN] Шина остановлена");
 }
 
@@ -91,13 +108,20 @@ bool CanBusManager::send_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
 
 void CanBusManager::handle()
 {
-    if (!running_) return;
+    if (!driver_installed_) return;
 
     twai_message_t msg;
 
     // Читаем все доступные фреймы без блокировки (таймаут = 0)
-    while (twai_receive(&msg, 0) == ESP_OK) {
+    while (running_ && twai_receive(&msg, 0) == ESP_OK) {
         rx_count_++;
+        last_rx_ts_ = millis();
+
+        if (msg.identifier == 0x7E8) {
+            last_ecm_response_ts_ = last_rx_ts_;
+        } else if (msg.identifier == 0x7E9) {
+            last_tcm_response_ts_ = last_rx_ts_;
+        }
 
         if (callback_) {
             CanFrame frame = to_frame(msg);
@@ -105,15 +129,41 @@ void CanBusManager::handle()
         }
     }
 
-    // Проверяем состояние шины и считаем ошибки
+    // Проверяем состояние шины и восстанавливаем контроллер после Bus-Off
     twai_status_info_t status;
     if (twai_get_status_info(&status) == ESP_OK) {
-        // Если контроллер попал в Bus-Off — перезапускаем
-        if (status.state == TWAI_STATE_BUS_OFF) {
+        if (status.state == TWAI_STATE_BUS_OFF && state_ != TWAI_STATE_BUS_OFF) {
+            running_ = false;
             err_count_++;
-            Serial.println("[CAN] Bus-Off! Попытка восстановления...");
-            twai_initiate_recovery();
+            bus_off_count_++;
+            state_ = TWAI_STATE_BUS_OFF;
+            Serial.println("[CAN] Bus-Off, запуск восстановления");
+
+            esp_err_t err = twai_initiate_recovery();
+            if (err == ESP_OK) {
+                state_ = TWAI_STATE_RECOVERING;
+            } else {
+                Serial.printf("[CAN] Ошибка запуска восстановления: %s\r\n", esp_err_to_name(err));
+            }
+            return;
         }
+
+        // После recovery драйвер переходит в STOPPED и требует явного twai_start
+        if (status.state == TWAI_STATE_STOPPED && state_ == TWAI_STATE_RECOVERING) {
+            esp_err_t err = twai_start();
+            if (err == ESP_OK) {
+                running_ = true;
+                state_ = TWAI_STATE_RUNNING;
+                recovery_count_++;
+                Serial.println("[CAN] Шина восстановлена и запущена");
+            } else {
+                Serial.printf("[CAN] Ошибка перезапуска после восстановления: %s\r\n", esp_err_to_name(err));
+            }
+            return;
+        }
+
+        state_ = status.state;
+        running_ = status.state == TWAI_STATE_RUNNING;
     }
 }
 
@@ -125,6 +175,49 @@ uint32_t CanBusManager::received_count() const
 uint32_t CanBusManager::error_count() const
 {
     return err_count_;
+}
+
+uint32_t CanBusManager::bus_off_count() const
+{
+    return bus_off_count_;
+}
+
+uint32_t CanBusManager::recovery_count() const
+{
+    return recovery_count_;
+}
+
+uint32_t CanBusManager::last_rx_ts() const
+{
+    return last_rx_ts_;
+}
+
+uint32_t CanBusManager::last_ecm_response_ts() const
+{
+    return last_ecm_response_ts_;
+}
+
+uint32_t CanBusManager::last_tcm_response_ts() const
+{
+    return last_tcm_response_ts_;
+}
+
+const char *CanBusManager::state_name() const
+{
+    if (!driver_installed_) return "not_installed";
+
+    switch (state_) {
+        case TWAI_STATE_STOPPED:
+            return "stopped";
+        case TWAI_STATE_RUNNING:
+            return "running";
+        case TWAI_STATE_BUS_OFF:
+            return "bus_off";
+        case TWAI_STATE_RECOVERING:
+            return "recovering";
+        default:
+            return "unknown";
+    }
 }
 
 bool CanBusManager::is_running() const

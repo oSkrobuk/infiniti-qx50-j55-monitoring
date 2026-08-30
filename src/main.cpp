@@ -10,6 +10,7 @@
 #include "WebManager.h"
 #include "BuzzerController.h"
 #include "AlertManager.h"
+#include "ResetHistory.h"
 #include "Version.h"
 
 // Выбор менеджера дисплея в зависимости от целевой платформы
@@ -231,6 +232,7 @@ void setup()
     Serial.println("=== Infiniti QX50 J55 Monitoring ===");
 
     config.init();
+    reset_history.init();
 
     // Версия прошивки (FW_VERSION из include/Version.h) — отображается внизу дисплея
     display.init(FW_VERSION);

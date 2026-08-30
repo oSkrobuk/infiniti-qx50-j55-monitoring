@@ -47,13 +47,38 @@ public:
     // Вернуть количество ошибок шины с момента запуска
     uint32_t error_count() const;
 
+    // Вернуть количество переходов контроллера в Bus-Off
+    uint32_t bus_off_count() const;
+
+    // Вернуть количество успешных перезапусков TWAI после Bus-Off
+    uint32_t recovery_count() const;
+
+    // Вернуть время последнего принятого CAN-кадра
+    uint32_t last_rx_ts() const;
+
+    // Вернуть время последнего ответа блока двигателя
+    uint32_t last_ecm_response_ts() const;
+
+    // Вернуть время последнего ответа блока трансмиссии
+    uint32_t last_tcm_response_ts() const;
+
+    // Вернуть текущее состояние контроллера в виде строки для диагностики
+    const char *state_name() const;
+
     // Вернуть true, если контроллер запущен и шина активна
     bool is_running() const;
 
 private:
+    bool             driver_installed_;
     bool             running_;
     uint32_t         rx_count_;
     uint32_t         err_count_;
+    uint32_t         bus_off_count_;
+    uint32_t         recovery_count_;
+    uint32_t         last_rx_ts_;
+    uint32_t         last_ecm_response_ts_;
+    uint32_t         last_tcm_response_ts_;
+    twai_state_t     state_;
     CanFrameCallback callback_;
 
     // Преобразовать twai_message_t → CanFrame

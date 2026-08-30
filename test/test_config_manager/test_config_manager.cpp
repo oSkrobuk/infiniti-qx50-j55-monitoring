@@ -8,10 +8,7 @@
 #include "ConfigManager.h"
 
 // Тесты конфигурации: заводские значения, откат при отсутствующих полях,
-// разделение чисел и строк, а также миграция файла при смене дефолтов.
-//
-// Последнее важнее всего: в файл пишется CRC32 от заводских значений, и любое
-// изменение build_defaults() обнуляет настройки на устройстве пользователя
+// разделение чисел и строк, а также поэлементная миграция при смене дефолтов
 
 void setUp(void)
 {
@@ -143,24 +140,34 @@ static void test_config_file_stores_defaults_hash(void)
     TEST_ASSERT_TRUE(doc["params"]["oil"]["max"].is<float>());
 }
 
-static void test_load_resets_config_when_defaults_changed(void)
+static void test_load_migrates_config_when_defaults_changed(void)
 {
     // Файл от прошивки с другими заводскими значениями: хеш не совпадет
     mock_fs_files["/config.json"] =
-        "{\"version\":1,\"params\":{\"oil\":{\"max\":105.0}}}";
+        "{\"version\":1,\"params\":{\"oil\":{\"max\":105.0},"
+        "\"wifi\":{\"ssid\":\"MyQX50\"},\"removed\":{\"field\":42}}}";
 
     ConfigManager cm;
     TEST_ASSERT_TRUE(cm.load_from_file());
 
-    // Пользовательское значение намеренно отброшено — это цена смены дефолтов
-    TEST_ASSERT_EQUAL_FLOAT(98.0f, cm.get("oil", "max"));
+    // Известные пользовательские значения сохранены, новых полей в старом файле
+    // нет, поэтому они берутся из актуальных заводских настроек
+    TEST_ASSERT_EQUAL_FLOAT(105.0f, cm.get("oil", "max"));
+    TEST_ASSERT_EQUAL_STRING("MyQX50", cm.get_str("wifi", "ssid").c_str());
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, cm.get("system", "brightness_percent"));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, cm.get("removed", "field"));
 
-    // Файл переписан с актуальным хешем: следующая загрузка уже не сбросится
-    ConfigManager reloaded;
-    reloaded.from_json("{\"oil\":{\"max\":103.0}}");
+    // Мигрированный файл переписан с актуальным хешем и полным набором полей
+    JsonDocument migrated;
+    TEST_ASSERT_FALSE(deserializeJson(migrated, mock_fs_files["/config.json"]));
+    TEST_ASSERT_NOT_EQUAL(1u, migrated["version"].as<uint32_t>());
+    TEST_ASSERT_EQUAL_FLOAT(105.0f, migrated["params"]["oil"]["max"].as<float>());
+    TEST_ASSERT_EQUAL_FLOAT(100.0f,
+                            migrated["params"]["system"]["brightness_percent"].as<float>());
+
     ConfigManager after;
-    after.load_from_file();
-    TEST_ASSERT_EQUAL_FLOAT(103.0f, after.get("oil", "max"));
+    TEST_ASSERT_TRUE(after.load_from_file());
+    TEST_ASSERT_EQUAL_FLOAT(105.0f, after.get("oil", "max"));
 }
 
 static void test_load_fails_on_corrupted_file(void)
@@ -223,7 +230,7 @@ int main(int, char **)
     RUN_TEST(test_save_and_load_round_trip);
     RUN_TEST(test_load_creates_file_when_missing);
     RUN_TEST(test_config_file_stores_defaults_hash);
-    RUN_TEST(test_load_resets_config_when_defaults_changed);
+    RUN_TEST(test_load_migrates_config_when_defaults_changed);
     RUN_TEST(test_load_fails_on_corrupted_file);
     RUN_TEST(test_reset_to_defaults);
     RUN_TEST(test_to_json_contains_all_sections);

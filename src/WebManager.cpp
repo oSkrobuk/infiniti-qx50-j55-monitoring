@@ -5,6 +5,7 @@
 #include "CanBusManager.h"
 #include "BuildInfo.h"
 #include "OtaSlots.h"
+#include "ResetHistory.h"
 #include "Version.h"
 #include <Update.h>
 #include <WiFi.h>
@@ -203,6 +204,14 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     color: var(--muted);
     margin-top: 10px;
     line-height: 1.5;
+  }
+  .hint {
+    display: block;
+    font-size: 0.68rem;
+    color: var(--muted);
+    margin-top: 6px;
+    line-height: 1.35;
+    white-space: normal;
   }
   /* ── OTA ─────────────────────────────────────────── */
   .ota-row {
@@ -582,6 +591,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
   <h1>&#9670; INFINITI QX50 J55 &#9670;</h1>
   <h2>MONITORING &mdash; Редактор конфигурации</h2>
   <a class="nav-link" href="/live">&#128202; Онлайн мониторинг &rarr;</a>
+  <a class="nav-link" href="/health">&#128295; Работоспособность устройства &rarr;</a>
 </header>
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
@@ -625,7 +635,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
             <input class="f-target" type="number" step="100" min="100" name="system_stale_ms" required>
           </div>
           <div class="field">
-            <label>Подсветка, %</label>
+            <label>Яркость подсветки, %</label>
             <select name="system_brightness_percent" required>
               <option value="10">10</option><option value="20">20</option>
               <option value="30">30</option><option value="40">40</option>
@@ -633,6 +643,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
               <option value="70">70</option><option value="80">80</option>
               <option value="90">90</option><option value="100" selected>100</option>
             </select>
+            <span class="hint">Регулировка работает только на дисплеях с входом BLK</span>
           </div>
         </div>
       </div>
@@ -2057,6 +2068,119 @@ loadAlerts();
 )rawhtml";
 
 // ─────────────────────────────────────────────
+// Страница работоспособности устройства (GET /health) — хранится во флеш (PROGMEM)
+
+static const char HEALTH_HTML[] PROGMEM = R"rawhtml(
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Работоспособность устройства</title>
+<style>
+  :root {
+    --bg:#0d0d0d; --card:#1a1a1a; --border:#333; --text:#eee;
+    --muted:#888; --accent:#d4af37; --ok:#4caf50; --warn:#ff9800; --danger:#f44336;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font-family:Arial,sans-serif; padding:0 16px 32px; }
+  header { max-width:960px; margin:0 auto 20px; padding:24px 0 18px; text-align:center; border-bottom:1px solid var(--border); }
+  h1 { color:var(--accent); font-size:1.35rem; letter-spacing:2px; text-transform:uppercase; }
+  .nav-link { display:inline-block; margin:12px 4px 0; padding:8px 16px; border:1px solid var(--accent); border-radius:8px; color:var(--accent); text-decoration:none; font-size:.8rem; }
+  .nav-link:hover { opacity:.75; }
+  .status { max-width:960px; margin:0 auto 16px; padding:10px 16px; border:1px solid var(--border); border-radius:8px; color:var(--muted); display:flex; align-items:center; gap:9px; font-size:.8rem; }
+  .status-dot { width:9px; height:9px; border-radius:50%; background:var(--warn); }
+  .status.online .status-dot { background:var(--ok); }
+  .status.offline .status-dot { background:var(--danger); }
+  .diagnostics { max-width:960px; margin:0 auto; padding:16px; background:var(--card); border:1px solid var(--border); border-radius:10px; }
+  .diag-head { display:flex; justify-content:space-between; gap:12px; margin-bottom:14px; }
+  .diag-title { color:var(--accent); font-size:.9rem; letter-spacing:1px; }
+  .diag-note,.diag-label,.diag-help,.reset-history-title { color:var(--muted); }
+  .diag-note,.reset-history-title { font-size:.72rem; }
+  .diag-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
+  .diag-item { padding:12px; background:#111; border:1px solid var(--border); border-radius:8px; }
+  .diag-label { font-size:.7rem; margin-bottom:6px; }
+  .diag-value { font-size:.9rem; overflow-wrap:anywhere; }
+  .diag-value.ok { color:var(--ok); }
+  .diag-value.warn { color:var(--warn); }
+  .diag-value.danger { color:var(--danger); }
+  .diag-help { font-size:.66rem; line-height:1.4; margin-top:6px; }
+  .reset-history { margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
+  .reset-history-title { margin-bottom:8px; }
+  .reset-history-list { display:flex; flex-wrap:wrap; gap:7px; }
+  .reset-history-item { padding:6px 9px; background:#111; border:1px solid var(--border); border-radius:6px; font-size:.72rem; }
+  .reset-history-item.danger { border-color:var(--danger); color:var(--danger); }
+  footer { text-align:center; color:var(--muted); font-size:.75rem; margin-top:28px; }
+  @media (max-width:700px) {
+    .diag-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .diag-head { flex-direction:column; gap:4px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>&#128295; Работоспособность устройства</h1>
+  <a class="nav-link" href="/">&larr; К настройкам</a>
+  <a class="nav-link" href="/live">&#128202; Онлайн мониторинг</a>
+</header>
+<div class="status" id="status"><span class="status-dot"></span><span id="statusText">Подключение...</span></div>
+<div class="diagnostics">
+  <div class="diag-head"><span class="diag-title">Состояние устройства</span><span class="diag-note">с момента последней загрузки</span></div>
+  <div class="diag-grid">
+    <div class="diag-item"><div class="diag-label">Причина запуска</div><div class="diag-value" id="diagReset">Загрузка...</div></div>
+    <div class="diag-item"><div class="diag-label">Состояние CAN</div><div class="diag-value" id="diagTwai">Загрузка...</div></div>
+    <div class="diag-item"><div class="diag-label">Сбоев Bus-Off</div><div class="diag-value" id="diagBusOff">0</div></div>
+    <div class="diag-item"><div class="diag-label">Восстановлений CAN</div><div class="diag-value" id="diagRecovery">0</div></div>
+    <div class="diag-item"><div class="diag-label">Последний CAN-кадр</div><div class="diag-value" id="diagCanAge">Никогда</div></div>
+    <div class="diag-item"><div class="diag-label">Последний ответ ECM</div><div class="diag-value" id="diagEcmAge">Никогда</div></div>
+    <div class="diag-item"><div class="diag-label">Последний ответ TCM</div><div class="diag-value" id="diagTcmAge">Никогда</div></div>
+    <div class="diag-item"><div class="diag-label">Яркость подсветки</div><div class="diag-value" id="diagBrightness">Загрузка...</div><div class="diag-help">Регулировка работает не на всех дисплеях: требуется вход BLK</div></div>
+  </div>
+  <div class="reset-history"><div class="reset-history-title">Последние загрузки, новые слева</div><div class="reset-history-list" id="resetHistory"><span class="reset-history-item">Загрузка...</span></div></div>
+</div>
+<footer>Infiniti QX50 J55 Monitoring &mdash; ESP32</footer>
+<script>
+const POLL_MS=1000;
+const statusEl=document.getElementById('status');
+const statusText=document.getElementById('statusText');
+let lastDeviceUptime=null;
+const RESET_REASON_NAMES={power_on:'Включение питания',external:'Внешний сброс',software:'Программная перезагрузка',panic:'Сбой прошивки (panic)',interrupt_watchdog:'Watchdog прерываний',task_watchdog:'Watchdog задачи',watchdog:'Watchdog',deep_sleep:'Выход из сна',brownout:'Просадка питания',sdio:'Сброс SDIO',unknown:'Причина неизвестна'};
+const TWAI_STATE_NAMES={not_installed:'Не инициализирован',stopped:'Остановлен',running:'Работает',bus_off:'Bus-Off',recovering:'Восстановление',unknown:'Состояние неизвестно'};
+function fmtUptime(ms){let s=Math.floor(ms/1000);const h=Math.floor(s/3600);s-=h*3600;const m=Math.floor(s/60);s-=m*60;const pad=n=>String(n).padStart(2,'0');return pad(h)+':'+pad(m)+':'+pad(s);}
+function fmtAge(ms){if(ms===null||ms===undefined)return 'Никогда';if(ms<1000)return Math.round(ms)+' мс назад';if(ms<60000)return(ms/1000).toFixed(1)+' с назад';return Math.floor(ms/60000)+' мин назад';}
+function setAge(id,ageMs,staleMs){const el=document.getElementById(id);el.textContent=fmtAge(ageMs);el.className='diag-value '+(ageMs!==null&&ageMs<=staleMs?'ok':'danger');}
+function isBadReset(reason){return reason==='brownout'||reason==='panic'||reason.includes('watchdog');}
+function render(data){
+  const reason=data.reset_reason||'unknown';const state=data.twai_state||'unknown';
+  const busOffCount=Number(data.can_bus_off_count||0);const recoveryCount=Number(data.can_recovery_count||0);
+  const reset=document.getElementById('diagReset');const twai=document.getElementById('diagTwai');
+  const busOff=document.getElementById('diagBusOff');const recovery=document.getElementById('diagRecovery');
+  reset.textContent=RESET_REASON_NAMES[reason]||reason;reset.className='diag-value '+(isBadReset(reason)?'danger':'ok');
+  twai.textContent=TWAI_STATE_NAMES[state]||state;twai.className='diag-value '+(state==='running'?'ok':(state==='recovering'?'warn':'danger'));
+  busOff.textContent=String(busOffCount);busOff.className='diag-value '+(busOffCount>0?'danger':'ok');
+  recovery.textContent=String(recoveryCount);recovery.className='diag-value '+(recoveryCount<busOffCount?'danger':(recoveryCount>0?'warn':'ok'));
+  document.getElementById('diagBrightness').textContent=data.brightness_percent+'%';
+  setAge('diagCanAge',data.can_last_rx_age_ms,data.stale_ms);setAge('diagEcmAge',data.ecm_last_response_age_ms,data.stale_ms);setAge('diagTcmAge',data.tcm_last_response_age_ms,data.stale_ms);
+}
+async function loadResetHistory(){
+  const list=document.getElementById('resetHistory');
+  try{const r=await fetch('/reset-history',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);const history=await r.json();
+    if(!history.length){list.innerHTML='<span class="reset-history-item">История пуста</span>';return;}
+    list.innerHTML=history.map((entry,index)=>{const reason=entry.reason||'unknown';const name=RESET_REASON_NAMES[reason]||reason;const prefix=index===0?'Сейчас':('−'+index);const cls=isBadReset(reason)?' danger':'';return '<span class="reset-history-item'+cls+'">'+prefix+': '+name+'</span>';}).join('');
+  }catch(e){list.innerHTML='<span class="reset-history-item danger">История недоступна</span>';}
+}
+async function tick(){
+  try{const r=await fetch('/metrics',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);const data=await r.json();render(data);statusEl.className='status online';statusText.textContent='В сети · v'+(data.version||'?')+' · аптайм '+fmtUptime(data.uptime_ms);const restarted=lastDeviceUptime!==null&&data.uptime_ms<lastDeviceUptime;lastDeviceUptime=data.uptime_ms;if(restarted)await loadResetHistory();}
+  catch(e){statusEl.className='status offline';statusText.textContent='Нет связи с устройством';}
+  finally{setTimeout(tick,POLL_MS);}
+}
+(async()=>{await tick();await loadResetHistory();})();
+</script>
+</body>
+</html>
+)rawhtml";
+
+// ─────────────────────────────────────────────
 // Страница онлайн мониторинга (GET /live) — хранится во флеш (PROGMEM)
 
 static const char LIVE_HTML[] PROGMEM = R"rawhtml(
@@ -2326,6 +2450,7 @@ static const char LIVE_HTML[] PROGMEM = R"rawhtml(
 <header>
   <h1>&#128202; Онлайн мониторинг</h1>
   <a class="nav-link" href="/">&larr; К настройкам</a>
+  <a class="nav-link" href="/health">&#128295; Работоспособность устройства</a>
 </header>
 
 <div class="status" id="status">
@@ -2689,7 +2814,9 @@ void WebManager::begin()
 
     server_.on("/",            HTTP_GET,  [this]() { handle_root(); });
     server_.on("/live",        HTTP_GET,  [this]() { handle_live_page(); });
+    server_.on("/health",      HTTP_GET,  [this]() { handle_health_page(); });
     server_.on("/metrics",     HTTP_GET,  [this]() { handle_get_metrics(); });
+    server_.on("/reset-history", HTTP_GET, [this]() { handle_get_reset_history(); });
     server_.on("/version",     HTTP_GET,  [this]() { handle_get_version(); });
     server_.on("/config",      HTTP_GET,  [this]() { handle_get_config(); });
     server_.on("/config",      HTTP_POST, [this]() { handle_post_config(); });
@@ -2770,6 +2897,11 @@ void WebManager::handle_live_page()
     server_.send_P(200, "text/html; charset=utf-8", LIVE_HTML);
 }
 
+void WebManager::handle_health_page()
+{
+    server_.send_P(200, "text/html; charset=utf-8", HEALTH_HTML);
+}
+
 void WebManager::handle_get_version()
 {
     // Слот, из которого загрузилась работающая прошивка: ota_0 или ota_1
@@ -2802,13 +2934,35 @@ void WebManager::handle_get_metrics()
     const float rpm       = rpm_fresh ? can_metrics.engine_rpm : 0.0f;
 
     String json;
-    json.reserve(1700);
+    json.reserve(1850);
     json += "{\"version\":\"";
     json += FW_VERSION;
     json += "\",\"uptime_ms\":";
     json += String(millis());
     json += ",\"stale_ms\":";
     json += String(stale_ms);
+    json += ",\"brightness_percent\":";
+    json += String(config.get("system", "brightness_percent"), 0);
+    json += ",\"reset_reason\":\"";
+    json += reset_history.current_reason_name();
+    json += "\",\"reset_reason_code\":";
+    json += String(static_cast<int>(reset_history.current_reason()));
+    json += ",\"twai_state\":\"";
+    json += can_bus.state_name();
+    json += "\",\"can_bus_off_count\":";
+    json += String(can_bus.bus_off_count());
+    json += ",\"can_recovery_count\":";
+    json += String(can_bus.recovery_count());
+    const uint32_t now = millis();
+    const uint32_t last_rx_ts = can_bus.last_rx_ts();
+    const uint32_t last_ecm_response_ts = can_bus.last_ecm_response_ts();
+    const uint32_t last_tcm_response_ts = can_bus.last_tcm_response_ts();
+    json += ",\"can_last_rx_age_ms\":";
+    json += last_rx_ts == 0 ? "null" : String(now - last_rx_ts);
+    json += ",\"ecm_last_response_age_ms\":";
+    json += last_ecm_response_ts == 0 ? "null" : String(now - last_ecm_response_ts);
+    json += ",\"tcm_last_response_age_ms\":";
+    json += last_tcm_response_ts == 0 ? "null" : String(now - last_tcm_response_ts);
     json += ",\"metrics\":[";
 
     // ── Температуры ──
@@ -2875,6 +3029,11 @@ void WebManager::handle_get_metrics()
 
     json += "]}";
     server_.send(200, "application/json", json);
+}
+
+void WebManager::handle_get_reset_history()
+{
+    server_.send(200, "application/json", reset_history.to_json());
 }
 
 void WebManager::handle_get_config()

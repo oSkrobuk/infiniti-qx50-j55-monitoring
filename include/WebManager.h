@@ -77,8 +77,13 @@ private:
 
     // Метрики: GET /live — отдельная страница живого просмотра метрик
     void handle_live_page();
+    // Диагностика: GET /health — отдельная страница состояния устройства
+    void handle_health_page();
     // Метрики: GET /metrics — текущие значения метрик с CAN-шины (JSON)
     void handle_get_metrics();
+
+    // Диагностика: GET /reset-history — постоянный журнал причин загрузки
+    void handle_get_reset_history();
 
     // Версия: GET /version — версия прошивки, метка сборки, слот OTA, окружение, аптайм (JSON)
     void handle_get_version();

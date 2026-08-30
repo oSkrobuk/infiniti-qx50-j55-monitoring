@@ -4,11 +4,20 @@
 #include "MetricColors.h"
 
 DisplayManager::DisplayManager()
-    : tft_(TFT_eSPI()), alert_visible_(false), alert_indicator_(false)
+    : tft_(TFT_eSPI()), alert_visible_(false), alert_indicator_(false), brightness_duty_(0)
 {
     version_buf_[0]      = '\0';
     drawn_alert_code_[0] = '\0';
 }
+
+// Пин BLK внешнего ST7789 на ESP32 DEVKIT1
+static constexpr uint8_t DISPLAY_BL_PIN = 27;
+static constexpr uint8_t DISPLAY_BL_LEDC_CHANNEL = 2;
+static constexpr uint32_t DISPLAY_BL_LEDC_FREQ_HZ = 5000;
+static constexpr uint8_t DISPLAY_BL_LEDC_BITS = 8;
+static constexpr uint8_t DISPLAY_BL_MAX_DUTY = 255;
+static constexpr float BRIGHTNESS_MIN_PERCENT = 10.0f;
+static constexpr float BRIGHTNESS_MAX_PERCENT = 100.0f;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Внутренний метод: рисует все статические заголовки и лейблы
@@ -79,6 +88,10 @@ void DisplayManager::draw_header_()
 
 void DisplayManager::init(const char *version)
 {
+    ledcSetup(DISPLAY_BL_LEDC_CHANNEL, DISPLAY_BL_LEDC_FREQ_HZ, DISPLAY_BL_LEDC_BITS);
+    ledcAttachPin(DISPLAY_BL_PIN, DISPLAY_BL_LEDC_CHANNEL);
+    update_brightness_();
+
     tft_.init();
     // TFT_eSPI принимает 0..3 и сам берет остаток от деления на 4:
     // раньше здесь стояло 90, что давало ту же ориентацию 90 % 4 = 2
@@ -90,6 +103,24 @@ void DisplayManager::init(const char *version)
     }
 
     draw_static_();
+}
+
+void DisplayManager::update_brightness_()
+{
+    float brightness_percent = config.get("system", "brightness_percent");
+    if (brightness_percent < BRIGHTNESS_MIN_PERCENT) {
+        brightness_percent = BRIGHTNESS_MIN_PERCENT;
+    } else if (brightness_percent > BRIGHTNESS_MAX_PERCENT) {
+        brightness_percent = BRIGHTNESS_MAX_PERCENT;
+    }
+
+    const uint8_t duty = static_cast<uint8_t>(
+        ((brightness_percent / 100.0f) * DISPLAY_BL_MAX_DUTY) + 0.5f);
+
+    if (duty != brightness_duty_) {
+        brightness_duty_ = duty;
+        ledcWrite(DISPLAY_BL_LEDC_CHANNEL, brightness_duty_);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -239,6 +270,8 @@ void DisplayManager::update_metrics(float coolant, float oil, float coolant_r,
                                     float poll_time, float battery_voltage)
 {
     char buf[12];
+
+    update_brightness_();
 
     // Антифриз радиатора
     uint16_t radiator_color = get_temperature_color(coolant_r,

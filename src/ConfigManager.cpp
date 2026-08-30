@@ -66,7 +66,7 @@ static void build_defaults(JsonDocument &doc)
     // Системные параметры CAN-опроса и дисплея
     // poll_interval_ms   — пауза между отправками UDS-запросов (мс)
     // stale_ms           — через сколько мс без обновления значение считается устаревшим
-    // brightness_percent — яркость подсветки WT32 в процентах
+    // brightness_percent — яркость управляемой подсветки дисплея в процентах
     doc["system"]["poll_interval_ms"]   = 30.0f;
     doc["system"]["stale_ms"]           = 1000.0f;
     doc["system"]["brightness_percent"] = 100.0f;
@@ -195,30 +195,34 @@ bool ConfigManager::load_from_file()
         return false;
     }
 
-    // Сравниваем хеш дефолтов из файла с текущим хешем дефолтов в коде
-    // Если значения по умолчанию изменились — перезаписываем файл
+    // Хеш нужен только для обнаружения миграции, но не для сброса настроек
     uint32_t file_hash    = doc["version"] | 0u;
     uint32_t current_hash = defaults_hash();
 
-    if (file_hash != current_hash) {
-        Serial.printf("[Config] Значения по умолчанию изменились (hash %08X -> %08X), сбрасываем конфиг\r\n",
-                      file_hash, current_hash);
-        return save_to_file();
-    }
-
-    // Загружаем params поверх дефолтов: неизвестные поля просто игнорируются
-    // Строки (wifi ssid/password) сохраняются как строки, числа — как float
+    // Начинаем с актуальных значений по умолчанию и переносим из файла каждое
+    // известное поле отдельно. Новые поля получают дефолт, удаленные игнорируются,
+    // а сохраненные пользовательские значения не теряются при обновлении прошивки
+    apply_defaults();
     JsonObjectConst params = doc["params"].as<JsonObjectConst>();
-    for (JsonPairConst section : params) {
-        JsonObjectConst fields = section.value().as<JsonObjectConst>();
-        for (JsonPairConst field : fields) {
-            JsonVariantConst v = field.value();
-            if (v.is<const char *>()) {
-                data_[section.key()][field.key()] = v.as<const char *>();
-            } else {
-                data_[section.key()][field.key()] = v.as<float>();
+    JsonObjectConst defaults = defaults_doc().as<JsonObjectConst>();
+    for (JsonPairConst default_section : defaults) {
+        JsonObjectConst default_fields = default_section.value().as<JsonObjectConst>();
+        for (JsonPairConst default_field : default_fields) {
+            JsonVariantConst saved = params[default_section.key()][default_field.key()];
+            if (saved.isNull()) continue;
+
+            JsonVariantConst fallback = default_field.value();
+            if (fallback.is<const char *>() && saved.is<const char *>()) {
+                data_[default_section.key()][default_field.key()] = saved.as<const char *>();
+            } else if (fallback.is<float>() && saved.is<float>()) {
+                data_[default_section.key()][default_field.key()] = saved.as<float>();
             }
         }
+    }
+
+    if (file_hash != current_hash) {
+        Serial.printf("[Config] Миграция настроек (hash %08X -> %08X)\r\n", file_hash, current_hash);
+        return save_to_file();
     }
 
     Serial.println("[Config] Конфигурация загружена");
