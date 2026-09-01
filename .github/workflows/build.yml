@@ -160,6 +160,14 @@ jobs:
             echo "::warning::Занято больше 90% слота OTA"
           fi
 
+      - name: Check firmware marker
+        run: |
+          IMAGE=".pio/build/${{ matrix.env }}/firmware.bin"
+          if ! grep -aFq 'QX50-FW-TAG:' "$IMAGE"; then
+            echo "::error::В firmware.bin нет маркера QX50-FW-TAG"
+            exit 1
+          fi
+
       - name: Upload binaries
         uses: actions/upload-artifact@v6
         with:

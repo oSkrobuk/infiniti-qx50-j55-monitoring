@@ -10,6 +10,7 @@
 #include "WebManager.h"
 #include "BuzzerController.h"
 #include "AlertManager.h"
+#include "OtaImage.h"
 #include "ResetHistory.h"
 #include "Version.h"
 
@@ -245,6 +246,7 @@ void setup()
 
     Serial.printf("[HOOK] Пассивный перехват всех CAN ID, Serial %lu\r\n",
                   static_cast<unsigned long>(DID_HOOK_SERIAL_BAUD));
+    Serial.printf("[HOOK] Firmware marker: %s\r\n", FW_IMAGE_TAG);
     Serial.println("=====================================");
     return;
 #else
