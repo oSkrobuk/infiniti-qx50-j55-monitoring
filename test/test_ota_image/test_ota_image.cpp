@@ -270,6 +270,8 @@ static void test_ota_env_compatibility(void)
     TEST_ASSERT_TRUE(ota_envs_compatible("esp32", "esp32"));
     TEST_ASSERT_TRUE(ota_envs_compatible("esp32", "esp32-mock"));
     TEST_ASSERT_TRUE(ota_envs_compatible("esp32-mock", "esp32"));
+    TEST_ASSERT_TRUE(ota_envs_compatible("esp32", "esp32-hook"));
+    TEST_ASSERT_TRUE(ota_envs_compatible("esp32-hook", "esp32-mock"));
     TEST_ASSERT_TRUE(ota_envs_compatible("esp32s3-wt32", "esp32s3-wt32-mock"));
     TEST_ASSERT_TRUE(ota_envs_compatible("esp32s3-wt32-mock", "esp32s3-wt32"));
 

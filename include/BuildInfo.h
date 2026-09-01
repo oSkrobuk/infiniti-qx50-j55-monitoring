@@ -8,6 +8,8 @@
 #define BUILD_ENV "esp32s3-wt32-mock"
 #elif defined(DISPLAY_WT32_S3)
 #define BUILD_ENV "esp32s3-wt32"
+#elif defined(DID_HOOK_MODE)
+#define BUILD_ENV "esp32-hook"
 #elif defined(USE_MOCK_DATA)
 #define BUILD_ENV "esp32-mock"
 #else

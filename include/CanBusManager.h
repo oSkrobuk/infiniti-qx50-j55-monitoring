@@ -92,3 +92,6 @@ extern CanBusManager can_bus;
 // HEX, DEC, u16/i16 BE+LE, u32 BE+LE, f32 LE для каждого смещения
 // Используется как колбэк по умолчанию для анализа шины
 void can_print_frame(const CanFrame &frame);
+
+// Вывести диагностический UDS-кадр для пассивного перехвата DID
+void can_print_did_hook_frame(const CanFrame &frame);

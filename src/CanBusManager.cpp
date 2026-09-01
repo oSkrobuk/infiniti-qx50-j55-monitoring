@@ -27,9 +27,15 @@ bool CanBusManager::init()
 {
     Serial.println("[CAN] Инициализация TWAI (SN65HVD230)...");
 
-    // Конфигурация пинов (нормальный режим — нужен для отправки UDS-запросов)
+    // В режиме хука контроллер только слушает шину и не подтверждает кадры
+#ifdef DID_HOOK_MODE
+    twai_general_config_t g_config =
+        TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_PIN, CAN_RX_PIN, TWAI_MODE_LISTEN_ONLY);
+#else
+    // Нормальный режим нужен для отправки UDS-запросов
     twai_general_config_t g_config =
         TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_PIN, CAN_RX_PIN, TWAI_MODE_NORMAL);
+#endif
     g_config.rx_queue_len = 128; // Увеличенная очередь для плотного трафика шины
     g_config.tx_queue_len = 16;  // Очередь отправки для UDS-запросов
 
@@ -66,8 +72,13 @@ bool CanBusManager::init()
     last_ecm_response_ts_ = 0;
     last_tcm_response_ts_ = 0;
 
-    Serial.printf("[CAN] Шина запущена. TX=GPIO%d, RX=GPIO%d, 500 кбит/с, режим: приём и передача\r\n",
+#ifdef DID_HOOK_MODE
+    Serial.printf("[CAN] Шина запущена  TX=GPIO%d, RX=GPIO%d, 500 кбит/с, режим: только прием\r\n",
                   static_cast<int>(CAN_TX_PIN), static_cast<int>(CAN_RX_PIN));
+#else
+    Serial.printf("[CAN] Шина запущена  TX=GPIO%d, RX=GPIO%d, 500 кбит/с, режим: прием и передача\r\n",
+                  static_cast<int>(CAN_TX_PIN), static_cast<int>(CAN_RX_PIN));
+#endif
     return true;
 }
 
@@ -260,4 +271,71 @@ void can_print_frame(const CanFrame &frame)
 
     // --- Декодирование известных фреймов QX50 J55 ---
     can_parse_known_frames(frame);
+}
+
+// -----------------------------------------------------------------------------
+// can_print_did_hook_frame — пассивный вывод диагностических ISO-TP кадров
+// -----------------------------------------------------------------------------
+void can_print_did_hook_frame(const CanFrame &frame)
+{
+    const bool is_functional_request = frame.id == 0x7DF;
+    const bool is_physical_request = frame.id >= 0x7E0 && frame.id <= 0x7E7;
+    const bool is_response = frame.id >= 0x7E8 && frame.id <= 0x7EF;
+    const bool is_diagnostic = is_functional_request || is_physical_request || is_response;
+
+    const uint8_t dlc = frame.dlc > 8 ? 8 : frame.dlc;
+    const uint8_t *d = frame.data;
+    const char *direction = is_response ? "RESPONSE" : (is_diagnostic ? "REQUEST" : "CAN");
+    const uint8_t pci_type = dlc > 0 ? d[0] >> 4 : 0xFF;
+    const char *frame_type = nullptr;
+    int8_t service_index = -1;
+
+    if (is_diagnostic && pci_type == 0x0) {
+        frame_type = "SINGLE";
+        service_index = 1;
+    } else if (is_diagnostic && pci_type == 0x1) {
+        frame_type = "FIRST";
+        service_index = 2;
+    } else if (is_diagnostic && pci_type == 0x2) {
+        frame_type = "CONSECUTIVE";
+    } else if (is_diagnostic && pci_type == 0x3) {
+        frame_type = "FLOW_CONTROL";
+    }
+
+    Serial.printf("[HOOK] %10lu %s ID=0x%03lX DLC=%u",
+                  static_cast<unsigned long>(millis()), direction,
+                  static_cast<unsigned long>(frame.id), dlc);
+
+    if (frame_type != nullptr) {
+        Serial.printf(" ISO-TP=%s", frame_type);
+    }
+
+    if (service_index >= 0 && service_index < dlc) {
+        const uint8_t service = d[service_index];
+        Serial.printf(" SERVICE=0x%02X", service);
+
+        const bool has_did = service == 0x22 || service == 0x2E || service == 0x2F || service == 0x62 ||
+                             service == 0x6E || service == 0x6F;
+        if (has_did && service_index + 2 < dlc) {
+            const uint16_t did = (static_cast<uint16_t>(d[service_index + 1]) << 8) |
+                                 d[service_index + 2];
+            Serial.printf(" DID=0x%04X", did);
+        } else if (service == 0x7F && service_index + 2 < dlc) {
+            Serial.printf(" REJECTED_SERVICE=0x%02X NRC=0x%02X",
+                          d[service_index + 1], d[service_index + 2]);
+        }
+    }
+
+    Serial.print(" HEX=");
+    for (uint8_t i = 0; i < dlc; ++i) {
+        if (i > 0) Serial.print(' ');
+        Serial.printf("%02X", d[i]);
+    }
+
+    Serial.print(" DEC=");
+    for (uint8_t i = 0; i < dlc; ++i) {
+        if (i > 0) Serial.print(' ');
+        Serial.printf("%u", d[i]);
+    }
+    Serial.println();
 }

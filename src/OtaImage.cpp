@@ -138,7 +138,8 @@ static uint8_t ota_env_family(const char *env)
 {
     if (env == nullptr) return 0;
 
-    if (strcmp(env, "esp32") == 0 || strcmp(env, "esp32-mock") == 0) return 1;
+    if (strcmp(env, "esp32") == 0 || strcmp(env, "esp32-mock") == 0 ||
+        strcmp(env, "esp32-hook") == 0) return 1;
 
     if (strcmp(env, "esp32s3-wt32") == 0 || strcmp(env, "esp32s3-wt32-mock") == 0) return 2;
 

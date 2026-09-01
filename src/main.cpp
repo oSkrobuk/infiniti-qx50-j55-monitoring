@@ -228,7 +228,26 @@ static void poll_handle()
 
 void setup()
 {
+#ifdef DID_HOOK_MODE
+    Serial.begin(DID_HOOK_SERIAL_BAUD);
+#else
     Serial.begin(115200);
+#endif
+#ifdef DID_HOOK_MODE
+    Serial.println("=== Infiniti QX50 J55 DID Hook ===");
+
+    config.init();
+    display.init(FW_VERSION);
+    display.show_alert("HOOK", "DID\nHOOK MODE\nSERIAL LOG");
+
+    can_bus.on_frame(can_print_did_hook_frame);
+    can_bus.init();
+
+    Serial.printf("[HOOK] Пассивный перехват всех CAN ID, Serial %lu\r\n",
+                  static_cast<unsigned long>(DID_HOOK_SERIAL_BAUD));
+    Serial.println("=====================================");
+    return;
+#else
     Serial.println("=== Infiniti QX50 J55 Monitoring ===");
 
     config.init();
@@ -262,10 +281,15 @@ void setup()
 
     // Звук загрузки, как у BIOS
     buzzer.hello();
+#endif
 }
 
 void loop()
 {
+#ifdef DID_HOOK_MODE
+    can_bus.handle();
+    delay(1);
+#else
     // Общее состояние делим с веб-задачей — держим мьютекс всю итерацию.
     // Итерация короткая (десятки микросекунд, раз в 100 мс — отрисовка),
     // поэтому веб-задача почти никогда не ждет на этом мьютексе
@@ -392,4 +416,5 @@ void loop()
     }
 
     state_unlock();
+#endif
 }
