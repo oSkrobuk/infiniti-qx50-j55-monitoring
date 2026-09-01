@@ -2162,6 +2162,7 @@ static const char HEALTH_HTML[] PROGMEM = R"rawhtml(
   <div class="diag-grid">
     <div class="diag-item"><div class="diag-label">Причина запуска</div><div class="diag-value" id="diagReset">Загрузка...</div></div>
     <div class="diag-item"><div class="diag-label">Состояние CAN</div><div class="diag-value" id="diagTwai">Загрузка...</div></div>
+    <div class="diag-item"><div class="diag-label">Принято CAN-кадров</div><div class="diag-value" id="diagCanCount">0</div></div>
     <div class="diag-item"><div class="diag-label">Сбоев Bus-Off</div><div class="diag-value" id="diagBusOff">0</div></div>
     <div class="diag-item"><div class="diag-label">Восстановлений CAN</div><div class="diag-value" id="diagRecovery">0</div></div>
     <div class="diag-item"><div class="diag-label">Последний CAN-кадр</div><div class="diag-value" id="diagCanAge">Никогда</div></div>
@@ -2187,9 +2188,11 @@ function render(data){
   const reason=data.reset_reason||'unknown';const state=data.twai_state||'unknown';
   const busOffCount=Number(data.can_bus_off_count||0);const recoveryCount=Number(data.can_recovery_count||0);
   const reset=document.getElementById('diagReset');const twai=document.getElementById('diagTwai');
+  const canCount=document.getElementById('diagCanCount');
   const busOff=document.getElementById('diagBusOff');const recovery=document.getElementById('diagRecovery');
   reset.textContent=RESET_REASON_NAMES[reason]||reason;reset.className='diag-value '+(isBadReset(reason)?'danger':'ok');
   twai.textContent=TWAI_STATE_NAMES[state]||state;twai.className='diag-value '+(state==='running'?'ok':(state==='recovering'?'warn':'danger'));
+  canCount.textContent=String(Number(data.can_received_count||0));canCount.className='diag-value '+(Number(data.can_received_count||0)>0?'ok':'danger');
   busOff.textContent=String(busOffCount);busOff.className='diag-value '+(busOffCount>0?'danger':'ok');
   recovery.textContent=String(recoveryCount);recovery.className='diag-value '+(recoveryCount<busOffCount?'danger':(recoveryCount>0?'warn':'ok'));
   document.getElementById('diagBrightness').textContent=data.brightness_percent+'%';
@@ -2986,6 +2989,8 @@ void WebManager::handle_get_metrics()
     json += String(can_bus.bus_off_count());
     json += ",\"can_recovery_count\":";
     json += String(can_bus.recovery_count());
+    json += ",\"can_received_count\":";
+    json += String(can_bus.received_count());
     const uint32_t now = millis();
     const uint32_t last_rx_ts = can_bus.last_rx_ts();
     const uint32_t last_ecm_response_ts = can_bus.last_ecm_response_ts();

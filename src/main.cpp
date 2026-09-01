@@ -238,15 +238,20 @@ void setup()
     Serial.println("=== Infiniti QX50 J55 DID Hook ===");
 
     config.init();
+    reset_history.init();
     display.init(FW_VERSION);
     display.show_alert("HOOK", "DID\nHOOK MODE\nSERIAL LOG");
+    web.begin();
+    alert_manager.init();
 
     can_bus.on_frame(can_print_did_hook_frame);
     can_bus.init();
+    web_task_start();
 
     Serial.printf("[HOOK] Пассивный перехват всех CAN ID, Serial %lu\r\n",
                   static_cast<unsigned long>(DID_HOOK_SERIAL_BAUD));
     Serial.printf("[HOOK] Firmware marker: %s\r\n", FW_IMAGE_TAG);
+    Serial.printf("[Web] Адрес веб-интерфейса: http://%s\r\n", web.get_ip().c_str());
     Serial.println("=====================================");
     return;
 #else
@@ -289,7 +294,23 @@ void setup()
 void loop()
 {
 #ifdef DID_HOOK_MODE
+    if (!s_web_in_task) {
+        web.handle();
+    }
+
     can_bus.handle();
+
+    static uint32_t s_last_hook_status_ms = 0;
+    const uint32_t now = millis();
+    if (now - s_last_hook_status_ms >= 2000) {
+        s_last_hook_status_ms = now;
+        Serial.printf("[HOOK] CAN state=%s RX=%lu errors=%lu bus_off=%lu\r\n",
+                      can_bus.state_name(),
+                      static_cast<unsigned long>(can_bus.received_count()),
+                      static_cast<unsigned long>(can_bus.error_count()),
+                      static_cast<unsigned long>(can_bus.bus_off_count()));
+    }
+
     delay(1);
 #else
     // Общее состояние делим с веб-задачей — держим мьютекс всю итерацию.
