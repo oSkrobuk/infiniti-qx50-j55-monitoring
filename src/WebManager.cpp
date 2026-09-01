@@ -2168,6 +2168,7 @@ static const char HEALTH_HTML[] PROGMEM = R"rawhtml(
     <div class="diag-item"><div class="diag-label">Последний CAN-кадр</div><div class="diag-value" id="diagCanAge">Никогда</div></div>
     <div class="diag-item"><div class="diag-label">Последний ответ ECM</div><div class="diag-value" id="diagEcmAge">Никогда</div></div>
     <div class="diag-item"><div class="diag-label">Последний ответ TCM</div><div class="diag-value" id="diagTcmAge">Никогда</div></div>
+    <div class="diag-item"><div class="diag-label">Внешний свет</div><div class="diag-value" id="diagLight">Нет данных</div></div>
     <div class="diag-item"><div class="diag-label">Яркость подсветки</div><div class="diag-value" id="diagBrightness">Загрузка...</div><div class="diag-help">Регулировка работает не на всех дисплеях: требуется вход BLK</div></div>
   </div>
   <div class="reset-history"><div class="reset-history-title">Последние загрузки, новые слева</div><div class="reset-history-list" id="resetHistory"><span class="reset-history-item">Загрузка...</span></div></div>
@@ -2175,6 +2176,7 @@ static const char HEALTH_HTML[] PROGMEM = R"rawhtml(
 <footer>Infiniti QX50 J55 Monitoring &mdash; ESP32</footer>
 <script>
 const POLL_MS=1000;
+const LIGHT_STALE_MS=15000;
 const statusEl=document.getElementById('status');
 const statusText=document.getElementById('statusText');
 let lastDeviceUptime=null;
@@ -2195,6 +2197,9 @@ function render(data){
   canCount.textContent=String(Number(data.can_received_count||0));canCount.className='diag-value '+(Number(data.can_received_count||0)>0?'ok':'danger');
   busOff.textContent=String(busOffCount);busOff.className='diag-value '+(busOffCount>0?'danger':'ok');
   recovery.textContent=String(recoveryCount);recovery.className='diag-value '+(recoveryCount<busOffCount?'danger':(recoveryCount>0?'warn':'ok'));
+  const light=document.getElementById('diagLight');const lightAge=data.exterior_light_age_ms;
+  if(lightAge===null||lightAge===undefined){light.textContent='Нет данных';light.className='diag-value danger';}
+  else{light.textContent=(data.exterior_light_on?'Включен':'Выключен')+' · '+fmtAge(lightAge);light.className='diag-value '+(lightAge<=LIGHT_STALE_MS?'ok':'danger');}
   document.getElementById('diagBrightness').textContent=data.brightness_percent+'%';
   setAge('diagCanAge',data.can_last_rx_age_ms,data.stale_ms);setAge('diagEcmAge',data.ecm_last_response_age_ms,data.stale_ms);setAge('diagTcmAge',data.tcm_last_response_age_ms,data.stale_ms);
 }
@@ -2995,12 +3000,17 @@ void WebManager::handle_get_metrics()
     const uint32_t last_rx_ts = can_bus.last_rx_ts();
     const uint32_t last_ecm_response_ts = can_bus.last_ecm_response_ts();
     const uint32_t last_tcm_response_ts = can_bus.last_tcm_response_ts();
+    const uint32_t exterior_light_ts = can_metrics.exterior_light_ts;
     json += ",\"can_last_rx_age_ms\":";
     json += last_rx_ts == 0 ? "null" : String(now - last_rx_ts);
     json += ",\"ecm_last_response_age_ms\":";
     json += last_ecm_response_ts == 0 ? "null" : String(now - last_ecm_response_ts);
     json += ",\"tcm_last_response_age_ms\":";
     json += last_tcm_response_ts == 0 ? "null" : String(now - last_tcm_response_ts);
+    json += ",\"exterior_light_on\":";
+    json += exterior_light_ts == 0 ? "null" : (can_metrics.exterior_light_on ? "true" : "false");
+    json += ",\"exterior_light_age_ms\":";
+    json += exterior_light_ts == 0 ? "null" : String(now - exterior_light_ts);
     json += ",\"metrics\":[";
 
     // ── Температуры ──

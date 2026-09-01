@@ -31,6 +31,23 @@ static CanFrame make_uds_frame(uint32_t id, uint16_t did,
     return f;
 }
 
+// Собрать First Frame многокадрового ответа блока состояния освещения
+static CanFrame make_light_frame(uint8_t status)
+{
+    CanFrame f = {};
+    f.id      = 0x763;
+    f.dlc     = 8;
+    f.data[0] = 0x10;
+    f.data[1] = 0x16;
+    f.data[2] = 0x62;
+    f.data[3] = 0x0E;
+    f.data[4] = 0x07;
+    f.data[5] = 0x00;
+    f.data[6] = status;
+    f.data[7] = 0x10;
+    return f;
+}
+
 void setUp(void)
 {
     can_metrics = CanMetrics{};
@@ -91,6 +108,18 @@ static void test_cvt_did_from_ecm_is_ignored(void)
     // Тот же DID, но от ECM (0x7E8) — не наш параметр, метрика не трогается
     can_parse_known_frames(make_uds_frame(0x7E8, 0x110C, 102));
     TEST_ASSERT_EQUAL_UINT32(0, can_metrics.cvt_temp_ts);
+}
+
+static void test_exterior_light_status_decoded(void)
+{
+    can_parse_known_frames(make_light_frame(0x0C));
+    TEST_ASSERT_FALSE(can_metrics.exterior_light_on);
+    TEST_ASSERT_EQUAL_UINT32(TEST_NOW_MS, can_metrics.exterior_light_ts);
+
+    mock_advance_millis(5000);
+    can_parse_known_frames(make_light_frame(0x1C));
+    TEST_ASSERT_TRUE(can_metrics.exterior_light_on);
+    TEST_ASSERT_EQUAL_UINT32(TEST_NOW_MS + 5000, can_metrics.exterior_light_ts);
 }
 
 // ── Обороты, наддув, давление масла, бортовая сеть ───────────────────────────
@@ -214,6 +243,7 @@ int main(int, char **)
     RUN_TEST(test_temperature_max_raw_byte);
     RUN_TEST(test_cvt_temp_decoded_from_tcm);
     RUN_TEST(test_cvt_did_from_ecm_is_ignored);
+    RUN_TEST(test_exterior_light_status_decoded);
 
     RUN_TEST(test_engine_rpm_decoded);
     RUN_TEST(test_engine_rpm_uses_both_bytes);

@@ -108,6 +108,18 @@ void can_parse_known_frames(const CanFrame &frame)
             }
             break;
         }
+        case 0x763: {
+            // Первый ISO-TP кадр ответа блока состояния освещения на DID 0x0E07
+            if (dlc < 7 || (d[0] & 0xF0) != 0x10) break;
+
+            const bool is_light_status = d[2] == 0x62 && d[3] == 0x0E && d[4] == 0x07;
+            if (is_light_status) {
+                // Второй байт данных DID: 0x0C = OFF, 0x1C = ON
+                can_metrics.exterior_light_on = (d[6] & 0x10) != 0;
+                can_metrics.exterior_light_ts = millis();
+            }
+            break;
+        }
         default:
             break;
     }

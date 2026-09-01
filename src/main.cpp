@@ -123,6 +123,9 @@ static void web_task_start()
 // Адреса блоков управления
 static constexpr uint32_t ECM_ID = 0x7E0; // Блок управления двигателем
 static constexpr uint32_t TCM_ID = 0x7E1; // Блок управления трансмиссией
+static constexpr uint32_t LIGHT_MODULE_ID = 0x743; // Блок состояния освещения
+static constexpr uint32_t LIGHT_RESPONSE_ID = 0x763; // Ответ блока состояния освещения
+static constexpr uint16_t LIGHT_STATUS_DID = 0x0E07;
 
 // Команда открытия расширенной диагностической сессии (0x10 0xC0)
 static const uint8_t CMD_SESSION_OPEN[8] = { 0x02, 0x10, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00 };
@@ -151,6 +154,7 @@ static constexpr uint8_t POLL_COUNT = sizeof(POLL_LIST) / sizeof(POLL_LIST[0]);
 
 // Интервал отправки Tester Present (мс)
 static constexpr uint32_t TESTER_PRESENT_INTERVAL_MS = 2000;
+static constexpr uint32_t LIGHT_POLL_INTERVAL_MS = 5000;
 
 // Текущий индекс в списке опроса
 static uint8_t  s_poll_idx       = 0;
@@ -160,6 +164,35 @@ static uint32_t s_last_poll_ms   = 0;
 
 // Таймер отправки Tester Present
 static uint32_t s_last_tp_ms     = 0;
+
+// Таймер проверки состояния освещения
+static uint32_t s_last_light_poll_ms = 0;
+
+// Принять ответы штатного мониторинга и завершить ISO-TP обмен с блоком света
+static void can_handle_monitor_frame(const CanFrame &frame)
+{
+    can_print_frame(frame);
+
+    if (frame.id != LIGHT_RESPONSE_ID || frame.dlc < 7) {
+        return;
+    }
+
+    const uint8_t *d = frame.data;
+    const bool is_first_frame = (d[0] & 0xF0) == 0x10;
+    const uint16_t payload_length = (static_cast<uint16_t>(d[0] & 0x0F) << 8) | d[1];
+    const bool is_light_status = d[2] == 0x62 && d[3] == static_cast<uint8_t>(LIGHT_STATUS_DID >> 8) &&
+                                 d[4] == static_cast<uint8_t>(LIGHT_STATUS_DID & 0xFF);
+    if (!is_first_frame || payload_length < 5 || !is_light_status) {
+        return;
+    }
+
+    // Разрешить блоку передать оставшиеся Consecutive Frame
+    const uint8_t flow_control[8] = { 0x30, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+    can_bus.send_frame(LIGHT_MODULE_ID, flow_control, 8);
+
+    // Второй байт данных DID: 0x0C = OFF, 0x1C = ON, меняется бит 0x10
+    Serial.printf("[Light] %s raw=0x%02X\r\n", can_metrics.exterior_light_on ? "ON" : "OFF", d[6]);
+}
 
 // Сформировать и отправить UDS ReadDataByIdentifier (Service 0x22) для заданного DID
 static void poll_send_request(uint32_t ecu_id, uint16_t did)
@@ -175,20 +208,23 @@ static void poll_send_request(uint32_t ecu_id, uint16_t did)
     can_bus.send_frame(ecu_id, req, 8);
 }
 
-// Открыть расширенную диагностическую сессию на обоих блоках (вызывается в setup)
+// Открыть расширенную диагностическую сессию на опрашиваемых блоках
 static void poll_open_session()
 {
     can_bus.send_frame(ECM_ID, CMD_SESSION_OPEN, 8);
-    delay(30); // небольшая пауза между двумя кадрами при инициализации
+    delay(30); // Небольшая пауза между кадрами при инициализации
     can_bus.send_frame(TCM_ID, CMD_SESSION_OPEN, 8);
-    Serial.println("[Poll] Расширенная сессия открыта (ECM + TCM)");
+    delay(30);
+    can_bus.send_frame(LIGHT_MODULE_ID, CMD_SESSION_OPEN, 8);
+    Serial.println("[Poll] Расширенная сессия открыта (ECM + TCM + LIGHT)");
 }
 
-// Отправить Tester Present на оба блока (неблокирующий вызов из loop)
+// Отправить Tester Present на опрашиваемые блоки
 static void poll_tester_present()
 {
     can_bus.send_frame(ECM_ID, CMD_TESTER_PRESENT, 8);
     can_bus.send_frame(TCM_ID, CMD_TESTER_PRESENT, 8);
+    can_bus.send_frame(LIGHT_MODULE_ID, CMD_TESTER_PRESENT, 8);
 }
 
 // Вызывается в loop() — обрабатывает один шаг планировщика
@@ -200,6 +236,12 @@ static void poll_handle()
     if (now - s_last_tp_ms >= TESTER_PRESENT_INTERVAL_MS) {
         s_last_tp_ms = now;
         poll_tester_present();
+    }
+
+    // Состояние освещения меняется редко, поэтому достаточно опроса раз в 5 секунд
+    if (now - s_last_light_poll_ms >= LIGHT_POLL_INTERVAL_MS) {
+        s_last_light_poll_ms = now;
+        poll_send_request(LIGHT_MODULE_ID, LIGHT_STATUS_DID);
     }
 
     // Циклический опрос параметров с паузой из конфига (system.poll_interval_ms)
@@ -269,15 +311,16 @@ void setup()
 
 #ifndef USE_MOCK_DATA
     // Инициализация CAN-шины (SN65HVD230 / WVCMCU-230)
-    can_bus.on_frame(can_print_frame);
+    can_bus.on_frame(can_handle_monitor_frame);
     can_bus.init();
 
-    // Открываем расширенную диагностическую сессию на ECM и TCM
+    // Открываем расширенную диагностическую сессию на опрашиваемых блоках
     poll_open_session();
 
     // Инициализируем таймеры планировщика
     s_last_poll_ms = millis();
     s_last_tp_ms   = millis();
+    s_last_light_poll_ms = millis();
 #endif
 
     // Все общее состояние готово — можно пускать HTTP-обработчики в свою задачу
