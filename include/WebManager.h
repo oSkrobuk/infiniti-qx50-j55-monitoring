@@ -77,10 +77,12 @@ private:
 
     // Метрики: GET /live — отдельная страница живого просмотра метрик
     void handle_live_page();
+    void handle_obd_page();
     // Диагностика: GET /health — отдельная страница состояния устройства
     void handle_health_page();
     // Метрики: GET /metrics — текущие значения метрик с CAN-шины (JSON)
     void handle_get_metrics();
+    void handle_get_obd_metrics();
 
     // Диагностика: GET /reset-history — постоянный журнал причин загрузки
     void handle_get_reset_history();

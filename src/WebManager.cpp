@@ -604,6 +604,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
   <h1>&#9670; INFINITI QX50 J55 &#9670;</h1>
   <h2>MONITORING &mdash; Редактор конфигурации</h2>
   <a class="nav-link" href="/live">&#128202; Онлайн мониторинг &rarr;</a>
+  <a class="nav-link" href="/obd">OBD-II PID &rarr;</a>
   <a class="nav-link" href="/health">&#128295; Работоспособность устройства &rarr;</a>
 </header>
 
@@ -2500,6 +2501,7 @@ static const char LIVE_HTML[] PROGMEM = R"rawhtml(
   <h1>&#128202; Онлайн мониторинг</h1>
   <a class="nav-link" href="/">&larr; К настройкам</a>
   <a class="nav-link" href="/health">&#128295; Работоспособность устройства</a>
+  <a class="nav-link" href="/obd">OBD-II PID</a>
 </header>
 
 <div class="status" id="status">
@@ -2701,6 +2703,26 @@ async function alertsTick() {
 </html>
 )rawhtml";
 
+static const char OBD_HTML[] PROGMEM = R"rawhtml(
+<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kanvex — OBD-II</title><style>
+:root{color-scheme:dark;--bg:#090d12;--card:#111821;--line:#293543;--gold:#d7aa55;--muted:#91a0af}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#edf2f7;font:15px system-ui,sans-serif}
+main{max-width:1000px;margin:auto;padding:24px}h1{font-size:24px;letter-spacing:.08em}a{color:var(--gold)}
+#status{color:var(--muted);margin:8px 0 20px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.card{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:14px}.pid{color:var(--gold);font:700 12px monospace}
+.name{min-height:38px;margin:6px 0;color:var(--muted)}.value{font:600 25px ui-monospace,monospace}.stale{opacity:.45}
+</style></head><body><main><a href="/">&larr; К настройкам</a><h1>OBD-II MODE 01</h1>
+<div id="status">Ожидание данных…</div><div id="grid" class="grid"></div></main><script>
+const statusEl=document.getElementById('status'),gridEl=document.getElementById('grid');
+function render(data){statusEl.textContent='Обновление раз в секунду · stale '+data.stale_ms+' мс';
+gridEl.innerHTML=data.metrics.map(m=>'<div class="card '+(m.fresh?'':'stale')+'"><div class="pid">PID '+m.pid+'</div><div class="name">'+m.name+'</div><div class="value">'+(m.value===null?'—':m.value.toFixed(m.precision))+' <small>'+m.unit+'</small></div></div>').join('')}
+async function update(){try{const r=await fetch('/obd-metrics',{cache:'no-store'});if(!r.ok)throw Error(r.status);render(await r.json())}catch(e){statusEl.textContent='Нет связи: '+e}}
+update();setInterval(update,1000);
+</script></body></html>
+)rawhtml";
+
 // ─────────────────────────────────────────────
 // Расчёт состояния метрики по порогам конфига — зеркалит логику зон DisplayManager,
 // но возвращает строковый код состояния для веб-интерфейса:
@@ -2798,6 +2820,44 @@ static void append_metric(String &out, const char *key, const char *label,
     out += "\"}";
 }
 
+struct ObdMetricDescriptor {
+    uint8_t pid;
+    const char *name;
+    const char *unit;
+    uint8_t precision;
+};
+
+static constexpr ObdMetricDescriptor OBD_DESCRIPTORS[] = {
+    {0x04, "Расчетная нагрузка", "%", 1}, {0x05, "Температура ОЖ", "°C", 0},
+    {0x06, "Краткая коррекция Bank 1", "%", 1}, {0x07, "Долгая коррекция Bank 1", "%", 1},
+    {0x0A, "Давление топлива", "кПа", 0}, {0x0B, "Давление во впуске", "кПа", 0},
+    {0x0C, "Обороты двигателя", "об/мин", 0}, {0x0D, "Скорость", "км/ч", 0},
+    {0x0E, "Опережение зажигания", "°", 1}, {0x0F, "Температура воздуха", "°C", 0},
+    {0x10, "Массовый расход воздуха", "г/с", 2}, {0x11, "Положение дросселя", "%", 1},
+    {0x1F, "Время работы двигателя", "с", 0}, {0x23, "Давление в рампе", "кПа", 0},
+    {0x24, "A/F Bank 1 Sensor 1", "λ", 3}, {0x25, "A/F Bank 1 Sensor 2", "λ", 3},
+    {0x2F, "Уровень топлива", "%", 1}, {0x33, "Атмосферное давление", "кПа", 0},
+    {0x3C, "Катализатор B1S1", "°C", 1}, {0x3D, "Катализатор B1S2", "°C", 1},
+    {0x42, "Напряжение блока", "В", 3}, {0x43, "Абсолютная нагрузка", "%", 1},
+    {0x44, "Заданное соотношение смеси", "λ", 3}, {0x46, "Наружная температура", "°C", 0},
+    {0x49, "Педаль газа D", "%", 1}, {0x4A, "Педаль газа E", "%", 1},
+    {0x4B, "Педаль газа F", "%", 1}, {0x4C, "Заданный дроссель", "%", 1},
+    {0x5C, "Температура масла ДВС", "°C", 0}, {0x5E, "Расход топлива", "л/ч", 2},
+    {0x61, "Запрошенный момент", "%", 0}, {0x62, "Фактический момент", "%", 0},
+    {0x63, "Опорный момент", "Н·м", 0}, {0x64, "Момент, точка 1", "%", 0},
+};
+
+static ObdMetricValue obd_metric_value(uint8_t pid)
+{
+    switch (pid) {
+        case 0x05: return {can_metrics.engine_coolant, can_metrics.engine_coolant_ts};
+        case 0x0C: return {can_metrics.engine_rpm, can_metrics.engine_rpm_ts};
+        case 0x42: return {can_metrics.battery_voltage, can_metrics.battery_voltage_ts};
+        case 0x5C: return {can_metrics.engine_oil, can_metrics.engine_oil_ts};
+        default: return pid < OBD_METRIC_CAPACITY ? can_metrics.obd[pid] : ObdMetricValue{};
+    }
+}
+
 // ─────────────────────────────────────────────
 
 // Не отдавать клиенту шлюз по DHCP — иначе телефон теряет мобильный интернет.
@@ -2863,8 +2923,10 @@ void WebManager::begin()
 
     server_.on("/",            HTTP_GET,  [this]() { handle_root(); });
     server_.on("/live",        HTTP_GET,  [this]() { handle_live_page(); });
+    server_.on("/obd",         HTTP_GET,  [this]() { handle_obd_page(); });
     server_.on("/health",      HTTP_GET,  [this]() { handle_health_page(); });
     server_.on("/metrics",     HTTP_GET,  [this]() { handle_get_metrics(); });
+    server_.on("/obd-metrics", HTTP_GET,  [this]() { handle_get_obd_metrics(); });
     server_.on("/reset-history", HTTP_GET, [this]() { handle_get_reset_history(); });
     server_.on("/version",     HTTP_GET,  [this]() { handle_get_version(); });
     server_.on("/config",      HTTP_GET,  [this]() { handle_get_config(); });
@@ -2944,6 +3006,11 @@ void WebManager::handle_root()
 void WebManager::handle_live_page()
 {
     server_.send_P(200, "text/html; charset=utf-8", LIVE_HTML);
+}
+
+void WebManager::handle_obd_page()
+{
+    server_.send_P(200, "text/html; charset=utf-8", OBD_HTML);
 }
 
 void WebManager::handle_health_page()
@@ -3093,6 +3160,42 @@ void WebManager::handle_get_metrics()
                 config.get("transmission", "max")) : "nodata");
     }
 
+    json += "]}";
+    server_.send(200, "application/json", json);
+}
+
+void WebManager::handle_get_obd_metrics()
+{
+    const uint32_t stale_ms = static_cast<uint32_t>(config.get("system", "stale_ms"));
+    String json;
+    json.reserve(4200);
+    json += "{\"stale_ms\":";
+    json += String(stale_ms);
+    json += ",\"metrics\":[";
+
+    bool first = true;
+    for (const ObdMetricDescriptor &descriptor : OBD_DESCRIPTORS) {
+        const ObdMetricValue metric = obd_metric_value(descriptor.pid);
+        if (!first) json += ',';
+        first = false;
+        char pid[3];
+        snprintf(pid, sizeof(pid), "%02X", descriptor.pid);
+        json += "{\"pid\":\"";
+        json += pid;
+        json += "\",\"name\":\"";
+        json += descriptor.name;
+        json += "\",\"unit\":\"";
+        json += descriptor.unit;
+        json += "\",\"precision\":";
+        json += String(descriptor.precision);
+        json += ",\"value\":";
+        json += metric.ts == 0
+            ? "null"
+            : String(metric.value, static_cast<unsigned int>(descriptor.precision));
+        json += ",\"fresh\":";
+        json += metric_fresh(metric.ts, stale_ms) ? "true" : "false";
+        json += '}';
+    }
     json += "]}";
     server_.send(200, "application/json", json);
 }

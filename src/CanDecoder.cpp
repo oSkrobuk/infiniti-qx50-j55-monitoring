@@ -60,6 +60,13 @@ void can_parse_known_frames(const CanFrame &frame)
                         obd_value = raw * 10.0f;
                         break;
                     case 0x24:
+                    case 0x25:
+                    case 0x26:
+                    case 0x27:
+                    case 0x28:
+                    case 0x29:
+                    case 0x2A:
+                    case 0x2B:
                     case 0x44:
                         if (dlc < 5) return;
                         obd_value = raw * 2.0f / 65536.0f;
@@ -67,6 +74,7 @@ void can_parse_known_frames(const CanFrame &frame)
                     case 0x2F: obd_value = d[3] * 100.0f / 255.0f; break;
                     case 0x33: obd_value = d[3]; break;
                     case 0x3C:
+                    case 0x3D:
                         if (dlc < 5) return;
                         obd_value = raw / 10.0f - 40.0f;
                         break;
@@ -82,7 +90,9 @@ void can_parse_known_frames(const CanFrame &frame)
                         break;
                     case 0x46: obd_value = static_cast<float>(d[3]) - 40.0f; break;
                     case 0x49:
-                    case 0x4A: obd_value = d[3] * 100.0f / 255.0f; break;
+                    case 0x4A:
+                    case 0x4B:
+                    case 0x4C: obd_value = d[3] * 100.0f / 255.0f; break;
                     case 0x5C:
                         can_metrics.engine_oil = static_cast<float>(d[3]) - 40.0f;
                         can_metrics.engine_oil_ts = now;
