@@ -117,6 +117,17 @@ bool CanBusManager::send_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
     return true;
 }
 
+bool CanBusManager::try_send_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
+{
+    if (!running_) return false;
+
+    twai_message_t msg = {};
+    msg.identifier = id;
+    msg.data_length_code = (dlc > 8) ? 8 : dlc;
+    memcpy(msg.data, data, msg.data_length_code);
+    return twai_transmit(&msg, 0) == ESP_OK;
+}
+
 void CanBusManager::handle()
 {
     if (!driver_installed_) return;

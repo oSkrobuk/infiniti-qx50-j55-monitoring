@@ -11,6 +11,7 @@
 #include "BuzzerController.h"
 #include "AlertManager.h"
 #include "OtaImage.h"
+#include "ObdPidCatalog.h"
 #include "ResetHistory.h"
 #include "Version.h"
 
@@ -155,6 +156,15 @@ static constexpr uint8_t POLL_COUNT = sizeof(POLL_LIST) / sizeof(POLL_LIST[0]);
 // Интервал отправки Tester Present (мс)
 static constexpr uint32_t TESTER_PRESENT_INTERVAL_MS = 2000;
 static constexpr uint32_t LIGHT_POLL_INTERVAL_MS = 5000;
+static constexpr uint32_t OBD_POLL_INTERVAL_MS = 1000;
+static constexpr uint32_t OBD_DISCOVERY_TIMEOUT_MS = 100;
+static constexpr uint8_t OBD_DISCOVERY_RETRIES = 3;
+static constexpr uint8_t OBD_POLL_LIST[] = {
+    0x04, 0x05, 0x06, 0x07, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11,
+    0x1F, 0x23, 0x24, 0x2F, 0x33, 0x3C, 0x43, 0x44, 0x46, 0x49, 0x4A, 0x5C,
+    0x5E, 0x61, 0x62, 0x63, 0x64,
+};
+static constexpr uint8_t OBD_POLL_COUNT = sizeof(OBD_POLL_LIST);
 
 // Текущий индекс в списке опроса
 static uint8_t  s_poll_idx       = 0;
@@ -167,11 +177,19 @@ static uint32_t s_last_tp_ms     = 0;
 
 // Таймер проверки состояния освещения
 static uint32_t s_last_light_poll_ms = 0;
+static ObdPidCatalog s_obd_catalog;
+static bool s_diagnostic_session_open = false;
+static uint8_t s_obd_discovery_base = 0xFF;
+static uint8_t s_obd_discovery_retries = 0;
+static uint32_t s_obd_discovery_sent_ms = 0;
+static uint8_t s_obd_poll_idx = OBD_POLL_COUNT;
+static uint32_t s_obd_cycle_started_ms = 0;
 
 // Принять ответы штатного мониторинга и завершить ISO-TP обмен с блоком света
 static void can_handle_monitor_frame(const CanFrame &frame)
 {
     can_print_frame(frame);
+    s_obd_catalog.accept(frame);
 
     if (frame.id != LIGHT_RESPONSE_ID || frame.dlc < 7) {
         return;
@@ -192,6 +210,12 @@ static void can_handle_monitor_frame(const CanFrame &frame)
 
     // Второй байт данных DID: 0x0C = OFF, 0x1C = ON, меняется бит 0x10
     Serial.printf("[Light] %s raw=0x%02X\r\n", can_metrics.exterior_light_on ? "ON" : "OFF", d[6]);
+}
+
+static bool obd_send_request(uint8_t pid)
+{
+    const uint8_t req[8] = {0x02, 0x01, pid, 0, 0, 0, 0, 0};
+    return can_bus.try_send_frame(ECM_ID, req, 8);
 }
 
 // Сформировать и отправить UDS ReadDataByIdentifier (Service 0x22) для заданного DID
@@ -232,6 +256,27 @@ static void poll_handle()
 {
     uint32_t now = millis();
 
+    if (!s_diagnostic_session_open) {
+        const uint8_t next_base = s_obd_catalog.next_query_base();
+        if (s_obd_catalog.complete() || s_obd_discovery_retries >= OBD_DISCOVERY_RETRIES) {
+            poll_open_session();
+            s_diagnostic_session_open = true;
+            s_last_poll_ms = millis();
+            return;
+        }
+        const bool new_range = next_base != s_obd_discovery_base;
+        const bool timed_out = now - s_obd_discovery_sent_ms >= OBD_DISCOVERY_TIMEOUT_MS;
+        if (new_range || timed_out) {
+            if (new_range) s_obd_discovery_retries = 0;
+            if (obd_send_request(next_base)) {
+                s_obd_discovery_base = next_base;
+                s_obd_discovery_retries++;
+                s_obd_discovery_sent_ms = now;
+            }
+        }
+        return;
+    }
+
     // Tester Present каждые 2 секунды
     if (now - s_last_tp_ms >= TESTER_PRESENT_INTERVAL_MS) {
         s_last_tp_ms = now;
@@ -264,6 +309,23 @@ static void poll_handle()
         }
 
         s_poll_idx = (s_poll_idx + 1) % POLL_COUNT;
+    }
+
+    if (s_obd_poll_idx >= OBD_POLL_COUNT &&
+        now - s_obd_cycle_started_ms >= OBD_POLL_INTERVAL_MS) {
+        s_obd_cycle_started_ms = now;
+        s_obd_poll_idx = 0;
+    }
+
+    while (s_obd_poll_idx < OBD_POLL_COUNT) {
+        if (millis() - s_last_poll_ms >= poll_interval_ms) return;
+        const uint8_t pid = OBD_POLL_LIST[s_obd_poll_idx];
+        if (!s_obd_catalog.supports(pid)) {
+            s_obd_poll_idx++;
+            continue;
+        }
+        if (!obd_send_request(pid)) return;
+        s_obd_poll_idx++;
     }
 }
 
@@ -313,9 +375,6 @@ void setup()
     // Инициализация CAN-шины (SN65HVD230 / WVCMCU-230)
     can_bus.on_frame(can_handle_monitor_frame);
     can_bus.init();
-
-    // Открываем расширенную диагностическую сессию на опрашиваемых блоках
-    poll_open_session();
 
     // Инициализируем таймеры планировщика
     s_last_poll_ms = millis();

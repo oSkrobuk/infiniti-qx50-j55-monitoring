@@ -37,6 +37,7 @@ public:
     // Отправить CAN-фрейм в шину (только когда контроллер запущен)
     // Возвращает true если фрейм помещён в очередь TWAI
     bool send_frame(uint32_t id, const uint8_t *data, uint8_t dlc);
+    bool try_send_frame(uint32_t id, const uint8_t *data, uint8_t dlc);
 
     // Вызывать в loop(): читает все доступные фреймы из очереди TWAI
     // и передаёт их в зарегистрированный колбэк
