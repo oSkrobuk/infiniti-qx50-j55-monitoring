@@ -1,0 +1,9 @@
+# Таблица разделов с OTA для WT32-SC01 Plus с 16 МБ Flash
+# Два слота OTA по 6,25 МБ + SPIFFS 3,375 МБ + coredump 64 КБ
+# Name,   Type, SubType,  Offset,   Size,    Flags
+nvs,      data, nvs,      0x9000,   0x5000,
+otadata,  data, ota,      0xE000,   0x2000,
+ota_0,    app,  ota_0,    0x10000,  0x640000,
+ota_1,    app,  ota_1,    0x650000, 0x640000,
+spiffs,   data, spiffs,   0xC90000, 0x360000,
+coredump, data, coredump, 0xFF0000, 0x10000,
