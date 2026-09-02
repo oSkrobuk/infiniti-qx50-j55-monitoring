@@ -4,6 +4,8 @@
 #include "AlertManager.h"
 #include "CanBusManager.h"
 #include "BuildInfo.h"
+#include "DiagnosticMode.h"
+#include "DiagnosticSelection.h"
 #include "OtaSlots.h"
 #include "ObdPidCatalog.h"
 #include "ResetHistory.h"
@@ -2707,19 +2709,27 @@ async function alertsTick() {
 static const char OBD_HTML[] PROGMEM = R"rawhtml(
 <!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Kanvex — OBD-II</title><style>
+<title>Kanvex — диагностика CAN</title><style>
 :root{color-scheme:dark;--bg:#090d12;--card:#111821;--line:#293543;--gold:#d7aa55;--muted:#91a0af}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:#edf2f7;font:15px system-ui,sans-serif}
-main{max-width:1000px;margin:auto;padding:24px}h1{font-size:24px;letter-spacing:.08em}a{color:var(--gold)}
+main{max-width:1000px;margin:auto;padding:24px}h1{font-size:24px;letter-spacing:.08em}h2{margin-top:28px}a{color:var(--gold)}
 #status{color:var(--muted);margin:8px 0 20px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
 .card{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:14px}.pid{color:var(--gold);font:700 12px monospace}
-.name{min-height:38px;margin:6px 0;color:var(--muted)}.value{font:600 25px ui-monospace,monospace}.stale{opacity:.45}
-</style></head><body><main><a href="/">&larr; К настройкам</a><h1>OBD-II MODE 01</h1>
-<div id="status">Ожидание данных…</div><div id="grid" class="grid"></div></main><script>
-const statusEl=document.getElementById('status'),gridEl=document.getElementById('grid');
-function render(data){statusEl.textContent='Обновление раз в секунду · stale '+data.stale_ms+' мс';
-gridEl.innerHTML=data.metrics.map(m=>'<div class="card '+(m.fresh?'':'stale')+'"><div class="pid">PID '+m.pid+'</div><div class="name">'+m.name+'</div><div class="value">'+(m.value===null?'—':m.value.toFixed(m.precision))+' <small>'+m.unit+'</small></div></div>').join('')}
+.name{min-height:38px;margin:6px 0;color:var(--muted)}.value{font:600 25px ui-monospace,monospace}.stale{opacity:.55}
+label{display:flex;gap:8px;align-items:center}.note{color:var(--muted);line-height:1.45}
+</style></head><body><main><a href="/">&larr; К настройкам</a><h1>Диагностика CAN</h1>
+<div id="status">Ожидание данных…</div><h2>Infiniti UDS DID</h2>
+<p class="note">Основные DID уже читает монитор: страница не создает для них дополнительных запросов.</p>
+<div id="didGrid" class="grid"></div><h2>Стандартные OBD-II PID</h2>
+<p class="note">Отметьте нужные PID. По умолчанию все выключены, отправляется не более одного запроса в секунду.</p>
+<div id="pidGrid" class="grid"></div></main><script>
+const statusEl=document.getElementById('status'),didGrid=document.getElementById('didGrid'),pidGrid=document.getElementById('pidGrid');
+const value=m=>(m.value===null?'—':m.value.toFixed(m.precision))+' <small>'+m.unit+'</small>';
+function card(m,check){return '<div class="card '+(m.fresh?'':'stale')+'"><div class="pid">'+(check?'<label><input type="checkbox" data-pid="'+m.id+'" '+(m.enabled?'checked':'')+'>':'')+m.kind+' '+m.id+(check?'</label>':'')+'</div><div class="name">'+m.name+'</div><div class="value">'+value(m)+'</div></div>'}
+function render(data){statusEl.textContent='Диагностический режим активен · один PID-запрос в секунду';
+didGrid.innerHTML=data.dids.map(m=>card(m,false)).join('');pidGrid.innerHTML=data.pids.map(m=>card(m,true)).join('')}
 async function update(){try{const r=await fetch('/obd-metrics',{cache:'no-store'});if(!r.ok)throw Error(r.status);render(await r.json())}catch(e){statusEl.textContent='Нет связи: '+e}}
+pidGrid.addEventListener('change',async e=>{if(!e.target.matches('[data-pid]'))return;const body=new URLSearchParams({pid:e.target.dataset.pid,enabled:e.target.checked?'1':'0'});try{const r=await fetch('/obd-selection',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});if(!r.ok)throw Error(r.status)}catch(err){e.target.checked=!e.target.checked;statusEl.textContent='Не удалось изменить опрос: '+err}});
 update();setInterval(update,1000);
 </script></body></html>
 )rawhtml";
@@ -2849,6 +2859,34 @@ static constexpr ObdMetricDescriptor OBD_DESCRIPTORS[] = {
     {0x63, "Опорный момент", "Н·м", 0}, {0x64, "Момент, точка 1", "%", 0},
 };
 
+struct DidMetricDescriptor {
+    uint16_t did;
+    const char *ecu;
+    const char *name;
+    const char *unit;
+    uint8_t precision;
+};
+
+static constexpr DidMetricDescriptor DID_DESCRIPTORS[] = {
+    {0x1201, "ECM", "Обороты двигателя", "об/мин", 0},
+    {0x110E, "ECM", "Напряжение датчика наддува", "В", 2},
+    {0x1278, "ECM", "Напряжение датчика давления масла", "В", 2},
+    {0x1103, "ECM", "Напряжение бортовой сети", "В", 2},
+    {0x1101, "ECM", "Температура ОЖ двигателя", "°C", 0},
+    {0x111F, "ECM", "Температура масла двигателя", "°C", 0},
+    {0x116B, "ECM", "Температура ОЖ радиатора", "°C", 0},
+    {0x110C, "TCM", "Температура масла вариатора", "°C", 0},
+    {0x0E07, "BCM", "Внешний свет (0 — выключен, 1 — включен)", "", 0},
+};
+
+static const ObdMetricDescriptor *find_obd_descriptor(uint8_t pid)
+{
+    for (const ObdMetricDescriptor &descriptor : OBD_DESCRIPTORS) {
+        if (descriptor.pid == pid) return &descriptor;
+    }
+    return nullptr;
+}
+
 static ObdMetricValue obd_metric_value(uint8_t pid)
 {
     switch (pid) {
@@ -2856,7 +2894,32 @@ static ObdMetricValue obd_metric_value(uint8_t pid)
         case 0x0C: return {can_metrics.engine_rpm, can_metrics.engine_rpm_ts};
         case 0x42: return {can_metrics.battery_voltage, can_metrics.battery_voltage_ts};
         case 0x5C: return {can_metrics.engine_oil, can_metrics.engine_oil_ts};
-        default: return pid < OBD_METRIC_CAPACITY ? can_metrics.obd[pid] : ObdMetricValue{};
+        default: return can_metrics.obd[pid];
+    }
+}
+
+static ObdMetricValue did_metric_value(uint16_t did)
+{
+    switch (did) {
+        case 0x1201:
+            return can_metrics.engine_rpm_source == MetricSource::INFINITI_UDS
+                ? ObdMetricValue{can_metrics.engine_rpm, can_metrics.engine_rpm_ts} : ObdMetricValue{};
+        case 0x110E: return {can_metrics.turbo_boost_volt, can_metrics.turbo_boost_volt_ts};
+        case 0x1278: return {can_metrics.oil_pressure_volt, can_metrics.oil_pressure_volt_ts};
+        case 0x1103:
+            return can_metrics.battery_voltage_source == MetricSource::INFINITI_UDS
+                ? ObdMetricValue{can_metrics.battery_voltage, can_metrics.battery_voltage_ts} : ObdMetricValue{};
+        case 0x1101:
+            return can_metrics.engine_coolant_source == MetricSource::INFINITI_UDS
+                ? ObdMetricValue{can_metrics.engine_coolant, can_metrics.engine_coolant_ts} : ObdMetricValue{};
+        case 0x111F:
+            return can_metrics.engine_oil_source == MetricSource::INFINITI_UDS
+                ? ObdMetricValue{can_metrics.engine_oil, can_metrics.engine_oil_ts} : ObdMetricValue{};
+        case 0x116B: return {can_metrics.radiator_coolant, can_metrics.radiator_coolant_ts};
+        case 0x110C: return {can_metrics.cvt_temp, can_metrics.cvt_temp_ts};
+        case 0x0E07:
+            return {can_metrics.exterior_light_on ? 1.0f : 0.0f, can_metrics.exterior_light_ts};
+        default: return {};
     }
 }
 
@@ -2929,6 +2992,7 @@ void WebManager::begin()
     server_.on("/health",      HTTP_GET,  [this]() { handle_health_page(); });
     server_.on("/metrics",     HTTP_GET,  [this]() { handle_get_metrics(); });
     server_.on("/obd-metrics", HTTP_GET,  [this]() { handle_get_obd_metrics(); });
+    server_.on("/obd-selection", HTTP_POST, [this]() { handle_post_obd_selection(); });
     server_.on("/reset-history", HTTP_GET, [this]() { handle_get_reset_history(); });
     server_.on("/version",     HTTP_GET,  [this]() { handle_get_version(); });
     server_.on("/config",      HTTP_GET,  [this]() { handle_get_config(); });
@@ -3168,23 +3232,25 @@ void WebManager::handle_get_metrics()
 
 void WebManager::handle_get_obd_metrics()
 {
+    diagnostic_mode_touch(millis());
     const uint32_t stale_ms = static_cast<uint32_t>(config.get("system", "stale_ms"));
     String json;
-    json.reserve(4200);
+    json.reserve(12000);
     json += "{\"stale_ms\":";
     json += String(stale_ms);
-    json += ",\"metrics\":[";
+    json += ",\"dids\":[";
 
     bool first = true;
-    for (const ObdMetricDescriptor &descriptor : OBD_DESCRIPTORS) {
-        if (!obd_pid_catalog.supports(descriptor.pid)) continue;
-        const ObdMetricValue metric = obd_metric_value(descriptor.pid);
+    for (const DidMetricDescriptor &descriptor : DID_DESCRIPTORS) {
+        const ObdMetricValue metric = did_metric_value(descriptor.did);
         if (!first) json += ',';
         first = false;
-        char pid[3];
-        snprintf(pid, sizeof(pid), "%02X", descriptor.pid);
-        json += "{\"pid\":\"";
-        json += pid;
+        char did[5];
+        snprintf(did, sizeof(did), "%04X", descriptor.did);
+        json += "{\"kind\":\"";
+        json += descriptor.ecu;
+        json += " DID\",\"id\":\"";
+        json += did;
         json += "\",\"name\":\"";
         json += descriptor.name;
         json += "\",\"unit\":\"";
@@ -3199,8 +3265,63 @@ void WebManager::handle_get_obd_metrics()
         json += metric_fresh(metric.ts, stale_ms) ? "true" : "false";
         json += '}';
     }
+
+    json += "],\"pids\":[";
+    first = true;
+    for (uint16_t raw_pid = 1; raw_pid <= DIAGNOSTIC_MAX_PID; ++raw_pid) {
+        const uint8_t pid = static_cast<uint8_t>(raw_pid);
+        if ((pid & 0x1F) == 0 || !obd_pid_catalog.supports(pid)) continue;
+        const ObdMetricDescriptor *descriptor = find_obd_descriptor(pid);
+        const ObdMetricValue metric = obd_metric_value(pid);
+        if (!first) json += ',';
+        first = false;
+        char id[3];
+        snprintf(id, sizeof(id), "%02X", pid);
+        json += "{\"kind\":\"PID\",\"id\":\"";
+        json += id;
+        json += "\",\"name\":\"";
+        json += descriptor == nullptr ? "Стандартный параметр (raw)" : descriptor->name;
+        json += "\",\"unit\":\"";
+        json += descriptor == nullptr ? "raw" : descriptor->unit;
+        json += "\",\"precision\":";
+        json += String(descriptor == nullptr ? 0 : descriptor->precision);
+        json += ",\"enabled\":";
+        json += diagnostic_selection.pid_enabled(pid) ? "true" : "false";
+        json += ",\"value\":";
+        json += metric.ts == 0
+            ? "null"
+            : String(metric.value, static_cast<unsigned int>(descriptor == nullptr ? 0 : descriptor->precision));
+        json += ",\"fresh\":";
+        json += metric_fresh(metric.ts, stale_ms) ? "true" : "false";
+        json += '}';
+    }
     json += "]}";
     server_.send(200, "application/json", json);
+}
+
+void WebManager::handle_post_obd_selection()
+{
+    if (!server_.hasArg("pid") || !server_.hasArg("enabled")) {
+        server_.send(400, "application/json", "{\"error\":\"pid and enabled are required\"}");
+        return;
+    }
+
+    unsigned int pid = 0;
+    if (sscanf(server_.arg("pid").c_str(), "%x", &pid) != 1 || pid == 0 || pid > DIAGNOSTIC_MAX_PID ||
+        (pid & 0x1F) == 0) {
+        server_.send(400, "application/json", "{\"error\":\"invalid pid\"}");
+        return;
+    }
+
+    const String enabled = server_.arg("enabled");
+    if (enabled != "0" && enabled != "1") {
+        server_.send(400, "application/json", "{\"error\":\"invalid enabled value\"}");
+        return;
+    }
+
+    diagnostic_selection.set_pid(static_cast<uint8_t>(pid), enabled == "1");
+    diagnostic_mode_touch(millis());
+    server_.send(200, "application/json", "{\"ok\":true}");
 }
 
 void WebManager::handle_get_reset_history()

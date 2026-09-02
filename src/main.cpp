@@ -7,6 +7,8 @@
 
 #include "CanBusManager.h"
 #include "ConfigManager.h"
+#include "DiagnosticMode.h"
+#include "DiagnosticSelection.h"
 #include "WebManager.h"
 #include "BuzzerController.h"
 #include "AlertManager.h"
@@ -158,15 +160,9 @@ static constexpr uint8_t POLL_COUNT = sizeof(POLL_LIST) / sizeof(POLL_LIST[0]);
 static constexpr uint32_t TESTER_PRESENT_INTERVAL_MS = 2000;
 static constexpr uint32_t LIGHT_POLL_INTERVAL_MS = 5000;
 static constexpr uint32_t OBD_POLL_INTERVAL_MS = 1000;
-static constexpr uint32_t OBD_DISCOVERY_TIMEOUT_MS = 100;
-static constexpr uint8_t OBD_DISCOVERY_RETRIES = 3;
-static constexpr uint8_t OBD_POLL_LIST[] = {
-    0x04, 0x05, 0x06, 0x07, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11,
-    0x1F, 0x23, 0x24, 0x25, 0x26, 0x27, 0x2F,
-    0x33, 0x3C, 0x3D, 0x43, 0x44, 0x46, 0x49, 0x4A, 0x4B, 0x4C, 0x5C,
-    0x5E, 0x61, 0x62, 0x63, 0x64,
-};
-static constexpr uint8_t OBD_POLL_COUNT = sizeof(OBD_POLL_LIST);
+static constexpr uint32_t OBD_DISCOVERY_TIMEOUT_MS = 1000;
+static constexpr uint8_t OBD_POLL_COUNT = DIAGNOSTIC_MAX_PID;
+static uint8_t s_obd_poll_list[OBD_POLL_COUNT];
 
 // Текущий индекс в списке опроса
 static uint8_t  s_poll_idx       = 0;
@@ -179,11 +175,9 @@ static uint32_t s_last_tp_ms     = 0;
 
 // Таймер проверки состояния освещения
 static uint32_t s_last_light_poll_ms = 0;
-static ObdPollPlan s_obd_poll_plan(obd_pid_catalog, OBD_POLL_LIST, OBD_POLL_COUNT,
+static ObdPollPlan s_obd_poll_plan(obd_pid_catalog, s_obd_poll_list, OBD_POLL_COUNT,
                                    OBD_POLL_INTERVAL_MS);
 static bool s_diagnostic_session_open = false;
-static uint8_t s_obd_discovery_base = 0xFF;
-static uint8_t s_obd_discovery_retries = 0;
 static uint32_t s_obd_discovery_sent_ms = 0;
 
 // Принять ответы штатного мониторинга и завершить ISO-TP обмен с блоком света
@@ -258,23 +252,9 @@ static void poll_handle()
     uint32_t now = millis();
 
     if (!s_diagnostic_session_open) {
-        const uint8_t next_base = obd_pid_catalog.next_query_base();
-        if (obd_pid_catalog.complete() || s_obd_discovery_retries >= OBD_DISCOVERY_RETRIES) {
-            poll_open_session();
-            s_diagnostic_session_open = true;
-            s_last_poll_ms = millis();
-            return;
-        }
-        const bool new_range = next_base != s_obd_discovery_base;
-        const bool timed_out = now - s_obd_discovery_sent_ms >= OBD_DISCOVERY_TIMEOUT_MS;
-        if (new_range || timed_out) {
-            if (new_range) s_obd_discovery_retries = 0;
-            if (obd_send_request(next_base)) {
-                s_obd_discovery_base = next_base;
-                s_obd_discovery_retries++;
-                s_obd_discovery_sent_ms = now;
-            }
-        }
+        poll_open_session();
+        s_diagnostic_session_open = true;
+        s_last_poll_ms = millis();
         return;
     }
 
@@ -312,14 +292,22 @@ static void poll_handle()
         s_poll_idx = (s_poll_idx + 1) % POLL_COUNT;
     }
 
-    while (true) {
-        const bool primary_due = millis() - s_last_poll_ms >= poll_interval_ms;
-        const int16_t pid = s_obd_poll_plan.next(now, primary_due);
-        if (pid < 0) return;
-        const bool sent = obd_send_request(static_cast<uint8_t>(pid));
-        s_obd_poll_plan.complete_send(sent);
-        if (!sent) return;
+    if (!diagnostic_mode_active(now)) return;
+
+    if (!obd_pid_catalog.complete()) {
+        const uint8_t next_base = obd_pid_catalog.next_query_base();
+        const bool timed_out = now - s_obd_discovery_sent_ms >= OBD_DISCOVERY_TIMEOUT_MS;
+        if (timed_out && obd_send_request(next_base)) {
+            s_obd_discovery_sent_ms = now;
+        }
+        return;
     }
+
+    const bool primary_due = millis() - s_last_poll_ms >= poll_interval_ms;
+    const int16_t pid = s_obd_poll_plan.next(now, primary_due);
+    if (pid < 0) return;
+    const bool sent = obd_send_request(static_cast<uint8_t>(pid));
+    s_obd_poll_plan.complete_send(sent);
 }
 
 // =============================================================================
@@ -353,6 +341,11 @@ void setup()
     return;
 #else
     Serial.println("=== Infiniti QX50 J55 Monitoring ===");
+
+    for (uint16_t pid = 1; pid <= OBD_POLL_COUNT; ++pid) {
+        s_obd_poll_list[pid - 1] = static_cast<uint8_t>(pid);
+    }
+    s_obd_poll_plan.set_enabled(diagnostic_selection.pid_flags());
 
     config.init();
     reset_history.init();

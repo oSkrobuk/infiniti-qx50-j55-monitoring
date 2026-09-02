@@ -24,8 +24,12 @@ void can_parse_known_frames(const CanFrame &frame)
                 const uint16_t raw = dlc >= 5
                     ? (static_cast<uint16_t>(d[3]) << 8) | d[4]
                     : 0;
+                uint32_t generic_raw = 0;
+                const uint8_t data_length = d[0] >= 2 ? d[0] - 2 : 0;
+                for (uint8_t offset = 0; offset < data_length && offset < 4 && 3 + offset < dlc; ++offset) {
+                    generic_raw = (generic_raw << 8) | d[3 + offset];
+                }
                 float obd_value = 0.0f;
-                bool obd_valid = true;
                 switch (pid) {
                     case 0x04: obd_value = d[3] * 100.0f / 255.0f; break;
                     case 0x05:
@@ -105,11 +109,9 @@ void can_parse_known_frames(const CanFrame &frame)
                         if (dlc < 5) return;
                         obd_value = raw;
                         break;
-                    default: obd_valid = false; break;
+                    default: obd_value = static_cast<float>(generic_raw); break;
                 }
-                if (obd_valid && pid < OBD_METRIC_CAPACITY) {
-                    can_metrics.obd[pid] = {obd_value, now};
-                }
+                can_metrics.obd[pid] = {obd_value, now};
                 return;
             }
 

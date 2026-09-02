@@ -83,6 +83,7 @@ private:
     // Метрики: GET /metrics — текущие значения метрик с CAN-шины (JSON)
     void handle_get_metrics();
     void handle_get_obd_metrics();
+    void handle_post_obd_selection();
 
     // Диагностика: GET /reset-history — постоянный журнал причин загрузки
     void handle_get_reset_history();

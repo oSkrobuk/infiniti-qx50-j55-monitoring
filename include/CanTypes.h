@@ -25,7 +25,7 @@ enum class MetricSource : uint8_t {
     OBD2 = 2,
 };
 
-static constexpr uint8_t OBD_METRIC_CAPACITY = 0x65;
+static constexpr uint16_t OBD_METRIC_CAPACITY = 0x100;
 
 struct ObdMetricValue {
     float value;

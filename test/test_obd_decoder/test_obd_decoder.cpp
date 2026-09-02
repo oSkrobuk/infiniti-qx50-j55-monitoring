@@ -73,11 +73,19 @@ static void test_shared_pid_is_not_duplicated_in_showcase_slots()
     TEST_ASSERT_EQUAL_UINT32(0, can_metrics.obd[0x05].ts);
 }
 
+static void test_unknown_supported_pid_keeps_raw_value()
+{
+    can_parse_known_frames(frame(0xA6, 0x12, 0x34));
+    TEST_ASSERT_EQUAL_FLOAT(4660.0f, can_metrics.obd[0xA6].value);
+    TEST_ASSERT_EQUAL_UINT32(NOW, can_metrics.obd[0xA6].ts);
+}
+
 int main(int, char **)
 {
     UNITY_BEGIN();
     RUN_TEST(test_showcase_pid_formulas);
     RUN_TEST(test_short_two_byte_pid_is_ignored);
     RUN_TEST(test_shared_pid_is_not_duplicated_in_showcase_slots);
+    RUN_TEST(test_unknown_supported_pid_keeps_raw_value);
     return UNITY_END();
 }

@@ -42,7 +42,8 @@ static void test_failed_send_retries_same_pid()
     plan.complete_send(false);
     TEST_ASSERT_EQUAL_INT16(0x05, plan.next(1001, false));
     plan.complete_send(true);
-    TEST_ASSERT_EQUAL_INT16(0x0C, plan.next(1001, false));
+    TEST_ASSERT_EQUAL_INT16(-1, plan.next(1999, false));
+    TEST_ASSERT_EQUAL_INT16(0x0C, plan.next(2001, false));
 }
 
 static void test_unsupported_pids_are_skipped_until_next_cycle()
@@ -54,8 +55,20 @@ static void test_unsupported_pids_are_skipped_until_next_cycle()
 
     TEST_ASSERT_EQUAL_INT16(0x05, plan.next(1000, false));
     plan.complete_send(true);
-    TEST_ASSERT_EQUAL_INT16(-1, plan.next(1000, false));
+    TEST_ASSERT_EQUAL_INT16(-1, plan.next(1999, false));
     TEST_ASSERT_EQUAL_INT16(0x05, plan.next(2000, false));
+}
+
+static void test_disabled_pids_are_skipped()
+{
+    ObdPidCatalog catalog;
+    catalog.accept(support_frame(0x08100000));
+    const uint8_t pids[] = {0x05, 0x0C};
+    bool enabled[256] = {};
+    enabled[0x0C] = true;
+    ObdPollPlan plan(catalog, pids, 2, 1000, enabled);
+
+    TEST_ASSERT_EQUAL_INT16(0x0C, plan.next(1000, false));
 }
 
 int main(int, char **)
@@ -64,5 +77,6 @@ int main(int, char **)
     RUN_TEST(test_primary_poll_always_wins);
     RUN_TEST(test_failed_send_retries_same_pid);
     RUN_TEST(test_unsupported_pids_are_skipped_until_next_cycle);
+    RUN_TEST(test_disabled_pids_are_skipped);
     return UNITY_END();
 }
