@@ -1,0 +1,139 @@
+// Generated from protocol.yaml by scripts/generate_protocol.py. Do not edit.
+#pragma once
+
+#include <stdint.h>
+
+static constexpr uint8_t PROTOCOL_VERSION = 5;
+static constexpr uint8_t PROTOCOL_MIN_VERSION = 5;
+static constexpr uint8_t FRAME_FORMAT_SCHEMA = 1;
+static constexpr uint8_t METRIC_SCHEMA_FORMAT = 1;
+static constexpr uint8_t METRIC_COUNT = 8;
+static constexpr uint8_t METRIC_MAX_COUNT = 24;
+static constexpr uint32_t METRIC_SCHEMA_ID = 0xBC5424;
+
+static constexpr uint16_t PROTOCOL_SIZE_DEVICE_INFO = 42;
+static constexpr uint16_t PROTOCOL_SIZE_STATUS = 8;
+static constexpr uint16_t PROTOCOL_SIZE_HISTORY_HEADER = 20;
+static constexpr uint16_t PROTOCOL_SIZE_METRIC_SCHEMA_HEADER = 8;
+static constexpr uint16_t PROTOCOL_SIZE_METRIC_DESCRIPTOR = 4;
+static constexpr uint16_t PROTOCOL_SIZE_LIVE_HEADER = 13;
+static constexpr uint16_t PROTOCOL_SIZE_ALERT = 20;
+static constexpr uint16_t PROTOCOL_SIZE_SUMMARY_HEADER = 24;
+static constexpr uint16_t PROTOCOL_SIZE_SCAN_STATUS = 9;
+static constexpr uint16_t PROTOCOL_SIZE_AUTH_CHALLENGE = 20;
+static constexpr uint32_t PROTOCOL_COMPANY_ID_TEST = 65535;
+static constexpr uint32_t PROTOCOL_STATUS_VERSION = 1;
+static constexpr uint32_t PROTOCOL_CONTROL_MAX_LEN = 20;
+static constexpr uint32_t PROTOCOL_TOKEN_SIZE = 16;
+static constexpr uint32_t PROTOCOL_METRIC_NONE = 255;
+static constexpr uint32_t PROTOCOL_NO_VALUE_SIGNED = 32767;
+static constexpr uint32_t PROTOCOL_AUTH_NONCE_SIZE = 16;
+static constexpr uint32_t PROTOCOL_AUTH_TAG_SIZE = 16;
+static constexpr uint32_t CAPABILITY_RUNTIME_METRIC_SCHEMA = 1u << 0;
+static constexpr uint32_t CAPABILITY_HISTORY_STREAM = 1u << 1;
+static constexpr uint32_t CAPABILITY_LIVE_STREAM = 1u << 2;
+static constexpr uint32_t CAPABILITY_ALERTS = 1u << 3;
+static constexpr uint32_t CAPABILITY_SUMMARIES = 1u << 4;
+static constexpr uint32_t CAPABILITY_CHALLENGE_AUTH = 1u << 5;
+static constexpr uint32_t CAPABILITY_ALL = 0x0000003Fu;
+
+#define KANVEX_UUID_ENTITY_SERVICE 0x00
+#define KANVEX_UUID_ENTITY_DEVICE_INFO 0x01
+#define KANVEX_UUID_ENTITY_CONTROL 0x02
+#define KANVEX_UUID_ENTITY_STATUS 0x03
+#define KANVEX_UUID_ENTITY_HISTORY 0x04
+#define KANVEX_UUID_ENTITY_LIVE 0x05
+#define KANVEX_UUID_ENTITY_ALERTS 0x06
+#define KANVEX_UUID_ENTITY_SUMMARY 0x07
+#define KANVEX_UUID_ENTITY_METRIC_SCHEMA 0x08
+#define KANVEX_UUID_ENTITY_AUTH_CHALLENGE 0x09
+
+enum MetricId : uint8_t {
+  METRIC_COOLANT_TEMP = 0,
+  METRIC_ENGINE_OIL_TEMP = 1,
+  METRIC_CVT_OIL_TEMP = 2,
+  METRIC_RPM = 3,
+  METRIC_BOOST_VOLTAGE = 4,
+  METRIC_OIL_PRESSURE_VOLTAGE = 5,
+  METRIC_BATTERY_VOLTAGE = 6,
+  METRIC_RADIATOR_COOLANT_TEMP = 7,
+};
+
+enum MetricUnit : uint8_t {
+  METRIC_UNIT_NONE = 0,
+  METRIC_UNIT_CELSIUS = 1,
+  METRIC_UNIT_RPM = 2,
+  METRIC_UNIT_VOLT = 3,
+};
+
+struct MetricDescriptor {
+  uint8_t id;
+  uint8_t unit;
+  int8_t scale_exponent;
+  uint8_t flags;
+};
+
+static constexpr MetricDescriptor METRIC_DESCRIPTORS[METRIC_COUNT] = {
+    {METRIC_COOLANT_TEMP, METRIC_UNIT_CELSIUS, -1, 0},
+    {METRIC_ENGINE_OIL_TEMP, METRIC_UNIT_CELSIUS, -1, 0},
+    {METRIC_CVT_OIL_TEMP, METRIC_UNIT_CELSIUS, -1, 0},
+    {METRIC_RPM, METRIC_UNIT_RPM, 0, 0},
+    {METRIC_BOOST_VOLTAGE, METRIC_UNIT_VOLT, -2, 0},
+    {METRIC_OIL_PRESSURE_VOLTAGE, METRIC_UNIT_VOLT, -2, 0},
+    {METRIC_BATTERY_VOLTAGE, METRIC_UNIT_VOLT, -2, 0},
+    {METRIC_RADIATOR_COOLANT_TEMP, METRIC_UNIT_CELSIUS, -1, 0},
+};
+
+enum Opcode : uint8_t {
+  OP_TIME_SYNC = 0x01,
+  OP_SUBSCRIBE_HISTORY = 0x02,
+  OP_ACK_HISTORY = 0x03,
+  OP_UNSUBSCRIBE_HISTORY = 0x04,
+  OP_LIVE_START = 0x05,
+  OP_LIVE_STOP = 0x06,
+  OP_FETCH_SUMMARIES = 0x07,
+  OP_ACK_SUMMARY = 0x08,
+  OP_FETCH_ALERTS = 0x09,
+  OP_PAIR_CLAIM = 0x0A,
+  OP_AUTH = 0x0B,
+};
+
+enum ResultCode : uint8_t {
+  RESULT_OK = 0x00,
+  RESULT_UNKNOWN_COMMAND = 0x01,
+  RESULT_BAD_ARGS = 0x02,
+  RESULT_RECORDS_ERASED = 0x03,
+  RESULT_BUSY = 0x04,
+  RESULT_AUTH_REQUIRED = 0x05,
+  RESULT_ALREADY_PAIRED = 0x06,
+  RESULT_UNKNOWN_TOKEN = 0x07,
+  RESULT_CHALLENGE_REQUIRED = 0x08,
+};
+
+enum EventCode : uint8_t {
+  EVENT_TRIP_STARTED = 0x01,
+  EVENT_TRIP_FINISHED = 0x02,
+  EVENT_SUMMARY_READY = 0x03,
+  EVENT_BUFFER_OVERFLOW = 0x04,
+  EVENT_PAIRING_OPENED = 0x05,
+  EVENT_TOKENS_CLEARED = 0x06,
+};
+
+enum AlertCode : uint8_t {
+  ALERT_ENGINE_OIL_TEMP_HIGH = 0x01,
+  ALERT_COOLANT_TEMP_HIGH = 0x02,
+  ALERT_RADIATOR_TEMP_HIGH = 0x03,
+  ALERT_CVT_OIL_TEMP_HIGH = 0x04,
+  ALERT_RPM_OVERSPEED = 0x05,
+  ALERT_BATTERY_LOW = 0x06,
+  ALERT_BATTERY_HIGH = 0x07,
+  ALERT_OIL_PRESSURE_LOW = 0x08,
+  ALERT_OIL_COOLANT_DELTA_HIGH = 0x09,
+};
+
+static constexpr uint8_t METRIC_SCHEMA_GOLDEN[] = {
+    0x01, 0x08, 0x24, 0x54, 0xBC, 0x11, 0x00, 0x00, 0x00, 0x01, 0xFF, 0x00,
+    0x01, 0x01, 0xFF, 0x00, 0x02, 0x01, 0xFF, 0x00, 0x03, 0x02, 0x00, 0x00,
+    0x04, 0x03, 0xFE, 0x00, 0x05, 0x03, 0xFE, 0x00, 0x06, 0x03, 0xFE, 0x00,
+    0x07, 0x01, 0xFF, 0x00,
+};
