@@ -31,6 +31,19 @@ static CanFrame make_uds_frame(uint32_t id, uint16_t did,
     return f;
 }
 
+static CanFrame make_obd_frame(uint8_t pid, uint8_t a, uint8_t b = 0, uint8_t dlc = 8)
+{
+    CanFrame f = {};
+    f.id      = 0x7E8;
+    f.dlc     = dlc;
+    f.data[0] = 0x04;
+    f.data[1] = 0x41;
+    f.data[2] = pid;
+    f.data[3] = a;
+    f.data[4] = b;
+    return f;
+}
+
 // Собрать First Frame многокадрового ответа блока состояния освещения
 static CanFrame make_light_frame(uint8_t status)
 {
@@ -240,6 +253,33 @@ static void test_one_did_does_not_touch_others(void)
     TEST_ASSERT_EQUAL_UINT32(0, can_metrics.cvt_temp_ts);
 }
 
+static void test_obd_updates_shared_metrics_and_source(void)
+{
+    can_parse_known_frames(make_obd_frame(0x05, 130));
+    TEST_ASSERT_EQUAL_FLOAT(90.0f, can_metrics.engine_coolant);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MetricSource::OBD2),
+                            static_cast<uint8_t>(can_metrics.engine_coolant_source));
+
+    can_parse_known_frames(make_obd_frame(0x0C, 0x1F, 0x40));
+    TEST_ASSERT_EQUAL_FLOAT(2000.0f, can_metrics.engine_rpm);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MetricSource::OBD2),
+                            static_cast<uint8_t>(can_metrics.engine_rpm_source));
+
+    can_parse_known_frames(make_obd_frame(0x42, 0x36, 0xB0));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 14.0f, can_metrics.battery_voltage);
+
+    can_parse_known_frames(make_obd_frame(0x5C, 140));
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, can_metrics.engine_oil);
+}
+
+static void test_short_obd_value_does_not_replace_metric(void)
+{
+    can_parse_known_frames(make_obd_frame(0x0C, 0x1F, 0x40, 4));
+    TEST_ASSERT_EQUAL_UINT32(0, can_metrics.engine_rpm_ts);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MetricSource::NONE),
+                            static_cast<uint8_t>(can_metrics.engine_rpm_source));
+}
+
 int main(int, char **)
 {
     UNITY_BEGIN();
@@ -268,6 +308,8 @@ int main(int, char **)
 
     RUN_TEST(test_timestamp_follows_millis);
     RUN_TEST(test_one_did_does_not_touch_others);
+    RUN_TEST(test_obd_updates_shared_metrics_and_source);
+    RUN_TEST(test_short_obd_value_does_not_replace_metric);
 
     return UNITY_END();
 }

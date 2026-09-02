@@ -17,8 +17,42 @@ void can_parse_known_frames(const CanFrame &frame)
 
     switch (frame.id) {
         case 0x7E8: {
+            // Положительный ответ OBD-II Mode 01
+            if (dlc >= 4 && d[1] == 0x41) {
+                const uint8_t pid = d[2];
+                const uint32_t now = millis();
+                switch (pid) {
+                    case 0x05:
+                        can_metrics.engine_coolant = static_cast<float>(d[3]) - 40.0f;
+                        can_metrics.engine_coolant_ts = now;
+                        can_metrics.engine_coolant_source = MetricSource::OBD2;
+                        break;
+                    case 0x0C:
+                        if (dlc < 5) break;
+                        can_metrics.engine_rpm =
+                            static_cast<float>((static_cast<uint16_t>(d[3]) << 8) | d[4]) / 4.0f;
+                        can_metrics.engine_rpm_ts = now;
+                        can_metrics.engine_rpm_source = MetricSource::OBD2;
+                        break;
+                    case 0x42:
+                        if (dlc < 5) break;
+                        can_metrics.battery_voltage =
+                            static_cast<float>((static_cast<uint16_t>(d[3]) << 8) | d[4]) / 1000.0f;
+                        can_metrics.battery_voltage_ts = now;
+                        can_metrics.battery_voltage_source = MetricSource::OBD2;
+                        break;
+                    case 0x5C:
+                        can_metrics.engine_oil = static_cast<float>(d[3]) - 40.0f;
+                        can_metrics.engine_oil_ts = now;
+                        can_metrics.engine_oil_source = MetricSource::OBD2;
+                        break;
+                    default:
+                        break;
+                }
+                break;
+            }
+
             // Диагностический ответ от ECM (UDS / ISO 14229)
-            // Нам физически необходимы минимум 6 байт (индексы d[0]...d[5])
             if (dlc < 6) break;
 
             // d[1] = 0x62 (Положительный ответ на чтение параметров Service 0x22)
