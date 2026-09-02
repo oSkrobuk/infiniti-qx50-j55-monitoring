@@ -19,3 +19,5 @@ private:
     uint8_t next_query_base_;
     bool complete_;
 };
+
+extern ObdPidCatalog obd_pid_catalog;

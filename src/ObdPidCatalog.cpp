@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+ObdPidCatalog obd_pid_catalog;
+
 ObdPidCatalog::ObdPidCatalog()
 {
     reset();

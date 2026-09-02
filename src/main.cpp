@@ -162,7 +162,7 @@ static constexpr uint32_t OBD_DISCOVERY_TIMEOUT_MS = 100;
 static constexpr uint8_t OBD_DISCOVERY_RETRIES = 3;
 static constexpr uint8_t OBD_POLL_LIST[] = {
     0x04, 0x05, 0x06, 0x07, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11,
-    0x1F, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2A, 0x2B, 0x2F,
+    0x1F, 0x23, 0x24, 0x25, 0x26, 0x27, 0x2F,
     0x33, 0x3C, 0x3D, 0x43, 0x44, 0x46, 0x49, 0x4A, 0x4B, 0x4C, 0x5C,
     0x5E, 0x61, 0x62, 0x63, 0x64,
 };
@@ -179,8 +179,7 @@ static uint32_t s_last_tp_ms     = 0;
 
 // Таймер проверки состояния освещения
 static uint32_t s_last_light_poll_ms = 0;
-static ObdPidCatalog s_obd_catalog;
-static ObdPollPlan s_obd_poll_plan(s_obd_catalog, OBD_POLL_LIST, OBD_POLL_COUNT,
+static ObdPollPlan s_obd_poll_plan(obd_pid_catalog, OBD_POLL_LIST, OBD_POLL_COUNT,
                                    OBD_POLL_INTERVAL_MS);
 static bool s_diagnostic_session_open = false;
 static uint8_t s_obd_discovery_base = 0xFF;
@@ -191,7 +190,7 @@ static uint32_t s_obd_discovery_sent_ms = 0;
 static void can_handle_monitor_frame(const CanFrame &frame)
 {
     can_print_frame(frame);
-    s_obd_catalog.accept(frame);
+    obd_pid_catalog.accept(frame);
 
     if (frame.id != LIGHT_RESPONSE_ID || frame.dlc < 7) {
         return;
@@ -259,8 +258,8 @@ static void poll_handle()
     uint32_t now = millis();
 
     if (!s_diagnostic_session_open) {
-        const uint8_t next_base = s_obd_catalog.next_query_base();
-        if (s_obd_catalog.complete() || s_obd_discovery_retries >= OBD_DISCOVERY_RETRIES) {
+        const uint8_t next_base = obd_pid_catalog.next_query_base();
+        if (obd_pid_catalog.complete() || s_obd_discovery_retries >= OBD_DISCOVERY_RETRIES) {
             poll_open_session();
             s_diagnostic_session_open = true;
             s_last_poll_ms = millis();

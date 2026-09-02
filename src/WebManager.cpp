@@ -5,6 +5,7 @@
 #include "CanBusManager.h"
 #include "BuildInfo.h"
 #include "OtaSlots.h"
+#include "ObdPidCatalog.h"
 #include "ResetHistory.h"
 #include "Version.h"
 #include <Update.h>
@@ -2836,6 +2837,7 @@ static constexpr ObdMetricDescriptor OBD_DESCRIPTORS[] = {
     {0x10, "Массовый расход воздуха", "г/с", 2}, {0x11, "Положение дросселя", "%", 1},
     {0x1F, "Время работы двигателя", "с", 0}, {0x23, "Давление в рампе", "кПа", 0},
     {0x24, "A/F Bank 1 Sensor 1", "λ", 3}, {0x25, "A/F Bank 1 Sensor 2", "λ", 3},
+    {0x26, "A/F Bank 1 Sensor 3", "λ", 3}, {0x27, "A/F Bank 1 Sensor 4", "λ", 3},
     {0x2F, "Уровень топлива", "%", 1}, {0x33, "Атмосферное давление", "кПа", 0},
     {0x3C, "Катализатор B1S1", "°C", 1}, {0x3D, "Катализатор B1S2", "°C", 1},
     {0x42, "Напряжение блока", "В", 3}, {0x43, "Абсолютная нагрузка", "%", 1},
@@ -3175,6 +3177,7 @@ void WebManager::handle_get_obd_metrics()
 
     bool first = true;
     for (const ObdMetricDescriptor &descriptor : OBD_DESCRIPTORS) {
+        if (!obd_pid_catalog.supports(descriptor.pid)) continue;
         const ObdMetricValue metric = obd_metric_value(descriptor.pid);
         if (!first) json += ',';
         first = false;

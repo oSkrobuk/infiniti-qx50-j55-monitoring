@@ -63,10 +63,6 @@ void can_parse_known_frames(const CanFrame &frame)
                     case 0x25:
                     case 0x26:
                     case 0x27:
-                    case 0x28:
-                    case 0x29:
-                    case 0x2A:
-                    case 0x2B:
                     case 0x44:
                         if (dlc < 5) return;
                         obd_value = raw * 2.0f / 65536.0f;
