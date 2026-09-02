@@ -64,6 +64,8 @@ static void test_engine_coolant_temp_decoded(void)
     can_parse_known_frames(make_uds_frame(0x7E8, 0x1101, 100));
     TEST_ASSERT_EQUAL_FLOAT(50.0f, can_metrics.engine_coolant);
     TEST_ASSERT_EQUAL_UINT32(TEST_NOW_MS, can_metrics.engine_coolant_ts);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MetricSource::INFINITI_UDS),
+                            static_cast<uint8_t>(can_metrics.engine_coolant_source));
 }
 
 static void test_engine_oil_temp_decoded(void)
@@ -72,6 +74,8 @@ static void test_engine_oil_temp_decoded(void)
     can_parse_known_frames(make_uds_frame(0x7E8, 0x111F, 140));
     TEST_ASSERT_EQUAL_FLOAT(90.0f, can_metrics.engine_oil);
     TEST_ASSERT_EQUAL_UINT32(TEST_NOW_MS, can_metrics.engine_oil_ts);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MetricSource::INFINITI_UDS),
+                            static_cast<uint8_t>(can_metrics.engine_oil_source));
 }
 
 static void test_radiator_coolant_temp_decoded(void)
@@ -130,6 +134,8 @@ static void test_engine_rpm_decoded(void)
     can_parse_known_frames(make_uds_frame(0x7E8, 0x1201, 0x00, 0x40));
     TEST_ASSERT_EQUAL_FLOAT(800.0f, can_metrics.engine_rpm);
     TEST_ASSERT_EQUAL_UINT32(TEST_NOW_MS, can_metrics.engine_rpm_ts);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MetricSource::INFINITI_UDS),
+                            static_cast<uint8_t>(can_metrics.engine_rpm_source));
 }
 
 static void test_engine_rpm_uses_both_bytes(void)
@@ -158,6 +164,8 @@ static void test_battery_voltage_decoded(void)
     // 178 * 0.08 = 14.24 В
     can_parse_known_frames(make_uds_frame(0x7E8, 0x1103, 178));
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 14.24f, can_metrics.battery_voltage);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MetricSource::INFINITI_UDS),
+                            static_cast<uint8_t>(can_metrics.battery_voltage_source));
 }
 
 // ── Отбраковка мусора ────────────────────────────────────────────────────────

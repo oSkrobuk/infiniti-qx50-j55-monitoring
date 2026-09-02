@@ -19,21 +19,30 @@ struct CanFrame {
     uint8_t  data[8];   // Данные фрейма
 };
 
+enum class MetricSource : uint8_t {
+    NONE = 0,
+    INFINITI_UDS = 1,
+    OBD2 = 2,
+};
+
 // Метрики, декодированные из CAN-шины Infiniti QX50 J55.
 // Каждое поле *_ts хранит millis() момента последнего обновления.
 // Начальное значение всех полей — 0 (не получено ни одного фрейма).
 struct CanMetrics {
     float    engine_coolant;       // Т ОЖ ДВС, °C (UDS DID 0x1101)
     uint32_t engine_coolant_ts;    // Время последнего обновления T ОЖ ДВС
+    MetricSource engine_coolant_source;
 
     float    engine_oil;           // Т масла ДВС, °C (UDS DID 0x111F)
     uint32_t engine_oil_ts;        // Время последнего обновления T масла ДВС
+    MetricSource engine_oil_source;
 
     float    radiator_coolant;     // Т ОЖ радиатора, °C (UDS DID 0x116B)
     uint32_t radiator_coolant_ts;  // Время последнего обновления T ОЖ радиатора
 
     float    engine_rpm;           // Обороты двигателя
     uint32_t engine_rpm_ts;        // Время последнего обновления оборотов двигателя
+    MetricSource engine_rpm_source;
 
     float    turbo_boost_volt;     // Датчик усиления турбины
     uint32_t turbo_boost_volt_ts;  // Время последнего обновления датчика усиления турбины
@@ -43,6 +52,7 @@ struct CanMetrics {
 
     float battery_voltage;         // Напряжение бортовой сети
     uint32_t battery_voltage_ts;   // Время последнего обновления напряжения бортовой сети
+    MetricSource battery_voltage_source;
 
     float cvt_temp;                // Температура масла вариатора
     uint32_t cvt_temp_ts;          // Время последнего обновления температуры масла вариатора

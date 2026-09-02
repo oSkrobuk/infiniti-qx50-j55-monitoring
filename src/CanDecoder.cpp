@@ -30,11 +30,13 @@ void can_parse_known_frames(const CanFrame &frame)
                     case 0x1101: { // Температура ОЖ ДВС
                         can_metrics.engine_coolant    = static_cast<float>(static_cast<int16_t>(d[4]) - 50);
                         can_metrics.engine_coolant_ts = millis();
+                        can_metrics.engine_coolant_source = MetricSource::INFINITI_UDS;
                         break;
                     }
                     case 0x111F: { // Температура масла ДВС
                         can_metrics.engine_oil    = static_cast<float>(static_cast<int16_t>(d[4]) - 50);
                         can_metrics.engine_oil_ts = millis();
+                        can_metrics.engine_oil_source = MetricSource::INFINITI_UDS;
                         break;
                     }
                     case 0x116B: { // Температура ОЖ радиатора
@@ -46,6 +48,7 @@ void can_parse_known_frames(const CanFrame &frame)
                         uint16_t raw_rpm = (static_cast<uint16_t>(d[4]) << 8) | d[5];
                         can_metrics.engine_rpm    = static_cast<float>(raw_rpm) * 12.5f;
                         can_metrics.engine_rpm_ts = millis();
+                        can_metrics.engine_rpm_source = MetricSource::INFINITI_UDS;
                         break;
                     }
                     case 0x110E: { // Датчик усиления турбины
@@ -66,6 +69,7 @@ void can_parse_known_frames(const CanFrame &frame)
                         // 178 * 0.08f = 14.24 Вольт
                         can_metrics.battery_voltage    = static_cast<float>(d[4]) * 0.08f;
                         can_metrics.battery_voltage_ts = millis();
+                        can_metrics.battery_voltage_source = MetricSource::INFINITI_UDS;
                         break;
                     }
                     default:
