@@ -25,6 +25,13 @@ enum class MetricSource : uint8_t {
     OBD2 = 2,
 };
 
+static constexpr uint8_t OBD_METRIC_CAPACITY = 0x65;
+
+struct ObdMetricValue {
+    float value;
+    uint32_t ts;
+};
+
 // Метрики, декодированные из CAN-шины Infiniti QX50 J55.
 // Каждое поле *_ts хранит millis() момента последнего обновления.
 // Начальное значение всех полей — 0 (не получено ни одного фрейма).
@@ -65,6 +72,10 @@ struct CanMetrics {
     // равен poll_interval_ms * POLL_COUNT. Это не время ответа ECU (0 = нет данных)
     float    rpm_poll_time;
     uint32_t rpm_poll_time_ts;     // Время последнего обновления rpm_poll_time
+
+    // Стандартные Mode 01 PID для диагностической витрины
+    // Общие с UDS параметры сюда не дублируются
+    ObdMetricValue obd[OBD_METRIC_CAPACITY];
 };
 
 // Глобальный объект метрик — заполняется из can_parse_known_frames()

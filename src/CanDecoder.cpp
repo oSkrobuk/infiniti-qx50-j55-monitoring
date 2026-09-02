@@ -21,35 +21,90 @@ void can_parse_known_frames(const CanFrame &frame)
             if (dlc >= 4 && d[1] == 0x41) {
                 const uint8_t pid = d[2];
                 const uint32_t now = millis();
+                const uint16_t raw = dlc >= 5
+                    ? (static_cast<uint16_t>(d[3]) << 8) | d[4]
+                    : 0;
+                float obd_value = 0.0f;
+                bool obd_valid = true;
                 switch (pid) {
+                    case 0x04: obd_value = d[3] * 100.0f / 255.0f; break;
                     case 0x05:
                         can_metrics.engine_coolant = static_cast<float>(d[3]) - 40.0f;
                         can_metrics.engine_coolant_ts = now;
                         can_metrics.engine_coolant_source = MetricSource::OBD2;
-                        break;
+                        return;
+                    case 0x06:
+                    case 0x07: obd_value = d[3] * 100.0f / 128.0f - 100.0f; break;
+                    case 0x0A: obd_value = d[3] * 3.0f; break;
+                    case 0x0B: obd_value = d[3]; break;
                     case 0x0C:
-                        if (dlc < 5) break;
-                        can_metrics.engine_rpm =
-                            static_cast<float>((static_cast<uint16_t>(d[3]) << 8) | d[4]) / 4.0f;
+                        if (dlc < 5) return;
+                        can_metrics.engine_rpm = static_cast<float>(raw) / 4.0f;
                         can_metrics.engine_rpm_ts = now;
                         can_metrics.engine_rpm_source = MetricSource::OBD2;
+                        return;
+                    case 0x0D: obd_value = d[3]; break;
+                    case 0x0E: obd_value = d[3] / 2.0f - 64.0f; break;
+                    case 0x0F: obd_value = static_cast<float>(d[3]) - 40.0f; break;
+                    case 0x10:
+                        if (dlc < 5) return;
+                        obd_value = raw / 100.0f;
+                        break;
+                    case 0x11: obd_value = d[3] * 100.0f / 255.0f; break;
+                    case 0x1F:
+                        if (dlc < 5) return;
+                        obd_value = raw;
+                        break;
+                    case 0x23:
+                        if (dlc < 5) return;
+                        obd_value = raw * 10.0f;
+                        break;
+                    case 0x24:
+                    case 0x44:
+                        if (dlc < 5) return;
+                        obd_value = raw * 2.0f / 65536.0f;
+                        break;
+                    case 0x2F: obd_value = d[3] * 100.0f / 255.0f; break;
+                    case 0x33: obd_value = d[3]; break;
+                    case 0x3C:
+                        if (dlc < 5) return;
+                        obd_value = raw / 10.0f - 40.0f;
                         break;
                     case 0x42:
-                        if (dlc < 5) break;
-                        can_metrics.battery_voltage =
-                            static_cast<float>((static_cast<uint16_t>(d[3]) << 8) | d[4]) / 1000.0f;
+                        if (dlc < 5) return;
+                        can_metrics.battery_voltage = static_cast<float>(raw) / 1000.0f;
                         can_metrics.battery_voltage_ts = now;
                         can_metrics.battery_voltage_source = MetricSource::OBD2;
+                        return;
+                    case 0x43:
+                        if (dlc < 5) return;
+                        obd_value = raw * 100.0f / 255.0f;
                         break;
+                    case 0x46: obd_value = static_cast<float>(d[3]) - 40.0f; break;
+                    case 0x49:
+                    case 0x4A: obd_value = d[3] * 100.0f / 255.0f; break;
                     case 0x5C:
                         can_metrics.engine_oil = static_cast<float>(d[3]) - 40.0f;
                         can_metrics.engine_oil_ts = now;
                         can_metrics.engine_oil_source = MetricSource::OBD2;
+                        return;
+                    case 0x5E:
+                        if (dlc < 5) return;
+                        obd_value = raw / 20.0f;
                         break;
-                    default:
+                    case 0x61:
+                    case 0x62:
+                    case 0x64: obd_value = static_cast<float>(d[3]) - 125.0f; break;
+                    case 0x63:
+                        if (dlc < 5) return;
+                        obd_value = raw;
                         break;
+                    default: obd_valid = false; break;
                 }
-                break;
+                if (obd_valid && pid < OBD_METRIC_CAPACITY) {
+                    can_metrics.obd[pid] = {obd_value, now};
+                }
+                return;
             }
 
             // Диагностический ответ от ECM (UDS / ISO 14229)
