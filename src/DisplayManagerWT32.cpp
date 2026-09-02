@@ -125,7 +125,7 @@ void DisplayManagerWT32::draw_static_()
         if (!draw_smooth_text_(version_buf_, SCREEN_WIDTH / 2, VER_Y + 4,
                                COLOR_ACCENT, 0.3f, SMOOTH_SPRITE_WIDTH)) {
             tft_.setTextColor(COLOR_ACCENT, TFT_BLACK);
-            tft_.drawCentreString(version_buf_, SCREEN_WIDTH / 2, VER_Y, 1);
+            tft_.drawCentreString(version_buf_, SCREEN_WIDTH / 2, VER_Y, lgfx::fontdata[1]);
         }
     }
 }
@@ -155,11 +155,11 @@ void DisplayManagerWT32::draw_header_()
     if (!draw_smooth_text_("INFINITI QX50 J55", 155, 24, TFT_WHITE, 0.55f,
                            SMOOTH_SPRITE_WIDTH)) {
         tft_.setTextColor(TFT_WHITE, TFT_BLACK);
-        tft_.drawCentreString("INFINITI QX50 J55", 155, 11, 4);
+        tft_.drawCentreString("INFINITI QX50 J55", 155, 11, lgfx::fontdata[4]);
     }
     if (!draw_smooth_text_("MONITORING", 370, 24, COLOR_ACCENT, 0.55f, 300)) {
         tft_.setTextColor(COLOR_ACCENT, TFT_BLACK);
-        tft_.drawCentreString("MONITORING", 370, 11, 4);
+        tft_.drawCentreString("MONITORING", 370, 11, lgfx::fontdata[4]);
     }
 }
 
@@ -238,16 +238,17 @@ void DisplayManagerWT32::draw_metric_tile_(uint8_t index, const char *label, con
         const int32_t unit_width = tft_.text_width(unit_buf, 2);
         const int32_t text_x = center_x - ((label_width + unit_width) / 2);
         tft_.setTextColor(COLOR_ACCENT, COLOR_CARD);
-        tft_.drawString(label, text_x, y + TILE_LABEL_OFFSET_Y, 2);
+        tft_.drawString(label, text_x, y + TILE_LABEL_OFFSET_Y, lgfx::fontdata[2]);
         tft_.setTextColor(COLOR_MUTED, COLOR_CARD);
-        tft_.drawString(unit_buf, text_x + label_width, y + TILE_LABEL_OFFSET_Y, 2);
+        tft_.drawString(unit_buf, text_x + label_width, y + TILE_LABEL_OFFSET_Y,
+                        lgfx::fontdata[2]);
     }
     label_sprite.deleteSprite();
 
     if (!draw_smooth_value_("--", center_x, y + TILE_VALUE_OFFSET_Y + 16, COLOR_NO_DATA)) {
         tft_.setTextColor(COLOR_NO_DATA, COLOR_CARD);
         tft_.setTextSize(1.35f);
-        tft_.drawCentreString("--", center_x, y + TILE_VALUE_OFFSET_Y, 4);
+        tft_.drawCentreString("--", center_x, y + TILE_VALUE_OFFSET_Y, lgfx::fontdata[4]);
         tft_.setTextSize(1.0f);
     }
 }
@@ -264,7 +265,7 @@ void DisplayManagerWT32::draw_metric_value_(uint8_t index, const char *value, ui
         tft_.setTextColor(color, COLOR_CARD);
         tft_.setTextSize(1.35f);
         tft_.setTextPadding(TILE_WIDTH - 12);
-        tft_.drawCentreString(value, center_x, y + TILE_VALUE_OFFSET_Y, 4);
+        tft_.drawCentreString(value, center_x, y + TILE_VALUE_OFFSET_Y, lgfx::fontdata[4]);
         tft_.setTextPadding(0);
         tft_.setTextSize(1.0f);
     }
@@ -322,7 +323,7 @@ void DisplayManagerWT32::show_alert(const char *code, const char *display_name)
     if (!draw_smooth_text_(code, SCREEN_WIDTH / 2, 32, COLOR_ACCENT, 0.8f,
                            SMOOTH_SPRITE_WIDTH)) {
         tft_.setTextColor(COLOR_ACCENT, TFT_BLACK);
-        tft_.drawCentreString(code, SCREEN_WIDTH / 2, 18, 4);
+        tft_.drawCentreString(code, SCREEN_WIDTH / 2, 18, lgfx::fontdata[4]);
     }
 
     // Разделительная линия
@@ -359,14 +360,15 @@ void DisplayManagerWT32::show_alert(const char *code, const char *display_name)
     if (!draw_smooth_text_(line1, SCREEN_WIDTH / 2, Y_START + (LINE_H / 2), 0xF800,
                            VALUE_TEXT_ZOOM, SMOOTH_SPRITE_WIDTH)) {
         tft_.setTextColor(0xF800, TFT_BLACK);
-        tft_.drawCentreString(line1, SCREEN_WIDTH / 2, Y_START, 4);
+        tft_.drawCentreString(line1, SCREEN_WIDTH / 2, Y_START, lgfx::fontdata[4]);
     }
 
     // Строка 2: белая
     if (!draw_smooth_text_(line2, SCREEN_WIDTH / 2, Y_START + LINE_H + LINE_GAP + (LINE_H / 2),
                            TFT_WHITE, VALUE_TEXT_ZOOM, SMOOTH_SPRITE_WIDTH)) {
         tft_.setTextColor(TFT_WHITE, TFT_BLACK);
-        tft_.drawCentreString(line2, SCREEN_WIDTH / 2, Y_START + LINE_H + LINE_GAP, 4);
+        tft_.drawCentreString(line2, SCREEN_WIDTH / 2, Y_START + LINE_H + LINE_GAP,
+                              lgfx::fontdata[4]);
     }
 
     // Строка 3: красная
@@ -374,7 +376,8 @@ void DisplayManagerWT32::show_alert(const char *code, const char *display_name)
                            Y_START + ((LINE_H + LINE_GAP) * 2) + (LINE_H / 2),
                            0xF800, VALUE_TEXT_ZOOM, SMOOTH_SPRITE_WIDTH)) {
         tft_.setTextColor(0xF800, TFT_BLACK);
-        tft_.drawCentreString(line3, SCREEN_WIDTH / 2, Y_START + (LINE_H + LINE_GAP) * 2, 4);
+        tft_.drawCentreString(line3, SCREEN_WIDTH / 2, Y_START + (LINE_H + LINE_GAP) * 2,
+                              lgfx::fontdata[4]);
     }
 
     strncpy(drawn_alert_code_, code, sizeof(drawn_alert_code_) - 1);
