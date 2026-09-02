@@ -98,14 +98,19 @@ jobs:
         include:
           - env: esp32
             chip: esp32
+            partitions: partitions_4mb.csv
           - env: esp32-mock
             chip: esp32
+            partitions: partitions_4mb.csv
           - env: esp32-hook
             chip: esp32
+            partitions: partitions_4mb.csv
           - env: esp32s3-wt32
             chip: esp32s3
+            partitions: partitions_16mb.csv
           - env: esp32s3-wt32-mock
             chip: esp32s3
+            partitions: partitions_16mb.csv
 
     steps:
       - name: Checkout repository
@@ -137,14 +142,15 @@ jobs:
         run: pio run -e ${{ matrix.env }}
 
       - name: Check firmware fits the OTA slot
-        # Размер слота берём прямо из partitions.csv, чтобы проверка не
+        # Размер слота берём из таблицы разделов текущей платы, чтобы проверка не
         # разошлась с таблицей разделов, если её когда-нибудь поправят.
         # Если firmware.bin перерастёт слот, OTA-обновление сломается уже
         # у пользователя, а не на сборке. Пусть падает здесь
         run: |
-          RAW=$(awk -F',' '$1 ~ /^ota_0/ { gsub(/[ \t]/,"",$5); print $5 }' partitions.csv)
+          PARTITIONS="${{ matrix.partitions }}"
+          RAW=$(awk -F',' '$1 ~ /^ota_0/ { gsub(/[ \t]/,"",$5); print $5 }' "$PARTITIONS")
           if [ -z "$RAW" ]; then
-            echo "::error::Не удалось прочитать размер ota_0 из partitions.csv"
+            echo "::error::Не удалось прочитать размер ota_0 из $PARTITIONS"
             exit 1
           fi
           SLOT=$((RAW))
