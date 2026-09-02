@@ -12,6 +12,7 @@
 #include "AlertManager.h"
 #include "OtaImage.h"
 #include "ObdPidCatalog.h"
+#include "ObdPollPlan.h"
 #include "ResetHistory.h"
 #include "Version.h"
 
@@ -178,12 +179,12 @@ static uint32_t s_last_tp_ms     = 0;
 // Таймер проверки состояния освещения
 static uint32_t s_last_light_poll_ms = 0;
 static ObdPidCatalog s_obd_catalog;
+static ObdPollPlan s_obd_poll_plan(s_obd_catalog, OBD_POLL_LIST, OBD_POLL_COUNT,
+                                   OBD_POLL_INTERVAL_MS);
 static bool s_diagnostic_session_open = false;
 static uint8_t s_obd_discovery_base = 0xFF;
 static uint8_t s_obd_discovery_retries = 0;
 static uint32_t s_obd_discovery_sent_ms = 0;
-static uint8_t s_obd_poll_idx = OBD_POLL_COUNT;
-static uint32_t s_obd_cycle_started_ms = 0;
 
 // Принять ответы штатного мониторинга и завершить ISO-TP обмен с блоком света
 static void can_handle_monitor_frame(const CanFrame &frame)
@@ -311,21 +312,13 @@ static void poll_handle()
         s_poll_idx = (s_poll_idx + 1) % POLL_COUNT;
     }
 
-    if (s_obd_poll_idx >= OBD_POLL_COUNT &&
-        now - s_obd_cycle_started_ms >= OBD_POLL_INTERVAL_MS) {
-        s_obd_cycle_started_ms = now;
-        s_obd_poll_idx = 0;
-    }
-
-    while (s_obd_poll_idx < OBD_POLL_COUNT) {
-        if (millis() - s_last_poll_ms >= poll_interval_ms) return;
-        const uint8_t pid = OBD_POLL_LIST[s_obd_poll_idx];
-        if (!s_obd_catalog.supports(pid)) {
-            s_obd_poll_idx++;
-            continue;
-        }
-        if (!obd_send_request(pid)) return;
-        s_obd_poll_idx++;
+    while (true) {
+        const bool primary_due = millis() - s_last_poll_ms >= poll_interval_ms;
+        const int16_t pid = s_obd_poll_plan.next(now, primary_due);
+        if (pid < 0) return;
+        const bool sent = obd_send_request(static_cast<uint8_t>(pid));
+        s_obd_poll_plan.complete_send(sent);
+        if (!sent) return;
     }
 }
 
