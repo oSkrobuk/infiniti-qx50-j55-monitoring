@@ -13,12 +13,11 @@ CanBusManager::CanBusManager()
     , running_(false)
     , rx_count_(0)
     , err_count_(0)
-    , bus_off_count_(0)
-    , recovery_count_(0)
     , last_rx_ts_(0)
     , last_ecm_response_ts_(0)
     , last_tcm_response_ts_(0)
     , state_(TWAI_STATE_STOPPED)
+    , last_recovery_error_(ESP_OK)
     , callback_(nullptr)
 {
 }
@@ -66,8 +65,9 @@ bool CanBusManager::init()
     state_     = TWAI_STATE_RUNNING;
     rx_count_  = 0;
     err_count_ = 0;
-    bus_off_count_ = 0;
-    recovery_count_ = 0;
+    recovery_.reset();
+    recovery_.observe(CanDriverState::RUNNING, millis());
+    last_recovery_error_ = ESP_OK;
     last_rx_ts_ = 0;
     last_ecm_response_ts_ = 0;
     last_tcm_response_ts_ = 0;
@@ -143,38 +143,63 @@ void CanBusManager::handle()
     // Проверяем состояние шины и восстанавливаем контроллер после Bus-Off
     twai_status_info_t status;
     if (twai_get_status_info(&status) == ESP_OK) {
-        if (status.state == TWAI_STATE_BUS_OFF && state_ != TWAI_STATE_BUS_OFF) {
-            running_ = false;
-            err_count_++;
-            bus_off_count_++;
-            state_ = TWAI_STATE_BUS_OFF;
-            Serial.println("[CAN] Bus-Off, запуск восстановления");
+        CanDriverState driver_state = CanDriverState::STOPPED;
+        switch (status.state) {
+            case TWAI_STATE_RUNNING:
+                driver_state = CanDriverState::RUNNING;
+                break;
+            case TWAI_STATE_BUS_OFF:
+                driver_state = CanDriverState::BUS_OFF;
+                break;
+            case TWAI_STATE_RECOVERING:
+                driver_state = CanDriverState::RECOVERING;
+                break;
+            default:
+                break;
+        }
 
+        const uint32_t bus_off_before = recovery_.bus_off_count();
+        const CanRecoveryAction action = recovery_.observe(driver_state, millis());
+        if (recovery_.bus_off_count() != bus_off_before) {
+            err_count_++;
+            Serial.println("[CAN] Bus-Off, запуск восстановления");
+        }
+
+        if (action == CanRecoveryAction::INITIATE) {
             esp_err_t err = twai_initiate_recovery();
-            if (err == ESP_OK) {
-                state_ = TWAI_STATE_RECOVERING;
-            } else {
+            recovery_.complete(action, err == ESP_OK, millis());
+            if (err != ESP_OK) {
+                last_recovery_error_ = err;
                 Serial.printf("[CAN] Ошибка запуска восстановления: %s\r\n", esp_err_to_name(err));
             }
-            return;
         }
 
-        // После recovery драйвер переходит в STOPPED и требует явного twai_start
-        if (status.state == TWAI_STATE_STOPPED && state_ == TWAI_STATE_RECOVERING) {
+        if (action == CanRecoveryAction::START) {
             esp_err_t err = twai_start();
+            recovery_.complete(action, err == ESP_OK, millis());
             if (err == ESP_OK) {
-                running_ = true;
-                state_ = TWAI_STATE_RUNNING;
-                recovery_count_++;
                 Serial.println("[CAN] Шина восстановлена и запущена");
             } else {
+                last_recovery_error_ = err;
                 Serial.printf("[CAN] Ошибка перезапуска после восстановления: %s\r\n", esp_err_to_name(err));
             }
-            return;
         }
 
-        state_ = status.state;
-        running_ = status.state == TWAI_STATE_RUNNING;
+        switch (recovery_.state()) {
+            case CanDriverState::RUNNING:
+                state_ = TWAI_STATE_RUNNING;
+                break;
+            case CanDriverState::BUS_OFF:
+                state_ = TWAI_STATE_BUS_OFF;
+                break;
+            case CanDriverState::RECOVERING:
+                state_ = TWAI_STATE_RECOVERING;
+                break;
+            default:
+                state_ = TWAI_STATE_STOPPED;
+                break;
+        }
+        running_ = recovery_.state() == CanDriverState::RUNNING;
     }
 }
 
@@ -190,12 +215,37 @@ uint32_t CanBusManager::error_count() const
 
 uint32_t CanBusManager::bus_off_count() const
 {
-    return bus_off_count_;
+    return recovery_.bus_off_count();
 }
 
 uint32_t CanBusManager::recovery_count() const
 {
-    return recovery_count_;
+    return recovery_.recovery_count();
+}
+
+uint32_t CanBusManager::recovery_attempt_count() const
+{
+    return recovery_.initiate_attempt_count();
+}
+
+uint32_t CanBusManager::recovery_failure_count() const
+{
+    return recovery_.initiate_failure_count();
+}
+
+uint32_t CanBusManager::restart_attempt_count() const
+{
+    return recovery_.start_attempt_count();
+}
+
+uint32_t CanBusManager::restart_failure_count() const
+{
+    return recovery_.start_failure_count();
+}
+
+int32_t CanBusManager::last_recovery_error() const
+{
+    return last_recovery_error_;
 }
 
 uint32_t CanBusManager::last_rx_ts() const

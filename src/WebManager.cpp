@@ -2165,6 +2165,9 @@ static const char HEALTH_HTML[] PROGMEM = R"rawhtml(
     <div class="diag-item"><div class="diag-label">Принято CAN-кадров</div><div class="diag-value" id="diagCanCount">0</div></div>
     <div class="diag-item"><div class="diag-label">Сбоев Bus-Off</div><div class="diag-value" id="diagBusOff">0</div></div>
     <div class="diag-item"><div class="diag-label">Восстановлений CAN</div><div class="diag-value" id="diagRecovery">0</div></div>
+    <div class="diag-item"><div class="diag-label">Попыток recovery / ошибок</div><div class="diag-value" id="diagRecoveryAttempts">0 / 0</div></div>
+    <div class="diag-item"><div class="diag-label">Попыток restart / ошибок</div><div class="diag-value" id="diagRestartAttempts">0 / 0</div></div>
+    <div class="diag-item"><div class="diag-label">Последняя ошибка recovery</div><div class="diag-value" id="diagRecoveryError">Нет</div></div>
     <div class="diag-item"><div class="diag-label">Последний CAN-кадр</div><div class="diag-value" id="diagCanAge">Никогда</div></div>
     <div class="diag-item"><div class="diag-label">Последний ответ ECM</div><div class="diag-value" id="diagEcmAge">Никогда</div></div>
     <div class="diag-item"><div class="diag-label">Последний ответ TCM</div><div class="diag-value" id="diagTcmAge">Никогда</div></div>
@@ -2189,6 +2192,8 @@ function isBadReset(reason){return reason==='brownout'||reason==='panic'||reason
 function render(data){
   const reason=data.reset_reason||'unknown';const state=data.twai_state||'unknown';
   const busOffCount=Number(data.can_bus_off_count||0);const recoveryCount=Number(data.can_recovery_count||0);
+  const recoveryAttempts=Number(data.can_recovery_attempt_count||0);const recoveryFailures=Number(data.can_recovery_failure_count||0);
+  const restartAttempts=Number(data.can_restart_attempt_count||0);const restartFailures=Number(data.can_restart_failure_count||0);
   const reset=document.getElementById('diagReset');const twai=document.getElementById('diagTwai');
   const canCount=document.getElementById('diagCanCount');
   const busOff=document.getElementById('diagBusOff');const recovery=document.getElementById('diagRecovery');
@@ -2197,6 +2202,9 @@ function render(data){
   canCount.textContent=String(Number(data.can_received_count||0));canCount.className='diag-value '+(Number(data.can_received_count||0)>0?'ok':'danger');
   busOff.textContent=String(busOffCount);busOff.className='diag-value '+(busOffCount>0?'danger':'ok');
   recovery.textContent=String(recoveryCount);recovery.className='diag-value '+(recoveryCount<busOffCount?'danger':(recoveryCount>0?'warn':'ok'));
+  const recoveryAttemptsEl=document.getElementById('diagRecoveryAttempts');recoveryAttemptsEl.textContent=recoveryAttempts+' / '+recoveryFailures;recoveryAttemptsEl.className='diag-value '+(recoveryFailures>0?'danger':'ok');
+  const restartAttemptsEl=document.getElementById('diagRestartAttempts');restartAttemptsEl.textContent=restartAttempts+' / '+restartFailures;restartAttemptsEl.className='diag-value '+(restartFailures>0?'danger':'ok');
+  const recoveryError=document.getElementById('diagRecoveryError');const recoveryErrorCode=Number(data.can_last_recovery_error||0);recoveryError.textContent=recoveryErrorCode===0?'Нет':String(recoveryErrorCode);recoveryError.className='diag-value '+(recoveryErrorCode===0?'ok':'danger');
   const light=document.getElementById('diagLight');const lightAge=data.exterior_light_age_ms;
   if(lightAge===null||lightAge===undefined){light.textContent='Нет данных';light.className='diag-value danger';}
   else{light.textContent=(data.exterior_light_on?'Включен':'Выключен')+' · '+fmtAge(lightAge);light.className='diag-value '+(lightAge<=LIGHT_STALE_MS?'ok':'danger');}
@@ -2994,6 +3002,16 @@ void WebManager::handle_get_metrics()
     json += String(can_bus.bus_off_count());
     json += ",\"can_recovery_count\":";
     json += String(can_bus.recovery_count());
+    json += ",\"can_recovery_attempt_count\":";
+    json += String(can_bus.recovery_attempt_count());
+    json += ",\"can_recovery_failure_count\":";
+    json += String(can_bus.recovery_failure_count());
+    json += ",\"can_restart_attempt_count\":";
+    json += String(can_bus.restart_attempt_count());
+    json += ",\"can_restart_failure_count\":";
+    json += String(can_bus.restart_failure_count());
+    json += ",\"can_last_recovery_error\":";
+    json += String(can_bus.last_recovery_error());
     json += ",\"can_received_count\":";
     json += String(can_bus.received_count());
     const uint32_t now = millis();

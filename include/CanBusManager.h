@@ -3,6 +3,7 @@
 #include <driver/twai.h>
 
 #include "CanTypes.h"
+#include "CanRecovery.h"
 
 // Пины CAN-модуля SN65HVD230 (WVCMCU-230) задаются отдельно для каждой платы через build_flags
 static constexpr gpio_num_t CAN_TX_PIN = static_cast<gpio_num_t>(CAN_TX_PIN_NUM);
@@ -53,6 +54,17 @@ public:
     // Вернуть количество успешных перезапусков TWAI после Bus-Off
     uint32_t recovery_count() const;
 
+    // Вернуть количество попыток и ошибок запуска восстановления
+    uint32_t recovery_attempt_count() const;
+    uint32_t recovery_failure_count() const;
+
+    // Вернуть количество попыток и ошибок перезапуска TWAI
+    uint32_t restart_attempt_count() const;
+    uint32_t restart_failure_count() const;
+
+    // Вернуть код последней ошибки восстановления ESP-IDF
+    int32_t last_recovery_error() const;
+
     // Вернуть время последнего принятого CAN-кадра
     uint32_t last_rx_ts() const;
 
@@ -73,12 +85,12 @@ private:
     bool             running_;
     uint32_t         rx_count_;
     uint32_t         err_count_;
-    uint32_t         bus_off_count_;
-    uint32_t         recovery_count_;
     uint32_t         last_rx_ts_;
     uint32_t         last_ecm_response_ts_;
     uint32_t         last_tcm_response_ts_;
     twai_state_t     state_;
+    CanRecovery      recovery_;
+    int32_t          last_recovery_error_;
     CanFrameCallback callback_;
 
     // Преобразовать twai_message_t → CanFrame
