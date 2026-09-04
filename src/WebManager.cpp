@@ -658,10 +658,15 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     <div class="grid">
       <div class="card">
         <div class="card-hdr"><div class="card-title">&#9201; Система &mdash; Параметры</div><button type="button" class="btn-card-default" onclick="resetCardFields('system')">&#8635; Сброс</button></div>
-        <div class="row2">
+        <div class="row3">
           <div class="field">
-            <label>Интервал опроса, мс</label>
+            <label>Основные DID, мс</label>
             <input class="f-target" type="number" step="1" min="10" name="system_poll_interval_ms" required>
+          </div>
+          <div class="field">
+            <label>OBD PID, мс</label>
+            <input class="f-target" type="number" step="1" min="1" max="100" name="system_obd_request_spacing_ms" required>
+            <span class="hint">Пауза внутри секундного пакета</span>
           </div>
           <div class="field">
             <label>Устаревание CAN, мс</label>
@@ -1086,9 +1091,11 @@ function fillForm(cfg) {
   }
   if (cfg.system) {
     const pi = document.querySelector('[name="system_poll_interval_ms"]');
+    const os = document.querySelector('[name="system_obd_request_spacing_ms"]');
     const sm = document.querySelector('[name="system_stale_ms"]');
     const bp = document.querySelector('[name="system_brightness_percent"]');
     if (pi) pi.value = cfg.system.poll_interval_ms;
+    if (os) os.value = cfg.system.obd_request_spacing_ms;
     if (sm) sm.value = cfg.system.stale_ms;
     if (bp) bp.value = cfg.system.brightness_percent;
   }
@@ -1262,13 +1269,19 @@ document.getElementById('systemForm').addEventListener('submit', async (e) => {
   e.preventDefault();
 
   const pollEl = document.querySelector('[name="system_poll_interval_ms"]');
+  const obdSpacingEl = document.querySelector('[name="system_obd_request_spacing_ms"]');
   const staleEl = document.querySelector('[name="system_stale_ms"]');
   const brightnessEl = document.querySelector('[name="system_brightness_percent"]');
   const poll_ms = parseFloat(pollEl ? pollEl.value : 30);
+  const obd_spacing_ms = parseFloat(obdSpacingEl ? obdSpacingEl.value : 5);
   const stale_ms = parseFloat(staleEl ? staleEl.value : 1000);
   const brightness_percent = parseFloat(brightnessEl ? brightnessEl.value : 100);
 
   if (poll_ms < 10) { showToast('⚠ Интервал опроса не может быть меньше 10 мс', 'err'); return; }
+  if (obd_spacing_ms < 1 || obd_spacing_ms > 100) {
+    showToast('⚠ Пауза OBD PID должна быть от 1 до 100 мс', 'err');
+    return;
+  }
   if (stale_ms < 100) { showToast('⚠ Порог устаревания не может быть меньше 100 мс', 'err'); return; }
   if (poll_ms >= stale_ms) {
     showToast('⚠ Интервал опроса должен быть меньше порога устаревания', 'err');
@@ -1285,6 +1298,7 @@ document.getElementById('systemForm').addEventListener('submit', async (e) => {
     const sysPayload = {
       system: {
         poll_interval_ms: poll_ms,
+        obd_request_spacing_ms: obd_spacing_ms,
         stale_ms: stale_ms,
         brightness_percent: brightness_percent
       }
@@ -2015,7 +2029,7 @@ async function autoCheckUpdates() {
 // Значения по умолчанию совпадают с build_defaults() в ConfigManager.cpp
 const CARD_DEFAULTS = {
   wifi:         { ssid: 'QX50Monitoring', password: 'infiniti' },
-  system:       { poll_interval_ms: 30, stale_ms: 1000, brightness_percent: 100 },
+  system:       { poll_interval_ms: 30, obd_request_spacing_ms: 5, stale_ms: 1000, brightness_percent: 100 },
   oil:          { min: 50, target: 90, max: 98 },
   coolant:      { min: 50, target: 90, max: 93 },
   radiator:     { min: 0,  target: 50, max: 90 },
@@ -2721,12 +2735,12 @@ label{display:flex;gap:8px;align-items:center}.note{color:var(--muted);line-heig
 <div id="status">Ожидание данных…</div><h2>Infiniti UDS DID</h2>
 <p class="note">Основные DID уже читает монитор: страница не создает для них дополнительных запросов.</p>
 <div id="didGrid" class="grid"></div><h2>Стандартные OBD-II PID</h2>
-<p class="note">Отметьте нужные PID. По умолчанию все выключены, отправляется не более одного запроса в секунду.</p>
+<p class="note">Отметьте нужные PID. По умолчанию все выключены, каждый выбранный PID опрашивается раз в секунду.</p>
 <div id="pidGrid" class="grid"></div></main><script>
 const statusEl=document.getElementById('status'),didGrid=document.getElementById('didGrid'),pidGrid=document.getElementById('pidGrid');
 const value=m=>(m.value===null?'—':m.value.toFixed(m.precision))+' <small>'+m.unit+'</small>';
 function card(m,check){return '<div class="card '+(m.fresh?'':'stale')+'"><div class="pid">'+(check?'<label><input type="checkbox" data-pid="'+m.id+'" '+(m.enabled?'checked':'')+'>':'')+m.kind+' '+m.id+(check?'</label>':'')+'</div><div class="name">'+m.name+'</div><div class="value">'+value(m)+'</div></div>'}
-function render(data){statusEl.textContent='Диагностический режим активен · один PID-запрос в секунду';
+function render(data){statusEl.textContent='Диагностический режим активен · выбранные PID обновляются раз в секунду';
 didGrid.innerHTML=data.dids.map(m=>card(m,false)).join('');pidGrid.innerHTML=data.pids.map(m=>card(m,true)).join('')}
 async function update(){try{const r=await fetch('/obd-metrics',{cache:'no-store'});if(!r.ok)throw Error(r.status);render(await r.json())}catch(e){statusEl.textContent='Нет связи: '+e}}
 pidGrid.addEventListener('change',async e=>{if(!e.target.matches('[data-pid]'))return;const body=new URLSearchParams({pid:e.target.dataset.pid,enabled:e.target.checked?'1':'0'});try{const r=await fetch('/obd-selection',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});if(!r.ok)throw Error(r.status)}catch(err){e.target.checked=!e.target.checked;statusEl.textContent='Не удалось изменить опрос: '+err}});

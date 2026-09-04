@@ -27,6 +27,7 @@ static void test_defaults_applied_on_construction(void)
     TEST_ASSERT_EQUAL_FLOAT(90.0f, cm.get("oil", "target"));
     TEST_ASSERT_EQUAL_FLOAT(4500.0f, cm.get("rpm", "red_start"));
     TEST_ASSERT_EQUAL_FLOAT(3000.0f, cm.get("oil_pressure", "rpm_threshold"));
+    TEST_ASSERT_EQUAL_FLOAT(5.0f, cm.get("system", "obd_request_spacing_ms"));
     TEST_ASSERT_EQUAL_FLOAT(1000.0f, cm.get("system", "stale_ms"));
     TEST_ASSERT_EQUAL_FLOAT(100.0f, cm.get("system", "brightness_percent"));
 }
@@ -164,6 +165,8 @@ static void test_load_migrates_config_when_defaults_changed(void)
     TEST_ASSERT_EQUAL_FLOAT(105.0f, migrated["params"]["oil"]["max"].as<float>());
     TEST_ASSERT_EQUAL_FLOAT(100.0f,
                             migrated["params"]["system"]["brightness_percent"].as<float>());
+    TEST_ASSERT_EQUAL_FLOAT(5.0f,
+                            migrated["params"]["system"]["obd_request_spacing_ms"].as<float>());
 
     ConfigManager after;
     TEST_ASSERT_TRUE(after.load_from_file());

@@ -161,6 +161,7 @@ static constexpr uint8_t POLL_COUNT = sizeof(POLL_LIST) / sizeof(POLL_LIST[0]);
 static constexpr uint32_t TESTER_PRESENT_INTERVAL_MS = 2000;
 static constexpr uint32_t LIGHT_POLL_INTERVAL_MS = 5000;
 static constexpr uint32_t OBD_POLL_INTERVAL_MS = 1000;
+static constexpr uint32_t DEFAULT_OBD_REQUEST_SPACING_MS = 5;
 static constexpr uint32_t OBD_DISCOVERY_TIMEOUT_MS = 1000;
 static constexpr uint8_t OBD_POLL_COUNT = DIAGNOSTIC_MAX_PID;
 static uint8_t s_obd_poll_list[OBD_POLL_COUNT];
@@ -192,7 +193,7 @@ static uint32_t s_last_tp_ms     = 0;
 // Таймер проверки состояния освещения
 static uint32_t s_last_light_poll_ms = 0;
 static ObdPollPlan s_obd_poll_plan(obd_pid_catalog, s_obd_poll_list, OBD_POLL_COUNT,
-                                   OBD_POLL_INTERVAL_MS);
+                                   OBD_POLL_INTERVAL_MS, DEFAULT_OBD_REQUEST_SPACING_MS);
 static bool s_diagnostic_session_open = false;
 static uint32_t s_obd_discovery_sent_ms = 0;
 
@@ -400,6 +401,8 @@ void setup()
     if (configured_poll_interval > 0) {
         s_poll_interval_ms.store(configured_poll_interval, std::memory_order_relaxed);
     }
+    s_obd_poll_plan.set_request_spacing(
+        static_cast<uint32_t>(config.get("system", "obd_request_spacing_ms")));
 
     // Версия прошивки (FW_VERSION из include/Version.h) — отображается внизу дисплея
     display.init(FW_VERSION);
@@ -478,6 +481,8 @@ void loop()
     if (configured_poll_interval > 0) {
         s_poll_interval_ms.store(configured_poll_interval, std::memory_order_relaxed);
     }
+    s_obd_poll_plan.set_request_spacing(
+        static_cast<uint32_t>(config.get("system", "obd_request_spacing_ms")));
 
     // Переносим измеренное задачей значение в общее состояние под мьютексом
     const uint32_t measured_poll_time_ts = s_rpm_poll_time_ts.load(std::memory_order_acquire);

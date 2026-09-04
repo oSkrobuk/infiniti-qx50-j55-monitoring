@@ -64,12 +64,14 @@ static void build_defaults(JsonDocument &doc)
     doc["poll_time"]["red_min"]   = 0.5f;
 
     // Системные параметры CAN-опроса и дисплея
-    // poll_interval_ms   — пауза между отправками UDS-запросов (мс)
-    // stale_ms           — через сколько мс без обновления значение считается устаревшим
-    // brightness_percent — яркость управляемой подсветки дисплея в процентах
-    doc["system"]["poll_interval_ms"]   = 30.0f;
-    doc["system"]["stale_ms"]           = 1000.0f;
-    doc["system"]["brightness_percent"] = 100.0f;
+    // poll_interval_ms          — пауза между отправками основных UDS-запросов (мс)
+    // obd_request_spacing_ms    — пауза между OBD PID внутри секундного пакета (мс)
+    // stale_ms                  — через сколько мс без обновления значение считается устаревшим
+    // brightness_percent        — яркость управляемой подсветки дисплея в процентах
+    doc["system"]["poll_interval_ms"]        = 30.0f;
+    doc["system"]["obd_request_spacing_ms"] = 5.0f;
+    doc["system"]["stale_ms"]                = 1000.0f;
+    doc["system"]["brightness_percent"]      = 100.0f;
 
     // Настройки WiFi точки доступа (строки, не участвуют в числовом хеше)
     doc["wifi"]["ssid"]     = "QX50Monitoring";
