@@ -91,6 +91,7 @@ DisplayManagerWT32::DisplayManagerWT32()
 {
     version_buf_[0]      = '\0';
     drawn_alert_code_[0] = '\0';
+    invalidate_metric_cache_();
 }
 
 // Пин подсветки дисплея WT32-SC01 Plus (GPIO45)
@@ -271,6 +272,26 @@ void DisplayManagerWT32::draw_metric_value_(uint8_t index, const char *value, ui
     }
 }
 
+void DisplayManagerWT32::update_metric_value_(uint8_t index, const char *value, uint16_t color)
+{
+    if (index >= METRIC_COUNT) return;
+
+    if (metric_cache_valid_[index] && metric_color_cache_[index] == color &&
+        strcmp(metric_value_cache_[index], value) == 0) {
+        return;
+    }
+
+    draw_metric_value_(index, value, color);
+    snprintf(metric_value_cache_[index], METRIC_VALUE_SIZE, "%s", value);
+    metric_color_cache_[index] = color;
+    metric_cache_valid_[index] = true;
+}
+
+void DisplayManagerWT32::invalidate_metric_cache_()
+{
+    memset(metric_cache_valid_, 0, sizeof(metric_cache_valid_));
+}
+
 void DisplayManagerWT32::init(const char *version)
 {
     ledcSetup(WT32_BL_LEDC_CHANNEL, WT32_BL_LEDC_FREQ_HZ, WT32_BL_LEDC_BITS);
@@ -286,6 +307,7 @@ void DisplayManagerWT32::init(const char *version)
     }
 
     draw_static_();
+    invalidate_metric_cache_();
 }
 
 void DisplayManagerWT32::update_brightness_()
@@ -392,6 +414,7 @@ void DisplayManagerWT32::clear_alert()
     // Закрашиваем весь экран чёрным, затем восстанавливаем интерфейс
     tft_.fillScreen(TFT_BLACK);
     draw_static_();
+    invalidate_metric_cache_();
 
     drawn_alert_code_[0] = '\0';
     alert_visible_       = false;
@@ -620,7 +643,7 @@ void DisplayManagerWT32::update_metrics(float coolant, float oil, float coolant_
         config.get("radiator", "target"),
         config.get("radiator", "max"));
     snprintf(buf, sizeof(buf), "%.0f", coolant_r);
-    draw_metric_value_(0, buf, radiator_color);
+    update_metric_value_(0, buf, radiator_color);
 
     // Антифриз ДВС
     uint16_t coolant_color = get_temperature_color(coolant,
@@ -628,7 +651,7 @@ void DisplayManagerWT32::update_metrics(float coolant, float oil, float coolant_
         config.get("coolant", "target"),
         config.get("coolant", "max"));
     snprintf(buf, sizeof(buf), "%.0f", coolant);
-    draw_metric_value_(1, buf, coolant_color);
+    update_metric_value_(1, buf, coolant_color);
 
     // Моторное масло
     uint16_t oil_color = get_temperature_color(oil,
@@ -636,23 +659,23 @@ void DisplayManagerWT32::update_metrics(float coolant, float oil, float coolant_
         config.get("oil", "target"),
         config.get("oil", "max"));
     snprintf(buf, sizeof(buf), "%.0f", oil);
-    draw_metric_value_(2, buf, oil_color);
+    update_metric_value_(2, buf, oil_color);
 
     // Обороты двигателя
     snprintf(buf, sizeof(buf), "%.0f", rpm);
-    draw_metric_value_(3, buf, get_rpm_color(rpm));
+    update_metric_value_(3, buf, get_rpm_color(rpm));
 
     // Напряжение датчика давления масла
     snprintf(buf, sizeof(buf), "%.2f", oil_pressure);
-    draw_metric_value_(4, buf, get_oil_pressure_color(oil_pressure, rpm));
+    update_metric_value_(4, buf, get_oil_pressure_color(oil_pressure, rpm));
 
     // Давление наддува
     snprintf(buf, sizeof(buf), "%.2f", boost);
-    draw_metric_value_(5, buf, get_boost_color(boost));
+    update_metric_value_(5, buf, get_boost_color(boost));
 
     // Вольтаж бортовой сети
     snprintf(buf, sizeof(buf), "%.2f", battery_voltage);
-    draw_metric_value_(6, buf, get_battery_color(battery_voltage));
+    update_metric_value_(6, buf, get_battery_color(battery_voltage));
 
     // Период обновления RPM
     if (rpm == 0.0f || poll_time == 0.0f) {
@@ -660,7 +683,7 @@ void DisplayManagerWT32::update_metrics(float coolant, float oil, float coolant_
     } else {
         snprintf(buf, sizeof(buf), "%.2f", poll_time);
     }
-    draw_metric_value_(7, buf, get_poll_time_color(poll_time, rpm));
+    update_metric_value_(7, buf, get_poll_time_color(poll_time, rpm));
 
     // Масло коробки
     uint16_t transmission_color = get_temperature_color(transmission,
@@ -668,5 +691,5 @@ void DisplayManagerWT32::update_metrics(float coolant, float oil, float coolant_
         config.get("transmission", "target"),
         config.get("transmission", "max"));
     snprintf(buf, sizeof(buf), "%.0f", transmission);
-    draw_metric_value_(8, buf, transmission_color);
+    update_metric_value_(8, buf, transmission_color);
 }

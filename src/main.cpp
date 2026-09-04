@@ -1,6 +1,7 @@
-#include <Arduino.h>
+#include <atomic>
 #include <math.h>
 
+#include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
@@ -168,7 +169,22 @@ static uint8_t s_obd_poll_list[OBD_POLL_COUNT];
 static uint8_t  s_poll_idx       = 0;
 
 // Таймер между отправками запросов параметров
-static uint32_t s_last_poll_ms   = 0;
+static std::atomic<uint32_t> s_last_poll_ms{0};
+
+// Интервал опроса кешируется основным циклом под мьютексом конфига
+static std::atomic<uint32_t> s_poll_interval_ms{30};
+
+// Результат измерения RPM передается из задачи опроса в основной цикл
+static std::atomic<uint32_t> s_rpm_request_ts{0};
+static std::atomic<uint32_t> s_rpm_poll_time_ms{0};
+static std::atomic<uint32_t> s_rpm_poll_time_ts{0};
+
+// true после успешного запуска отдельной задачи UDS-опроса
+static bool s_poll_in_task = false;
+
+static constexpr uint32_t POLL_TASK_STACK_BYTES = 4096;
+static constexpr BaseType_t POLL_TASK_CORE = 1;
+static constexpr UBaseType_t POLL_TASK_PRIORITY = 2;
 
 // Таймер отправки Tester Present
 static uint32_t s_last_tp_ms     = 0;
@@ -246,7 +262,7 @@ static void poll_tester_present()
     can_bus.send_frame(LIGHT_MODULE_ID, CMD_TESTER_PRESENT, 8);
 }
 
-// Вызывается в loop() — обрабатывает один шаг планировщика
+// Обработать один шаг планировщика из отдельной задачи или резервно из loop()
 static void poll_handle()
 {
     uint32_t now = millis();
@@ -254,7 +270,7 @@ static void poll_handle()
     if (!s_diagnostic_session_open) {
         poll_open_session();
         s_diagnostic_session_open = true;
-        s_last_poll_ms = millis();
+        s_last_poll_ms.store(millis(), std::memory_order_relaxed);
         return;
     }
 
@@ -271,9 +287,9 @@ static void poll_handle()
     }
 
     // Циклический опрос параметров с паузой из конфига (system.poll_interval_ms)
-    uint32_t poll_interval_ms = static_cast<uint32_t>(config.get("system", "poll_interval_ms"));
-    if (now - s_last_poll_ms >= poll_interval_ms) {
-        s_last_poll_ms = now;
+    const uint32_t poll_interval_ms = s_poll_interval_ms.load(std::memory_order_relaxed);
+    if (now - s_last_poll_ms.load(std::memory_order_relaxed) >= poll_interval_ms) {
+        s_last_poll_ms.store(now, std::memory_order_relaxed);
 
         const PollEntry &entry = POLL_LIST[s_poll_idx];
         poll_send_request(entry.ecu_id, entry.did);
@@ -281,16 +297,22 @@ static void poll_handle()
         // Вычисляем период обновления RPM (время между двумя последовательными отправками запроса)
         // rpm_poll_time показывает реальный интервал обновления данных оборотов = poll_interval_ms * POLL_COUNT
         if (entry.ecu_id == ECM_ID && entry.did == 0x1201) {
-            if (can_metrics.rpm_request_ts != 0) {
-                uint32_t elapsed_ms       = now - can_metrics.rpm_request_ts;
-                can_metrics.rpm_poll_time    = static_cast<float>(elapsed_ms) / 1000.0f;
-                can_metrics.rpm_poll_time_ts = now;
+            const uint32_t previous_request_ts = s_rpm_request_ts.load(std::memory_order_relaxed);
+            s_rpm_request_ts.store(now, std::memory_order_relaxed);
+            if (previous_request_ts != 0) {
+                s_rpm_poll_time_ms.store(now - previous_request_ts, std::memory_order_relaxed);
+                s_rpm_poll_time_ts.store(now, std::memory_order_release);
             }
-            can_metrics.rpm_request_ts = now;
         }
 
         s_poll_idx = (s_poll_idx + 1) % POLL_COUNT;
     }
+}
+
+// Фоновый OBD-опрос остается в основном цикле вместе с приемом и декодированием CAN
+static void obd_poll_handle()
+{
+    const uint32_t now = millis();
 
     if (!diagnostic_mode_active(now)) return;
 
@@ -303,11 +325,34 @@ static void poll_handle()
         return;
     }
 
-    const bool primary_due = millis() - s_last_poll_ms >= poll_interval_ms;
+    const uint32_t last_poll_ms = s_last_poll_ms.load(std::memory_order_relaxed);
+    const uint32_t poll_interval_ms = s_poll_interval_ms.load(std::memory_order_relaxed);
+    const bool primary_due = now - last_poll_ms >= poll_interval_ms;
     const int16_t pid = s_obd_poll_plan.next(now, primary_due);
     if (pid < 0) return;
     const bool sent = obd_send_request(static_cast<uint8_t>(pid));
     s_obd_poll_plan.complete_send(sent);
+}
+
+static void poll_task(void *)
+{
+    for (;;) {
+        poll_handle();
+        vTaskDelay(1);
+    }
+}
+
+static void poll_task_start()
+{
+    if (xTaskCreatePinnedToCore(poll_task, "uds-poll", POLL_TASK_STACK_BYTES, nullptr,
+                                POLL_TASK_PRIORITY, nullptr, POLL_TASK_CORE) != pdPASS) {
+        Serial.println("[Poll] Задача не создана — опрос остается в loop()");
+        return;
+    }
+
+    s_poll_in_task = true;
+    Serial.printf("[Poll] Опрос вынесен в отдельную задачу на ядре %d\r\n",
+                  static_cast<int>(POLL_TASK_CORE));
 }
 
 // =============================================================================
@@ -350,6 +395,12 @@ void setup()
     config.init();
     reset_history.init();
 
+    const uint32_t configured_poll_interval =
+        static_cast<uint32_t>(config.get("system", "poll_interval_ms"));
+    if (configured_poll_interval > 0) {
+        s_poll_interval_ms.store(configured_poll_interval, std::memory_order_relaxed);
+    }
+
     // Версия прошивки (FW_VERSION из include/Version.h) — отображается внизу дисплея
     display.init(FW_VERSION);
     web.begin();
@@ -363,13 +414,17 @@ void setup()
     can_bus.init();
 
     // Инициализируем таймеры планировщика
-    s_last_poll_ms = millis();
+    s_last_poll_ms.store(millis(), std::memory_order_relaxed);
     s_last_tp_ms   = millis();
     s_last_light_poll_ms = millis();
 #endif
 
     // Все общее состояние готово — можно пускать HTTP-обработчики в свою задачу
     web_task_start();
+
+#ifndef USE_MOCK_DATA
+    poll_task_start();
+#endif
 
     Serial.printf("[Web] Адрес веб-интерфейса: http://%s\r\n", web.get_ip().c_str());
     Serial.println("=====================================");
@@ -418,8 +473,26 @@ void loop()
     can_bus.handle();
 
 #ifndef USE_MOCK_DATA
-    // Планировщик UDS-опроса: Tester Present + циклический запрос параметров
-    poll_handle();
+    const uint32_t configured_poll_interval =
+        static_cast<uint32_t>(config.get("system", "poll_interval_ms"));
+    if (configured_poll_interval > 0) {
+        s_poll_interval_ms.store(configured_poll_interval, std::memory_order_relaxed);
+    }
+
+    // Переносим измеренное задачей значение в общее состояние под мьютексом
+    const uint32_t measured_poll_time_ts = s_rpm_poll_time_ts.load(std::memory_order_acquire);
+    const uint32_t measured_poll_time_ms = s_rpm_poll_time_ms.load(std::memory_order_relaxed);
+    if (measured_poll_time_ts != 0 && measured_poll_time_ts != can_metrics.rpm_poll_time_ts) {
+        can_metrics.rpm_request_ts = s_rpm_request_ts.load(std::memory_order_relaxed);
+        can_metrics.rpm_poll_time = static_cast<float>(measured_poll_time_ms) / 1000.0f;
+        can_metrics.rpm_poll_time_ts = measured_poll_time_ts;
+    }
+
+    // Если отдельную задачу создать не удалось, сохраняем прежний опрос через loop()
+    if (!s_poll_in_task) {
+        poll_handle();
+    }
+    obd_poll_handle();
 #endif
 
     // Проверяем алерты раз в 200 мс

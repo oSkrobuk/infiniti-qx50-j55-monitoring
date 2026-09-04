@@ -63,6 +63,9 @@ public:
     void update_alert_indicator(bool has_alerts);
 
 private:
+    static constexpr uint8_t METRIC_COUNT = 9;
+    static constexpr size_t METRIC_VALUE_SIZE = 12;
+
     Wt32Display tft_;
 
     // Буфер версии прошивки, сохраняется для восстановления после очистки оверлея
@@ -80,6 +83,11 @@ private:
     // Текущее заполнение PWM подсветки — для предотвращения лишних записей
     uint8_t brightness_duty_;
 
+    // Последние нарисованные значения и цвета — для пропуска неизменившихся плиток
+    char metric_value_cache_[METRIC_COUNT][METRIC_VALUE_SIZE];
+    uint16_t metric_color_cache_[METRIC_COUNT];
+    bool metric_cache_valid_[METRIC_COUNT];
+
     // Перерисовать все статические элементы экрана (заголовок, подписи, версия)
     // Используется при init() и при clear_alert() для полного восстановления UI
     void draw_static_();
@@ -93,6 +101,12 @@ private:
 
     // Обновить цвет состояния и значение внутри плитки метрики
     void draw_metric_value_(uint8_t index, const char *value, uint16_t color);
+
+    // Обновить плитку только при изменении текста или цвета
+    void update_metric_value_(uint8_t index, const char *value, uint16_t color);
+
+    // Сбросить кеш после полной перерисовки экрана
+    void invalidate_metric_cache_();
 
     // Нарисовать сглаженный полужирный текст через масштабируемый спрайт
     bool draw_smooth_text_(const char *text, int16_t center_x, int16_t center_y,
