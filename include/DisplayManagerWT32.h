@@ -18,6 +18,7 @@ public:
 private:
     lgfx::Panel_ST7796 panel_;
     lgfx::Bus_Parallel8 bus_;
+    lgfx::Light_PWM light_;
 };
 
 class DisplayManagerWT32 {

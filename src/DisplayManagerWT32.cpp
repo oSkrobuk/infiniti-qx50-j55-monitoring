@@ -78,6 +78,16 @@ Wt32Display::Wt32Display()
         panel_.config(config);
     }
 
+    {
+        auto config = light_.config();
+        config.pin_bl = 45;
+        config.invert = false;
+        config.freq = 44100;
+        config.pwm_channel = 7;
+        light_.config(config);
+        panel_.setLight(&light_);
+    }
+
     setPanel(&panel_);
 }
 
@@ -94,11 +104,6 @@ DisplayManagerWT32::DisplayManagerWT32()
     invalidate_metric_cache_();
 }
 
-// Пин подсветки дисплея WT32-SC01 Plus (GPIO45)
-static constexpr uint8_t WT32_BL_PIN = 45;
-static constexpr uint8_t WT32_BL_LEDC_CHANNEL = 2;
-static constexpr uint32_t WT32_BL_LEDC_FREQ_HZ = 5000;
-static constexpr uint8_t WT32_BL_LEDC_BITS = 8;
 static constexpr uint8_t WT32_BL_MAX_DUTY = 255;
 static constexpr float BRIGHTNESS_MIN_PERCENT = 10.0f;
 static constexpr float BRIGHTNESS_MAX_PERCENT = 100.0f;
@@ -294,11 +299,8 @@ void DisplayManagerWT32::invalidate_metric_cache_()
 
 void DisplayManagerWT32::init(const char *version)
 {
-    ledcSetup(WT32_BL_LEDC_CHANNEL, WT32_BL_LEDC_FREQ_HZ, WT32_BL_LEDC_BITS);
-    ledcAttachPin(WT32_BL_PIN, WT32_BL_LEDC_CHANNEL);
-    update_brightness_();
-
     tft_.init();
+    update_brightness_();
     tft_.setRotation(1); // альбомная ориентация 480×320
     tft_.fillScreen(TFT_BLACK);
 
@@ -324,7 +326,7 @@ void DisplayManagerWT32::update_brightness_()
 
     if (duty != brightness_duty_) {
         brightness_duty_ = duty;
-        ledcWrite(WT32_BL_LEDC_CHANNEL, brightness_duty_);
+        tft_.setBrightness(brightness_duty_);
     }
 }
 
