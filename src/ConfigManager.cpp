@@ -3,6 +3,7 @@
 #include <LittleFS.h>
 
 #include "FsUtils.h"
+#include "WifiCredentials.h"
 
 ConfigManager config;
 
@@ -74,8 +75,8 @@ static void build_defaults(JsonDocument &doc)
     doc["system"]["brightness_percent"]      = 100.0f;
 
     // Настройки WiFi точки доступа (строки, не участвуют в числовом хеше)
-    doc["wifi"]["ssid"]     = "QX50Monitoring";
-    doc["wifi"]["password"] = "infiniti";
+    doc["wifi"]["ssid"]     = WIFI_DEFAULT_SSID;
+    doc["wifi"]["password"] = WIFI_DEFAULT_PASSWORD;
 }
 
 // ── Вспомогательные функции ──────────────────────────────────────────────────
@@ -222,6 +223,20 @@ bool ConfigManager::load_from_file()
         }
     }
 
+    WifiCredentialsError wifi_error;
+    const bool wifi_valid = wifi_credentials_validate(get_str("wifi", "ssid"),
+                                                       get_str("wifi", "password"), &wifi_error);
+    if (!wifi_valid) {
+        Serial.printf("[Config] Некорректные настройки WiFi (%s), восстановлены заводские\r\n",
+                      wifi_credentials_error_name(wifi_error));
+        data_["wifi"]["ssid"] = WIFI_DEFAULT_SSID;
+        data_["wifi"]["password"] = WIFI_DEFAULT_PASSWORD;
+    }
+
+    if (!wifi_valid) {
+        return save_to_file();
+    }
+
     if (file_hash != current_hash) {
         Serial.printf("[Config] Миграция настроек (hash %08X -> %08X)\r\n", file_hash, current_hash);
         return save_to_file();
@@ -256,6 +271,22 @@ bool ConfigManager::reset_to_defaults()
     return save_to_file();
 }
 
+bool ConfigManager::set_wifi_credentials(const String &ssid, const String &password)
+{
+    if (!wifi_credentials_validate(ssid, password)) return false;
+
+    data_["wifi"]["ssid"] = ssid;
+    data_["wifi"]["password"] = password;
+    return save_to_file();
+}
+
+bool ConfigManager::reset_wifi_to_defaults()
+{
+    data_["wifi"]["ssid"] = WIFI_DEFAULT_SSID;
+    data_["wifi"]["password"] = WIFI_DEFAULT_PASSWORD;
+    return save_to_file();
+}
+
 String ConfigManager::to_json() const
 {
     String out;
@@ -270,6 +301,27 @@ bool ConfigManager::from_json(const String &json)
     if (err) {
         Serial.printf("[Config] ОШИБКА парсинга входящего JSON: %s\r\n", err.c_str());
         return false;
+    }
+
+    JsonVariantConst wifi = doc["wifi"];
+    if (!wifi.isNull()) {
+        if (!wifi.is<JsonObjectConst>() ||
+            (!wifi["ssid"].isNull() && !wifi["ssid"].is<const char *>()) ||
+            (!wifi["password"].isNull() && !wifi["password"].is<const char *>())) {
+            Serial.println("[Config] ОШИБКА: неверный формат настроек WiFi");
+            return false;
+        }
+
+        const String ssid = wifi["ssid"].isNull()
+            ? get_str("wifi", "ssid") : String(wifi["ssid"].as<const char *>());
+        const String password = wifi["password"].isNull()
+            ? get_str("wifi", "password") : String(wifi["password"].as<const char *>());
+        WifiCredentialsError wifi_error;
+        if (!wifi_credentials_validate(ssid, password, &wifi_error)) {
+            Serial.printf("[Config] ОШИБКА настроек WiFi: %s\r\n",
+                          wifi_credentials_error_name(wifi_error));
+            return false;
+        }
     }
 
     // Обновляем только те поля, которые пришли; остальные остаются как есть

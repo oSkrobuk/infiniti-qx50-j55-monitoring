@@ -13,6 +13,7 @@
 #include "WebManager.h"
 #include "BuzzerController.h"
 #include "AlertManager.h"
+#include "BuildInfo.h"
 #include "OtaImage.h"
 #include "ObdPidCatalog.h"
 #include "ObdPollPlan.h"
@@ -365,6 +366,7 @@ void setup()
 #else
     Serial.begin(115200);
 #endif
+    Serial.printf("[Boot] Firmware %s, env %s\r\n", FW_VERSION, BUILD_ENV);
 #ifdef DID_HOOK_MODE
     Serial.println("=== Infiniti QX50 J55 DID Hook ===");
 

@@ -97,6 +97,32 @@ static void test_from_json_keeps_strings_as_strings(void)
     TEST_ASSERT_TRUE(cm.to_json().find("\"ssid\":\"МояСеть\"") != std::string::npos);
 }
 
+static void test_from_json_rejects_short_wifi_password(void)
+{
+    ConfigManager cm;
+
+    TEST_ASSERT_FALSE(cm.from_json("{\"wifi\":{\"ssid\":\"QX50\",\"password\":\"123456\"}}"));
+    TEST_ASSERT_EQUAL_STRING("infiniti", cm.get_str("wifi", "password").c_str());
+}
+
+static void test_set_wifi_credentials_validates_before_saving(void)
+{
+    ConfigManager cm;
+
+    TEST_ASSERT_FALSE(cm.set_wifi_credentials("QX50", "123456"));
+    TEST_ASSERT_TRUE(cm.set_wifi_credentials("QX50", "12345678"));
+    TEST_ASSERT_EQUAL_STRING("QX50", cm.get_str("wifi", "ssid").c_str());
+    TEST_ASSERT_EQUAL_STRING("12345678", cm.get_str("wifi", "password").c_str());
+}
+
+static void test_wifi_password_rejects_special_characters(void)
+{
+    ConfigManager cm;
+
+    TEST_ASSERT_FALSE(cm.set_wifi_credentials("QX50", "abcd-1234"));
+    TEST_ASSERT_EQUAL_STRING("infiniti", cm.get_str("wifi", "password").c_str());
+}
+
 static void test_from_json_persists_to_file(void)
 {
     ConfigManager cm;
@@ -184,6 +210,17 @@ static void test_load_fails_on_corrupted_file(void)
     TEST_ASSERT_EQUAL_FLOAT(98.0f, cm.get("oil", "max"));
 }
 
+static void test_load_repairs_invalid_saved_wifi_credentials(void)
+{
+    mock_fs_files["/config.json"] =
+        "{\"version\":1,\"params\":{\"wifi\":{\"ssid\":\"QX50\",\"password\":\"123456\"}}}";
+
+    ConfigManager cm;
+    TEST_ASSERT_TRUE(cm.load_from_file());
+    TEST_ASSERT_EQUAL_STRING("QX50Monitoring", cm.get_str("wifi", "ssid").c_str());
+    TEST_ASSERT_EQUAL_STRING("infiniti", cm.get_str("wifi", "password").c_str());
+}
+
 static void test_reset_to_defaults(void)
 {
     ConfigManager cm;
@@ -228,6 +265,9 @@ int main(int, char **)
     RUN_TEST(test_from_json_keeps_other_fields);
     RUN_TEST(test_from_json_rejects_invalid);
     RUN_TEST(test_from_json_keeps_strings_as_strings);
+    RUN_TEST(test_from_json_rejects_short_wifi_password);
+    RUN_TEST(test_set_wifi_credentials_validates_before_saving);
+    RUN_TEST(test_wifi_password_rejects_special_characters);
     RUN_TEST(test_from_json_persists_to_file);
 
     RUN_TEST(test_save_and_load_round_trip);
@@ -235,6 +275,7 @@ int main(int, char **)
     RUN_TEST(test_config_file_stores_defaults_hash);
     RUN_TEST(test_load_migrates_config_when_defaults_changed);
     RUN_TEST(test_load_fails_on_corrupted_file);
+    RUN_TEST(test_load_repairs_invalid_saved_wifi_credentials);
     RUN_TEST(test_reset_to_defaults);
     RUN_TEST(test_to_json_contains_all_sections);
 

@@ -10,6 +10,8 @@
 #include "ObdPidCatalog.h"
 #include "ResetHistory.h"
 #include "Version.h"
+#include "WifiCredentials.h"
+
 #include <Update.h>
 #include <WiFi.h>
 #include <esp_netif.h>
@@ -631,7 +633,8 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
           </div>
           <div class="field">
             <label>Пароль</label>
-            <input type="text" id="wifi_password" name="wifi_password" maxlength="63" autocomplete="off">
+            <input type="text" id="wifi_password" name="wifi_password" minlength="8" maxlength="63" autocomplete="off">
+            <span class="hint">Оставьте пустым для открытой сети или введите 8–63 латинские буквы и цифры</span>
           </div>
         </div>
         <p class="wifi-note">&#9888; После сохранения устройство перезагрузится. Переподключитесь к новой сети.</p>
@@ -1240,6 +1243,19 @@ document.getElementById('wifiForm').addEventListener('submit', async (e) => {
   const ssid = document.getElementById('wifi_ssid').value.trim();
   const pass  = document.getElementById('wifi_password').value;
   if (!ssid) { showToast('⚠ SSID не может быть пустым', 'err'); return; }
+  const encoder = new TextEncoder();
+  const ssidBytes = encoder.encode(ssid).length;
+  const passBytes = encoder.encode(pass).length;
+  if (ssidBytes > 32) { showToast('⚠ Имя WiFi должно занимать не больше 32 байт', 'err'); return; }
+  if (passBytes > 0 && passBytes < 8) {
+    showToast('⚠ Пароль WiFi должен содержать минимум 8 байт', 'err');
+    return;
+  }
+  if (passBytes > 63) { showToast('⚠ Пароль WiFi должен занимать не больше 63 байт', 'err'); return; }
+  if (!/^[A-Za-z0-9]*$/.test(pass)) {
+    showToast('⚠ Пароль WiFi может содержать только латинские буквы и цифры', 'err');
+    return;
+  }
 
   const btn = document.getElementById('btnSaveWifi');
   btn.disabled = true;
@@ -2993,9 +3009,23 @@ void WebManager::begin()
     String ssid = config.get_str("wifi", "ssid");
     String pass = config.get_str("wifi", "password");
 
-    if (ssid.isEmpty()) ssid = "QX50Monitoring";
+    WifiCredentialsError wifi_error;
+    if (!wifi_credentials_validate(ssid, pass, &wifi_error)) {
+        Serial.printf(
+            "[WiFi] Некорректные сохраненные настройки (%s), "
+            "используются заводские\r\n",
+            wifi_credentials_error_name(wifi_error));
+        ssid = WIFI_DEFAULT_SSID;
+        pass = WIFI_DEFAULT_PASSWORD;
+        if (!config.reset_wifi_to_defaults()) {
+            Serial.println("[WiFi] Заводские настройки не удалось сохранить");
+        }
+    }
 
-    WiFi.softAP(ssid.c_str(), pass.isEmpty() ? nullptr : pass.c_str());
+    if (!WiFi.softAP(ssid.c_str(), pass.isEmpty() ? nullptr : pass.c_str())) {
+        Serial.printf("[WiFi] ОШИБКА: AP с SSID %s не запущен\r\n", ssid.c_str());
+        return;
+    }
     Serial.printf("[WiFi] AP запущен  SSID: %s\r\n", ssid.c_str());
 
     ap_disable_dhcp_router_option();
@@ -3406,9 +3436,11 @@ void WebManager::handle_not_found()
 
 void WebManager::handle_get_wifi()
 {
-    String ssid = config.get_str("wifi", "ssid");
-    String pass = config.get_str("wifi", "password");
-    String json = "{\"ssid\":\"" + ssid + "\",\"password\":\"" + pass + "\"}";
+    JsonDocument doc;
+    doc["ssid"] = config.get_str("wifi", "ssid");
+    doc["password"] = config.get_str("wifi", "password");
+    String json;
+    serializeJson(doc, json);
     server_.send(200, "application/json", json);
 }
 
@@ -3441,12 +3473,32 @@ void WebManager::handle_post_wifi()
         return;
     }
 
-    // Ожидаем JSON вида: {"wifi":{"ssid":"...","password":"..."}}
-    if (config.from_json(body)) {
-        server_.send(200, "application/json", "{\"ok\":true}");
-    } else {
+    JsonDocument doc;
+    DeserializationError json_error = deserializeJson(doc, body);
+    JsonVariantConst wifi = doc["wifi"];
+    if (json_error || !wifi.is<JsonObjectConst>() || !wifi["ssid"].is<const char *>() ||
+        !wifi["password"].is<const char *>()) {
         server_.send(400, "application/json", "{\"error\":\"invalid json\"}");
+        return;
     }
+
+    const String ssid = wifi["ssid"].as<const char *>();
+    const String password = wifi["password"].as<const char *>();
+    WifiCredentialsError wifi_error;
+    if (!wifi_credentials_validate(ssid, password, &wifi_error)) {
+        String response = "{\"error\":\"";
+        response += wifi_credentials_error_name(wifi_error);
+        response += "\"}";
+        server_.send(400, "application/json", response);
+        return;
+    }
+
+    if (!config.set_wifi_credentials(ssid, password)) {
+        server_.send(500, "application/json", "{\"error\":\"save failed\"}");
+        return;
+    }
+
+    server_.send(200, "application/json", "{\"ok\":true}");
 }
 
 // ── Alert handlers ────────────────────────────────────────────────────────────

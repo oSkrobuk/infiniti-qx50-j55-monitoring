@@ -18,6 +18,12 @@ public:
     // Сбросить к заводским значениям и сохранить
     bool reset_to_defaults();
 
+    // Сохранить проверенные настройки WiFi
+    bool set_wifi_credentials(const String &ssid, const String &password);
+
+    // Вернуть только настройки WiFi к безопасным заводским значениям
+    bool reset_wifi_to_defaults();
+
     // Сериализовать текущий конфиг в JSON-строку
     String to_json() const;
 
