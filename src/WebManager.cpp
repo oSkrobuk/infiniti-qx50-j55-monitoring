@@ -1637,6 +1637,10 @@ function slotKB(bytes) {
   return Math.round(bytes / 1024) + ' KB';
 }
 
+function slotAddress(address) {
+  return '0x' + Number(address).toString(16).toUpperCase().padStart(8, '0');
+}
+
 function renderSlots(list) {
   slotsCache = list;
 
@@ -1656,14 +1660,15 @@ function renderSlots(list) {
     let ver;
     if (!s.valid)       ver = 'Слот пуст';
     else if (s.version) ver = 'Версия <b>' + updEsc(s.version) + '</b>';
-    else                ver = 'Версия <b>неизвестна</b> — прошивка собрана до появления этой страницы';
+    else                ver = 'Версия <b>неизвестна</b> — ручное переключение запрещено';
 
     const meta = [];
     if (s.env)   meta.push(updEsc(s.env));
     if (s.build) meta.push('сборка ' + updEsc(s.build));
+    meta.push('адрес ' + slotAddress(s.address));
     if (s.used)  meta.push(slotKB(s.used) + ' из ' + slotKB(s.size));
 
-    const btn = (s.valid && !s.boot)
+    const btn = (s.compatible && !s.boot)
       ? '<button type="button" class="btn-slot" data-slot="' + updEsc(s.label) +
         '">&#8646; Загрузиться отсюда</button>'
       : '';
@@ -1696,9 +1701,22 @@ async function loadSlots() {
 // начнет работать после перезагрузки
 async function switchSlot(label) {
   const s   = slotsCache.find(x => x.label === label) || {};
-  const ver = s.version ? ('версия ' + s.version) : 'версия неизвестна';
+  if (!s.compatible) {
+    showToast('Переключение на несовместимый или неизвестный образ запрещено', 'err');
+    return;
+  }
 
-  if (!confirm('Загружаться из слота ' + label + ' (' + ver + ')?\nУстройство перезагрузится.')) return;
+  const details = [
+    'Слот: ' + label,
+    'Версия: ' + s.version,
+    'Окружение: ' + s.env,
+    'Адрес: ' + slotAddress(s.address),
+    'Размер образа: ' + slotKB(s.used) + ' из ' + slotKB(s.size),
+    '',
+    'После изменения таблицы разделов старые OTA-слоты могут быть несовместимы.',
+    'Загружаться из выбранного слота? Устройство перезагрузится.'
+  ];
+  if (!confirm(details.join('\n'))) return;
 
   try {
     const r = await fetch('/boot-slot?slot=' + encodeURIComponent(label), { method: 'POST' });
@@ -3649,6 +3667,8 @@ void WebManager::handle_get_slots()
         json += s.running ? "true" : "false";
         json += ",\"boot\":";
         json += s.boot ? "true" : "false";
+        json += ",\"compatible\":";
+        json += s.compatible ? "true" : "false";
         // Версия, окружение и дата сборки известны только по маркеру в образе:
         // прошивка старее этой функции маркера не содержит, и поля остаются пустыми
         json += ",\"version\":\"";
@@ -3661,6 +3681,8 @@ void WebManager::handle_get_slots()
         json += String(s.size);
         json += ",\"used\":";
         json += String(s.used);
+        json += ",\"address\":";
+        json += String(s.address);
         json += '}';
     }
 

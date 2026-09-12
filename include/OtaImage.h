@@ -72,6 +72,9 @@ bool ota_tag_parse(const char *tag, size_t len, OtaTag &out);
 // real и mock одной платы совместимы, ESP32 DEVKIT1 и WT32-SC01 Plus — нет
 bool ota_envs_compatible(const char *running_env, const char *image_env);
 
+// Проверить, можно ли разрешить ручное переключение на образ из OTA-слота
+bool ota_slot_is_bootable(bool valid, bool known, const char *running_env, const char *image_env);
+
 // Найти начало маркера в первых len байтах блока, вернуть смещение или -1.
 // Сигнатура должна помещаться в блок целиком
 int ota_tag_find(const uint8_t *buf, size_t len);

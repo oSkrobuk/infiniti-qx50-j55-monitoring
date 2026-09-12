@@ -1,5 +1,7 @@
 #include "ConfigManager.h"
 
+#include <math.h>
+
 #include <LittleFS.h>
 
 #include "FsUtils.h"
@@ -94,6 +96,73 @@ static const JsonDocument &defaults_doc()
         s_built = true;
     }
     return s_defaults;
+}
+
+static bool number_in_range(JsonObjectConst root, const char *section, const char *field,
+                            float minimum, float maximum)
+{
+    JsonVariantConst value = root[section][field];
+    if (value.is<bool>() || !value.is<float>()) return false;
+
+    const float number = value.as<float>();
+    return isfinite(number) && number >= minimum && number <= maximum;
+}
+
+static bool ordered(JsonObjectConst root, const char *section,
+                    const char *first, const char *second)
+{
+    return root[section][first].as<float>() < root[section][second].as<float>();
+}
+
+static bool config_values_valid(JsonObjectConst root)
+{
+    static const char *temperature_sections[] = {"oil", "coolant", "radiator", "transmission"};
+    for (const char *section : temperature_sections) {
+        if (!number_in_range(root, section, "min", -100.0f, 250.0f) ||
+            !number_in_range(root, section, "target", -100.0f, 250.0f) ||
+            !number_in_range(root, section, "max", -100.0f, 250.0f) ||
+            !ordered(root, section, "min", "target") ||
+            !ordered(root, section, "target", "max")) return false;
+    }
+
+    if (!number_in_range(root, "rpm", "green_start", 0.0f, 10000.0f) ||
+        !number_in_range(root, "rpm", "green_end", 0.0f, 10000.0f) ||
+        !number_in_range(root, "rpm", "red_start", 0.0f, 10000.0f) ||
+        !ordered(root, "rpm", "green_start", "green_end") ||
+        !ordered(root, "rpm", "green_end", "red_start")) return false;
+
+    if (!number_in_range(root, "oil_pressure", "rpm_threshold", 1.0f, 10000.0f) ||
+        !number_in_range(root, "oil_pressure", "min_low", 0.01f, 5.0f) ||
+        !number_in_range(root, "oil_pressure", "min_high", 0.01f, 5.0f) ||
+        !ordered(root, "oil_pressure", "min_low", "min_high")) return false;
+
+    if (!number_in_range(root, "boost", "blue_max", 0.0f, 5.0f) ||
+        !number_in_range(root, "boost", "green_min", 0.0f, 5.0f) ||
+        !ordered(root, "boost", "blue_max", "green_min")) return false;
+
+    if (!number_in_range(root, "battery", "red_low", 0.0f, 32.0f) ||
+        !number_in_range(root, "battery", "green_min", 0.0f, 32.0f) ||
+        !number_in_range(root, "battery", "green_max", 0.0f, 32.0f) ||
+        !number_in_range(root, "battery", "red_high", 0.0f, 32.0f) ||
+        !ordered(root, "battery", "red_low", "green_min") ||
+        !ordered(root, "battery", "green_min", "green_max") ||
+        !ordered(root, "battery", "green_max", "red_high")) return false;
+
+    if (!number_in_range(root, "poll_time", "green_max", 0.001f, 60.0f) ||
+        !number_in_range(root, "poll_time", "red_min", 0.001f, 60.0f) ||
+        !ordered(root, "poll_time", "green_max", "red_min")) return false;
+
+    if (!number_in_range(root, "system", "poll_interval_ms", 10.0f, 1000.0f) ||
+        !number_in_range(root, "system", "obd_request_spacing_ms", 1.0f, 100.0f) ||
+        !number_in_range(root, "system", "stale_ms", 100.0f, 3600000.0f) ||
+        !number_in_range(root, "system", "brightness_percent", 10.0f, 100.0f) ||
+        !ordered(root, "system", "poll_interval_ms", "stale_ms")) return false;
+
+    const float brightness = root["system"]["brightness_percent"].as<float>();
+    if (fabsf(brightness / 10.0f - roundf(brightness / 10.0f)) > 0.0001f) return false;
+
+    return wifi_credentials_validate(root["wifi"]["ssid"].as<const char *>(),
+                                     root["wifi"]["password"].as<const char *>());
 }
 
 // CRC32 от строки — используется для автоматического определения
@@ -303,41 +372,45 @@ bool ConfigManager::from_json(const String &json)
         return false;
     }
 
-    JsonVariantConst wifi = doc["wifi"];
-    if (!wifi.isNull()) {
-        if (!wifi.is<JsonObjectConst>() ||
-            (!wifi["ssid"].isNull() && !wifi["ssid"].is<const char *>()) ||
-            (!wifi["password"].isNull() && !wifi["password"].is<const char *>())) {
-            Serial.println("[Config] ОШИБКА: неверный формат настроек WiFi");
-            return false;
-        }
-
-        const String ssid = wifi["ssid"].isNull()
-            ? get_str("wifi", "ssid") : String(wifi["ssid"].as<const char *>());
-        const String password = wifi["password"].isNull()
-            ? get_str("wifi", "password") : String(wifi["password"].as<const char *>());
-        WifiCredentialsError wifi_error;
-        if (!wifi_credentials_validate(ssid, password, &wifi_error)) {
-            Serial.printf("[Config] ОШИБКА настроек WiFi: %s\r\n",
-                          wifi_credentials_error_name(wifi_error));
-            return false;
-        }
+    JsonObjectConst root = doc.as<JsonObjectConst>();
+    if (root.isNull()) {
+        Serial.println("[Config] ОШИБКА: корень конфигурации должен быть объектом");
+        return false;
     }
 
-    // Обновляем только те поля, которые пришли; остальные остаются как есть
-    // Строки (wifi ssid/password) сохраняются как строки, числа — как float
-    JsonObjectConst root = doc.as<JsonObjectConst>();
+    JsonDocument candidate;
+    candidate.set(data_);
+    JsonObjectConst schema = defaults_doc().as<JsonObjectConst>();
+
+    // Разрешены только известные секции и поля с типом из заводской схемы
     for (JsonPairConst section : root) {
+        JsonVariantConst schema_section = schema[section.key()];
+        if (!schema_section.is<JsonObjectConst>() || !section.value().is<JsonObjectConst>()) {
+            Serial.printf("[Config] ОШИБКА: неизвестная или неверная секция %s\r\n", section.key().c_str());
+            return false;
+        }
+
         JsonObjectConst fields = section.value().as<JsonObjectConst>();
         for (JsonPairConst field : fields) {
+            JsonVariantConst expected = schema_section[field.key()];
             JsonVariantConst v = field.value();
-            if (v.is<const char *>()) {
-                data_[section.key()][field.key()] = v.as<const char *>();
-            } else {
-                data_[section.key()][field.key()] = v.as<float>();
+            const bool string_field = expected.is<const char *>() && v.is<const char *>();
+            const bool number_field = expected.is<float>() && !v.is<bool>() && v.is<float>();
+            if (expected.isNull() || (!string_field && !number_field)) {
+                Serial.printf("[Config] ОШИБКА: неизвестное поле или неверный тип %s.%s\r\n",
+                              section.key().c_str(), field.key().c_str());
+                return false;
             }
+
+            candidate[section.key()][field.key()].set(v);
         }
     }
 
+    if (!config_values_valid(candidate.as<JsonObjectConst>())) {
+        Serial.println("[Config] ОШИБКА: значения выходят за допустимые пределы");
+        return false;
+    }
+
+    data_.set(candidate);
     return save_to_file();
 }

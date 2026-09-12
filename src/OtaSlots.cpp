@@ -6,6 +6,7 @@
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
 
+#include "BuildInfo.h"
 #include "OtaImage.h"
 
 // Чтение раздела для ota_image_length() и ota_tag_scan()
@@ -79,7 +80,9 @@ size_t ota_slots_collect(OtaSlotInfo *out, size_t max)
         info.running = (running != nullptr && running->address == part->address);
         info.boot    = (boot != nullptr && boot->address == part->address);
         info.size    = part->size;
+        info.address = part->address;
         info.known   = false;
+        info.compatible = false;
 
         esp_app_desc_t desc;
         info.valid = (esp_ota_get_partition_description(part, &desc) == ESP_OK);
@@ -99,6 +102,8 @@ size_t ota_slots_collect(OtaSlotInfo *out, size_t max)
             info.env     = tag.env;
             info.build   = tag.build;
         }
+
+        info.compatible = ota_slot_is_bootable(info.valid, info.known, BUILD_ENV, info.env.c_str());
     }
 
     // esp_partition_next() освобождает итератор сам, когда разделы кончились,
@@ -128,6 +133,23 @@ bool ota_slots_set_boot(const char *label, String &err)
     esp_app_desc_t desc;
     if (esp_ota_get_partition_description(part, &desc) != ESP_OK) {
         err = "в слоте нет прошивки";
+        return false;
+    }
+
+    const uint32_t used = ota_image_length(partition_read, part, part->size);
+    if (used == 0) {
+        err = "образ поврежден";
+        return false;
+    }
+
+    OtaTag tag;
+    if (!tag_lookup(part, desc, used, tag)) {
+        err = "в образе нет маркера QX50-FW-TAG";
+        return false;
+    }
+
+    if (!ota_slot_is_bootable(true, true, BUILD_ENV, tag.env.c_str())) {
+        err = "образ предназначен для другой платы";
         return false;
     }
 

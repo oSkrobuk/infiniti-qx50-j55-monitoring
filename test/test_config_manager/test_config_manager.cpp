@@ -133,6 +133,54 @@ static void test_from_json_persists_to_file(void)
     TEST_ASSERT_EQUAL_UINT32(0, mock_fs_files.count("/config.json.tmp"));
 }
 
+static void test_from_json_rejects_unknown_sections_and_fields(void)
+{
+    ConfigManager cm;
+
+    TEST_ASSERT_FALSE(cm.from_json("{\"unknown\":{\"field\":1}}"));
+    TEST_ASSERT_FALSE(cm.from_json("{\"oil\":{\"unknown\":1}}"));
+    TEST_ASSERT_EQUAL_FLOAT(98.0f, cm.get("oil", "max"));
+}
+
+static void test_from_json_rejects_wrong_types(void)
+{
+    ConfigManager cm;
+
+    TEST_ASSERT_FALSE(cm.from_json("{\"oil\":{\"max\":\"105\"}}"));
+    TEST_ASSERT_FALSE(cm.from_json("{\"oil\":false}"));
+    TEST_ASSERT_FALSE(cm.from_json("[]"));
+    TEST_ASSERT_EQUAL_FLOAT(98.0f, cm.get("oil", "max"));
+}
+
+static void test_from_json_rejects_invalid_metric_order(void)
+{
+    ConfigManager cm;
+
+    TEST_ASSERT_FALSE(cm.from_json("{\"oil\":{\"min\":100,\"target\":90}}"));
+    TEST_ASSERT_FALSE(cm.from_json("{\"battery\":{\"green_min\":15,\"green_max\":14}}"));
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, cm.get("oil", "min"));
+}
+
+static void test_from_json_rejects_unsafe_system_ranges(void)
+{
+    ConfigManager cm;
+
+    TEST_ASSERT_FALSE(cm.from_json("{\"system\":{\"poll_interval_ms\":0}}"));
+    TEST_ASSERT_FALSE(cm.from_json("{\"system\":{\"obd_request_spacing_ms\":101}}"));
+    TEST_ASSERT_FALSE(cm.from_json("{\"system\":{\"brightness_percent\":55}}"));
+    TEST_ASSERT_EQUAL_FLOAT(30.0f, cm.get("system", "poll_interval_ms"));
+}
+
+static void test_from_json_accepts_valid_partial_update(void)
+{
+    ConfigManager cm;
+
+    TEST_ASSERT_TRUE(cm.from_json(
+        "{\"oil\":{\"max\":105},\"system\":{\"brightness_percent\":60}}"));
+    TEST_ASSERT_EQUAL_FLOAT(105.0f, cm.get("oil", "max"));
+    TEST_ASSERT_EQUAL_FLOAT(60.0f, cm.get("system", "brightness_percent"));
+}
+
 // ── Файл конфига ─────────────────────────────────────────────────────────────
 
 static void test_save_and_load_round_trip(void)
@@ -269,6 +317,11 @@ int main(int, char **)
     RUN_TEST(test_set_wifi_credentials_validates_before_saving);
     RUN_TEST(test_wifi_password_rejects_special_characters);
     RUN_TEST(test_from_json_persists_to_file);
+    RUN_TEST(test_from_json_rejects_unknown_sections_and_fields);
+    RUN_TEST(test_from_json_rejects_wrong_types);
+    RUN_TEST(test_from_json_rejects_invalid_metric_order);
+    RUN_TEST(test_from_json_rejects_unsafe_system_ranges);
+    RUN_TEST(test_from_json_accepts_valid_partial_update);
 
     RUN_TEST(test_save_and_load_round_trip);
     RUN_TEST(test_load_creates_file_when_missing);

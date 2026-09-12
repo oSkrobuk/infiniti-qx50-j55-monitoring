@@ -281,6 +281,15 @@ static void test_ota_env_compatibility(void)
     TEST_ASSERT_FALSE(ota_envs_compatible(nullptr, "esp32"));
 }
 
+static void test_manual_slot_requires_valid_known_compatible_image(void)
+{
+    TEST_ASSERT_TRUE(ota_slot_is_bootable(true, true, "esp32", "esp32-mock"));
+    TEST_ASSERT_FALSE(ota_slot_is_bootable(false, true, "esp32", "esp32"));
+    TEST_ASSERT_FALSE(ota_slot_is_bootable(true, false, "esp32", "esp32"));
+    TEST_ASSERT_FALSE(ota_slot_is_bootable(true, true, "esp32", "unknown"));
+    TEST_ASSERT_FALSE(ota_slot_is_bootable(true, true, "esp32", "esp32s3-wt32"));
+}
+
 // ── Длина образа ─────────────────────────────────────────────────────────────
 
 // Образ в памяти вместо раздела на флеше
@@ -556,6 +565,7 @@ int main(int, char **)
     RUN_TEST(test_stream_finds_tag_byte_by_byte);
     RUN_TEST(test_stream_rejects_missing_and_truncated_tag);
     RUN_TEST(test_ota_env_compatibility);
+    RUN_TEST(test_manual_slot_requires_valid_known_compatible_image);
 
     RUN_TEST(test_counts_segments_and_hash);
     RUN_TEST(test_counts_image_without_hash);

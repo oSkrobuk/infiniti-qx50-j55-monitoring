@@ -154,6 +154,11 @@ bool ota_envs_compatible(const char *running_env, const char *image_env)
     return running_family != 0 && running_family == image_family;
 }
 
+bool ota_slot_is_bootable(bool valid, bool known, const char *running_env, const char *image_env)
+{
+    return valid && known && ota_envs_compatible(running_env, image_env);
+}
+
 int ota_tag_find(const uint8_t *buf, size_t len)
 {
     if (buf == nullptr || len < OTA_TAG_SIG_LEN) return -1;
