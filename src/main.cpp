@@ -160,7 +160,7 @@ static constexpr uint8_t POLL_COUNT = sizeof(POLL_LIST) / sizeof(POLL_LIST[0]);
 
 // Интервал отправки Tester Present (мс)
 static constexpr uint32_t TESTER_PRESENT_INTERVAL_MS = 2000;
-static constexpr uint32_t LIGHT_POLL_INTERVAL_MS = 5000;
+static constexpr uint32_t LIGHT_POLL_INTERVAL_MS = 1000;
 static constexpr uint32_t OBD_POLL_INTERVAL_MS = 1000;
 static constexpr uint32_t DEFAULT_OBD_REQUEST_SPACING_MS = 5;
 static constexpr uint32_t OBD_DISCOVERY_TIMEOUT_MS = 1000;
@@ -282,7 +282,7 @@ static void poll_handle()
         poll_tester_present();
     }
 
-    // Состояние освещения меняется редко, поэтому достаточно опроса раз в 5 секунд
+    // Частый опрос нужен для быстрого переключения яркости после включения света
     if (now - s_last_light_poll_ms >= LIGHT_POLL_INTERVAL_MS) {
         s_last_light_poll_ms = now;
         poll_send_request(LIGHT_MODULE_ID, LIGHT_STATUS_DID);
@@ -585,6 +585,9 @@ void loop()
         float   battery_voltage  = can_value(can_metrics.battery_voltage,   can_metrics.battery_voltage_ts);
         float   transmission     = can_value(can_metrics.cvt_temp,          can_metrics.cvt_temp_ts);
 #endif
+
+        // Яркость обновляется и при активном алерте, чтобы ночной режим не задерживался
+        display.update_brightness(can_metrics.exterior_light_on);
 
         // Пока алерт активен — метрики не обновляем, чтобы не затирать оверлей
         if (!alert_manager.has_active_alert()) {

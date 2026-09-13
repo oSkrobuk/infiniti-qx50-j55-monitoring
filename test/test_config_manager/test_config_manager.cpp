@@ -30,6 +30,7 @@ static void test_defaults_applied_on_construction(void)
     TEST_ASSERT_EQUAL_FLOAT(5.0f, cm.get("system", "obd_request_spacing_ms"));
     TEST_ASSERT_EQUAL_FLOAT(1000.0f, cm.get("system", "stale_ms"));
     TEST_ASSERT_EQUAL_FLOAT(100.0f, cm.get("system", "brightness_percent"));
+    TEST_ASSERT_EQUAL_FLOAT(30.0f, cm.get("system", "brightness_night_percent"));
 }
 
 static void test_unknown_field_returns_zero(void)
@@ -168,6 +169,7 @@ static void test_from_json_rejects_unsafe_system_ranges(void)
     TEST_ASSERT_FALSE(cm.from_json("{\"system\":{\"poll_interval_ms\":0}}"));
     TEST_ASSERT_FALSE(cm.from_json("{\"system\":{\"obd_request_spacing_ms\":101}}"));
     TEST_ASSERT_FALSE(cm.from_json("{\"system\":{\"brightness_percent\":55}}"));
+    TEST_ASSERT_FALSE(cm.from_json("{\"system\":{\"brightness_night_percent\":25}}"));
     TEST_ASSERT_EQUAL_FLOAT(30.0f, cm.get("system", "poll_interval_ms"));
 }
 
@@ -176,9 +178,11 @@ static void test_from_json_accepts_valid_partial_update(void)
     ConfigManager cm;
 
     TEST_ASSERT_TRUE(cm.from_json(
-        "{\"oil\":{\"max\":105},\"system\":{\"brightness_percent\":60}}"));
+        "{\"oil\":{\"max\":105},\"system\":{\"brightness_percent\":60,"
+        "\"brightness_night_percent\":20}}"));
     TEST_ASSERT_EQUAL_FLOAT(105.0f, cm.get("oil", "max"));
     TEST_ASSERT_EQUAL_FLOAT(60.0f, cm.get("system", "brightness_percent"));
+    TEST_ASSERT_EQUAL_FLOAT(20.0f, cm.get("system", "brightness_night_percent"));
 }
 
 // ── Файл конфига ─────────────────────────────────────────────────────────────
@@ -220,6 +224,7 @@ static void test_load_migrates_config_when_defaults_changed(void)
     // Файл от прошивки с другими заводскими значениями: хеш не совпадет
     mock_fs_files["/config.json"] =
         "{\"version\":1,\"params\":{\"oil\":{\"max\":105.0},"
+        "\"system\":{\"brightness_percent\":60},"
         "\"wifi\":{\"ssid\":\"MyQX50\"},\"removed\":{\"field\":42}}}";
 
     ConfigManager cm;
@@ -229,7 +234,8 @@ static void test_load_migrates_config_when_defaults_changed(void)
     // нет, поэтому они берутся из актуальных заводских настроек
     TEST_ASSERT_EQUAL_FLOAT(105.0f, cm.get("oil", "max"));
     TEST_ASSERT_EQUAL_STRING("MyQX50", cm.get_str("wifi", "ssid").c_str());
-    TEST_ASSERT_EQUAL_FLOAT(100.0f, cm.get("system", "brightness_percent"));
+    TEST_ASSERT_EQUAL_FLOAT(60.0f, cm.get("system", "brightness_percent"));
+    TEST_ASSERT_EQUAL_FLOAT(30.0f, cm.get("system", "brightness_night_percent"));
     TEST_ASSERT_EQUAL_FLOAT(0.0f, cm.get("removed", "field"));
 
     // Мигрированный файл переписан с актуальным хешем и полным набором полей
@@ -237,8 +243,10 @@ static void test_load_migrates_config_when_defaults_changed(void)
     TEST_ASSERT_FALSE(deserializeJson(migrated, mock_fs_files["/config.json"]));
     TEST_ASSERT_NOT_EQUAL(1u, migrated["version"].as<uint32_t>());
     TEST_ASSERT_EQUAL_FLOAT(105.0f, migrated["params"]["oil"]["max"].as<float>());
-    TEST_ASSERT_EQUAL_FLOAT(100.0f,
+    TEST_ASSERT_EQUAL_FLOAT(60.0f,
                             migrated["params"]["system"]["brightness_percent"].as<float>());
+    TEST_ASSERT_EQUAL_FLOAT(30.0f,
+                            migrated["params"]["system"]["brightness_night_percent"].as<float>());
     TEST_ASSERT_EQUAL_FLOAT(5.0f,
                             migrated["params"]["system"]["obd_request_spacing_ms"].as<float>());
 

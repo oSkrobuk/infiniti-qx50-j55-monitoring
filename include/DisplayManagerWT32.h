@@ -50,6 +50,9 @@ public:
                         float oil_pressure, float boost,
                         float poll_time, float battery_voltage);
 
+    // Выбрать яркость обычного или ночного режима
+    void update_brightness(bool night_mode);
+
     // Показать алерт-оверлей поверх заголовка экрана
     // display_name — строки через '\n': первая и третья UPPERCASE красные, вторая белая
     // Вызывать каждый кадр пока алерт активен — перерисовывает только при смене кода
@@ -117,6 +120,4 @@ private:
     bool draw_smooth_value_(const char *text, int16_t center_x, int16_t center_y,
                             uint16_t color);
 
-    // Обновить яркость подсветки из системной конфигурации
-    void update_brightness_();
 };

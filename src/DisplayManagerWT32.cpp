@@ -300,7 +300,7 @@ void DisplayManagerWT32::invalidate_metric_cache_()
 void DisplayManagerWT32::init(const char *version)
 {
     tft_.init();
-    update_brightness_();
+    update_brightness(false);
     tft_.setRotation(1); // альбомная ориентация 480×320
     tft_.fillScreen(TFT_BLACK);
 
@@ -312,9 +312,10 @@ void DisplayManagerWT32::init(const char *version)
     invalidate_metric_cache_();
 }
 
-void DisplayManagerWT32::update_brightness_()
+void DisplayManagerWT32::update_brightness(bool night_mode)
 {
-    float brightness_percent = config.get("system", "brightness_percent");
+    const char *field = night_mode ? "brightness_night_percent" : "brightness_percent";
+    float brightness_percent = config.get("system", field);
     if (brightness_percent < BRIGHTNESS_MIN_PERCENT) {
         brightness_percent = BRIGHTNESS_MIN_PERCENT;
     } else if (brightness_percent > BRIGHTNESS_MAX_PERCENT) {
@@ -636,8 +637,6 @@ void DisplayManagerWT32::update_metrics(float coolant, float oil, float coolant_
                                         float poll_time, float battery_voltage)
 {
     char buf[12];
-
-    update_brightness_();
 
     // Антифриз радиатора
     uint16_t radiator_color = get_temperature_color(coolant_r,

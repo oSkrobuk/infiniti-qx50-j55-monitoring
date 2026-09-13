@@ -70,11 +70,13 @@ static void build_defaults(JsonDocument &doc)
     // poll_interval_ms          — пауза между отправками основных UDS-запросов (мс)
     // obd_request_spacing_ms    — пауза между OBD PID внутри секундного пакета (мс)
     // stale_ms                  — через сколько мс без обновления значение считается устаревшим
-    // brightness_percent        — яркость управляемой подсветки дисплея в процентах
+    // brightness_percent        — яркость подсветки при выключенном ближнем свете
+    // brightness_night_percent  — яркость подсветки при включенном ближнем свете
     doc["system"]["poll_interval_ms"]        = 30.0f;
     doc["system"]["obd_request_spacing_ms"] = 5.0f;
     doc["system"]["stale_ms"]                = 1000.0f;
     doc["system"]["brightness_percent"]      = 100.0f;
+    doc["system"]["brightness_night_percent"] = 30.0f;
 
     // Настройки WiFi точки доступа (строки, не участвуют в числовом хеше)
     doc["wifi"]["ssid"]     = WIFI_DEFAULT_SSID;
@@ -156,10 +158,14 @@ static bool config_values_valid(JsonObjectConst root)
         !number_in_range(root, "system", "obd_request_spacing_ms", 1.0f, 100.0f) ||
         !number_in_range(root, "system", "stale_ms", 100.0f, 3600000.0f) ||
         !number_in_range(root, "system", "brightness_percent", 10.0f, 100.0f) ||
+        !number_in_range(root, "system", "brightness_night_percent", 10.0f, 100.0f) ||
         !ordered(root, "system", "poll_interval_ms", "stale_ms")) return false;
 
-    const float brightness = root["system"]["brightness_percent"].as<float>();
-    if (fabsf(brightness / 10.0f - roundf(brightness / 10.0f)) > 0.0001f) return false;
+    static const char *brightness_fields[] = {"brightness_percent", "brightness_night_percent"};
+    for (const char *field : brightness_fields) {
+        const float brightness = root["system"][field].as<float>();
+        if (fabsf(brightness / 10.0f - roundf(brightness / 10.0f)) > 0.0001f) return false;
+    }
 
     return wifi_credentials_validate(root["wifi"]["ssid"].as<const char *>(),
                                      root["wifi"]["password"].as<const char *>());

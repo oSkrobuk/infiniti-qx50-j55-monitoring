@@ -678,7 +678,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
         </div>
         <div class="brightness-box">
           <div class="field">
-            <label>Яркость подсветки</label>
+            <label>Яркость днем</label>
             <select name="system_brightness_percent" required>
               <option value="10">10%</option><option value="20">20%</option>
               <option value="30">30%</option><option value="40">40%</option>
@@ -686,8 +686,20 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
               <option value="70">70%</option><option value="80">80%</option>
               <option value="90">90%</option><option value="100" selected>100%</option>
             </select>
-            <span class="hint">Регулировка работает только на дисплеях с входом BLK</span>
+            <span class="hint">При выключенном ближнем свете</span>
           </div>
+          <div class="field">
+            <label>Яркость ночью</label>
+            <select name="system_brightness_night_percent" required>
+              <option value="10">10%</option><option value="20">20%</option>
+              <option value="30" selected>30%</option><option value="40">40%</option>
+              <option value="50">50%</option><option value="60">60%</option>
+              <option value="70">70%</option><option value="80">80%</option>
+              <option value="90">90%</option><option value="100">100%</option>
+            </select>
+            <span class="hint">При включенном ближнем свете</span>
+          </div>
+          <span class="hint">Регулировка работает только на дисплеях с входом BLK</span>
         </div>
       </div>
     </div>
@@ -1097,10 +1109,12 @@ function fillForm(cfg) {
     const os = document.querySelector('[name="system_obd_request_spacing_ms"]');
     const sm = document.querySelector('[name="system_stale_ms"]');
     const bp = document.querySelector('[name="system_brightness_percent"]');
+    const bn = document.querySelector('[name="system_brightness_night_percent"]');
     if (pi) pi.value = cfg.system.poll_interval_ms;
     if (os) os.value = cfg.system.obd_request_spacing_ms;
     if (sm) sm.value = cfg.system.stale_ms;
     if (bp) bp.value = cfg.system.brightness_percent;
+    if (bn) bn.value = cfg.system.brightness_night_percent;
   }
 }
 
@@ -1288,10 +1302,12 @@ document.getElementById('systemForm').addEventListener('submit', async (e) => {
   const obdSpacingEl = document.querySelector('[name="system_obd_request_spacing_ms"]');
   const staleEl = document.querySelector('[name="system_stale_ms"]');
   const brightnessEl = document.querySelector('[name="system_brightness_percent"]');
+  const brightnessNightEl = document.querySelector('[name="system_brightness_night_percent"]');
   const poll_ms = parseFloat(pollEl ? pollEl.value : 30);
   const obd_spacing_ms = parseFloat(obdSpacingEl ? obdSpacingEl.value : 5);
   const stale_ms = parseFloat(staleEl ? staleEl.value : 1000);
   const brightness_percent = parseFloat(brightnessEl ? brightnessEl.value : 100);
+  const brightness_night_percent = parseFloat(brightnessNightEl ? brightnessNightEl.value : 30);
 
   if (poll_ms < 10) { showToast('⚠ Интервал опроса не может быть меньше 10 мс', 'err'); return; }
   if (obd_spacing_ms < 1 || obd_spacing_ms > 100) {
@@ -1304,7 +1320,12 @@ document.getElementById('systemForm').addEventListener('submit', async (e) => {
     return;
   }
   if (brightness_percent < 10 || brightness_percent > 100 || brightness_percent % 10 !== 0) {
-    showToast('⚠ Яркость должна быть от 10 до 100% с шагом 10%', 'err');
+    showToast('⚠ Дневная яркость должна быть от 10 до 100% с шагом 10%', 'err');
+    return;
+  }
+  if (brightness_night_percent < 10 || brightness_night_percent > 100 ||
+      brightness_night_percent % 10 !== 0) {
+    showToast('⚠ Ночная яркость должна быть от 10 до 100% с шагом 10%', 'err');
     return;
   }
 
@@ -1316,7 +1337,8 @@ document.getElementById('systemForm').addEventListener('submit', async (e) => {
         poll_interval_ms: poll_ms,
         obd_request_spacing_ms: obd_spacing_ms,
         stale_ms: stale_ms,
-        brightness_percent: brightness_percent
+        brightness_percent: brightness_percent,
+        brightness_night_percent: brightness_night_percent
       }
     };
     const r = await fetch('/config', {
@@ -2063,7 +2085,8 @@ async function autoCheckUpdates() {
 // Значения по умолчанию совпадают с build_defaults() в ConfigManager.cpp
 const CARD_DEFAULTS = {
   wifi:         { ssid: 'QX50Monitoring', password: 'infiniti' },
-  system:       { poll_interval_ms: 30, obd_request_spacing_ms: 5, stale_ms: 1000, brightness_percent: 100 },
+  system:       { poll_interval_ms: 30, obd_request_spacing_ms: 5, stale_ms: 1000,
+                  brightness_percent: 100, brightness_night_percent: 30 },
   oil:          { min: 50, target: 90, max: 98 },
   coolant:      { min: 50, target: 90, max: 93 },
   radiator:     { min: 0,  target: 50, max: 90 },
@@ -2260,7 +2283,8 @@ function render(data){
   const light=document.getElementById('diagLight');const lightAge=data.exterior_light_age_ms;
   if(lightAge===null||lightAge===undefined){light.textContent='Нет данных';light.className='diag-value danger';}
   else{light.textContent=(data.exterior_light_on?'Включен':'Выключен')+' · '+fmtAge(lightAge);light.className='diag-value '+(lightAge<=LIGHT_STALE_MS?'ok':'danger');}
-  document.getElementById('diagBrightness').textContent=data.brightness_percent+'%';
+  document.getElementById('diagBrightness').textContent=data.brightness_active_percent+'% · '+
+    (data.exterior_light_on?'ночная':'дневная');
   setAge('diagCanAge',data.can_last_rx_age_ms,data.stale_ms);setAge('diagEcmAge',data.ecm_last_response_age_ms,data.stale_ms);setAge('diagTcmAge',data.tcm_last_response_age_ms,data.stale_ms);
 }
 async function loadResetHistory(){
@@ -3187,6 +3211,11 @@ void WebManager::handle_get_metrics()
     json += String(stale_ms);
     json += ",\"brightness_percent\":";
     json += String(config.get("system", "brightness_percent"), 0);
+    json += ",\"brightness_night_percent\":";
+    json += String(config.get("system", "brightness_night_percent"), 0);
+    json += ",\"brightness_active_percent\":";
+    json += String(config.get("system", can_metrics.exterior_light_on
+        ? "brightness_night_percent" : "brightness_percent"), 0);
     json += ",\"reset_reason\":\"";
     json += reset_history.current_reason_name();
     json += "\",\"reset_reason_code\":";

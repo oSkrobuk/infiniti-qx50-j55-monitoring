@@ -90,7 +90,7 @@ void DisplayManager::init(const char *version)
 {
     ledcSetup(DISPLAY_BL_LEDC_CHANNEL, DISPLAY_BL_LEDC_FREQ_HZ, DISPLAY_BL_LEDC_BITS);
     ledcAttachPin(DISPLAY_BL_PIN, DISPLAY_BL_LEDC_CHANNEL);
-    update_brightness_();
+    update_brightness(false);
 
     tft_.init();
     // TFT_eSPI принимает 0..3 и сам берет остаток от деления на 4:
@@ -105,9 +105,10 @@ void DisplayManager::init(const char *version)
     draw_static_();
 }
 
-void DisplayManager::update_brightness_()
+void DisplayManager::update_brightness(bool night_mode)
 {
-    float brightness_percent = config.get("system", "brightness_percent");
+    const char *field = night_mode ? "brightness_night_percent" : "brightness_percent";
+    float brightness_percent = config.get("system", field);
     if (brightness_percent < BRIGHTNESS_MIN_PERCENT) {
         brightness_percent = BRIGHTNESS_MIN_PERCENT;
     } else if (brightness_percent > BRIGHTNESS_MAX_PERCENT) {
@@ -270,8 +271,6 @@ void DisplayManager::update_metrics(float coolant, float oil, float coolant_r,
                                     float poll_time, float battery_voltage)
 {
     char buf[12];
-
-    update_brightness_();
 
     // Антифриз радиатора
     uint16_t radiator_color = get_temperature_color(coolant_r,
