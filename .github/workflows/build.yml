@@ -99,18 +99,23 @@ jobs:
           - env: esp32
             chip: esp32
             partitions: partitions_4mb.csv
+            ota_limit: '0x1C0000'
           - env: esp32-mock
             chip: esp32
             partitions: partitions_4mb.csv
+            ota_limit: '0x1C0000'
           - env: esp32-hook
             chip: esp32
             partitions: partitions_4mb.csv
+            ota_limit: '0x1C0000'
           - env: esp32s3-wt32
             chip: esp32s3
             partitions: partitions_16mb.csv
+            ota_limit: '0x640000'
           - env: esp32s3-wt32-mock
             chip: esp32s3
             partitions: partitions_16mb.csv
+            ota_limit: '0x640000'
 
     steps:
       - name: Checkout repository
@@ -154,12 +159,17 @@ jobs:
             exit 1
           fi
           SLOT=$((RAW))
+          LIMIT=$((${{ matrix.ota_limit }}))
           SIZE=$(stat -c%s ".pio/build/${{ matrix.env }}/firmware.bin")
           PCT=$(( SIZE * 100 / SLOT ))
           echo "firmware.bin: $SIZE байт из $SLOT ($PCT% слота OTA)"
           echo "### ${{ matrix.env }}: $SIZE байт ($PCT% слота OTA)" >> "$GITHUB_STEP_SUMMARY"
           if [ "$SIZE" -gt "$SLOT" ]; then
             echo "::error::Прошивка не влезает в OTA-слот"
+            exit 1
+          fi
+          if [ "$SIZE" -gt "$LIMIT" ]; then
+            echo "::error::Прошивка превышает совместимый предел $LIMIT байт"
             exit 1
           fi
           if [ "$PCT" -gt 90 ]; then
