@@ -60,6 +60,14 @@ static void test_showcase_pid_formulas()
     }
 }
 
+static void test_monitor_status_reports_confirmed_dtc_count()
+{
+    can_parse_known_frames(frame(0x01, 0x85));
+
+    TEST_ASSERT_EQUAL_FLOAT(5.0f, can_metrics.obd[0x01].value);
+    TEST_ASSERT_EQUAL_UINT32(NOW, can_metrics.obd[0x01].ts);
+}
+
 static void test_short_two_byte_pid_is_ignored()
 {
     can_parse_known_frames(frame(0x10, 0x04, 0xD2, 4));
@@ -84,6 +92,7 @@ int main(int, char **)
 {
     UNITY_BEGIN();
     RUN_TEST(test_showcase_pid_formulas);
+    RUN_TEST(test_monitor_status_reports_confirmed_dtc_count);
     RUN_TEST(test_short_two_byte_pid_is_ignored);
     RUN_TEST(test_shared_pid_is_not_duplicated_in_showcase_slots);
     RUN_TEST(test_unknown_supported_pid_keeps_raw_value);

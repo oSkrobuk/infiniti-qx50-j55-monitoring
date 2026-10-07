@@ -31,6 +31,7 @@ void can_parse_known_frames(const CanFrame &frame)
                 }
                 float obd_value = 0.0f;
                 switch (pid) {
+                    case 0x01: obd_value = d[3] & 0x7F; break;
                     case 0x04: obd_value = d[3] * 100.0f / 255.0f; break;
                     case 0x05:
                         can_metrics.engine_coolant = static_cast<float>(d[3]) - 40.0f;

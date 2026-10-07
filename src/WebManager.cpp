@@ -66,8 +66,9 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     margin-top: 4px;
   }
   .nav-link {
-    display: inline-block;
-    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: 8px 18px;
     border: 1px solid var(--accent);
     border-radius: 8px;
@@ -78,6 +79,17 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     transition: opacity 0.2s;
   }
   .nav-link:hover { opacity: 0.75; }
+  .header-nav {
+    width: min(100%, 700px);
+    margin: 12px auto 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  @media (max-width: 640px) {
+    .header-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .nav-link { min-height: 54px; padding: 8px; line-height: 1.35; }
+  }
   /* ── Accordion (details/summary) ─────────────────── */
   .sect {
     max-width: 960px;
@@ -608,9 +620,11 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 <header>
   <h1>&#9670; INFINITI QX50 J55 &#9670;</h1>
   <h2>MONITORING &mdash; Редактор конфигурации</h2>
-  <a class="nav-link" href="/live">&#128202; Онлайн мониторинг &rarr;</a>
-  <a class="nav-link" href="/obd">OBD-II PID &rarr;</a>
-  <a class="nav-link" href="/health">&#128295; Работоспособность устройства &rarr;</a>
+  <nav class="header-nav" aria-label="Основные разделы">
+    <a class="nav-link" href="/live">&#128202; Онлайн мониторинг &rarr;</a>
+    <a class="nav-link" href="/obd">&#128269; OBD-II PID &rarr;</a>
+    <a class="nav-link" href="/health">&#128295; Работоспособность устройства &rarr;</a>
+  </nav>
 </header>
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
@@ -2786,22 +2800,26 @@ static const char OBD_HTML[] PROGMEM = R"rawhtml(
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:#edf2f7;font:15px system-ui,sans-serif}
 main{max-width:1000px;margin:auto;padding:24px}h1{font-size:24px;letter-spacing:.08em}h2{margin-top:28px}a{color:var(--gold)}
 #status{color:var(--muted);margin:8px 0 20px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
-.card{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:14px}.pid{color:var(--gold);font:700 12px monospace}
+.card{position:relative;border:1px solid var(--line);border-radius:10px;background:var(--card);padding:14px}.pid{color:var(--gold);font:700 12px monospace}
 .name{min-height:38px;margin:6px 0;color:var(--muted)}.value{font:600 25px ui-monospace,monospace}.stale{opacity:.55}
 label{display:flex;gap:8px;align-items:center}.note{color:var(--muted);line-height:1.45}
+.help{position:absolute;top:9px;right:9px;width:26px;height:26px;border:1px solid var(--line);border-radius:50%;background:transparent;color:var(--gold);font-weight:700;cursor:pointer}
+dialog{max-width:520px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:#edf2f7;padding:20px}dialog::backdrop{background:#000b}.close{float:right;border:0;background:transparent;color:var(--muted);font-size:24px;cursor:pointer}
 </style></head><body><main><a href="/">&larr; К настройкам</a><h1>Диагностика CAN</h1>
 <div id="status">Ожидание данных…</div><h2>Infiniti UDS DID</h2>
 <p class="note">Основные DID уже читает монитор: страница не создает для них дополнительных запросов.</p>
 <div id="didGrid" class="grid"></div><h2>Стандартные OBD-II PID</h2>
 <p class="note">Отметьте нужные PID. По умолчанию все выключены, каждый выбранный PID опрашивается раз в секунду.</p>
-<div id="pidGrid" class="grid"></div></main><script>
+<div id="pidGrid" class="grid"></div><dialog id="helpDialog"><button class="close" aria-label="Закрыть">&times;</button><h3 id="helpTitle"></h3><p id="helpText" class="note"></p></dialog></main><script>
 const statusEl=document.getElementById('status'),didGrid=document.getElementById('didGrid'),pidGrid=document.getElementById('pidGrid');
 const value=m=>(m.value===null?'—':m.value.toFixed(m.precision))+' <small>'+m.unit+'</small>';
-function card(m,check){return '<div class="card '+(m.fresh?'':'stale')+'"><div class="pid">'+(check?'<label><input type="checkbox" data-pid="'+m.id+'" '+(m.enabled?'checked':'')+'>':'')+m.kind+' '+m.id+(check?'</label>':'')+'</div><div class="name">'+m.name+'</div><div class="value">'+value(m)+'</div></div>'}
-function render(data){statusEl.textContent='Диагностический режим активен · выбранные PID обновляются раз в секунду';
+const help=m=>m.decoded?(m.description+' Ответ ЭБУ уже преобразован в понятное числовое значение'+(m.unit?' ('+m.unit+')':'')+'.'):(m.description+' ЭБУ сообщил, что поддерживает этот параметр, но прошивка пока не разбирает формат его полей. raw — это исходные байты ответа, объединенные в целое число; это не физическая величина.');
+function card(m,check){const stale=!m.fresh&&!(check&&m.enabled);return '<div class="card '+(stale?'stale':'')+'"><button class="help" data-help="'+m.kind+' '+m.id+'" aria-label="Что означает '+m.kind+' '+m.id+'?">?</button><div class="pid">'+(check?'<label><input type="checkbox" data-pid="'+m.id+'" '+(m.enabled?'checked':'')+'>':'')+m.kind+' '+m.id+(check?'</label>':'')+'</div><div class="name">'+m.name+'</div><div class="value">'+value(m)+'</div></div>'}
+function render(data){window.obdData=data;statusEl.textContent='Диагностический режим активен · выбранные PID обновляются раз в секунду';
 didGrid.innerHTML=data.dids.map(m=>card(m,false)).join('');pidGrid.innerHTML=data.pids.map(m=>card(m,true)).join('')}
 async function update(){try{const r=await fetch('/obd-metrics',{cache:'no-store'});if(!r.ok)throw Error(r.status);render(await r.json())}catch(e){statusEl.textContent='Нет связи: '+e}}
-pidGrid.addEventListener('change',async e=>{if(!e.target.matches('[data-pid]'))return;const body=new URLSearchParams({pid:e.target.dataset.pid,enabled:e.target.checked?'1':'0'});try{const r=await fetch('/obd-selection',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});if(!r.ok)throw Error(r.status)}catch(err){e.target.checked=!e.target.checked;statusEl.textContent='Не удалось изменить опрос: '+err}});
+pidGrid.addEventListener('change',async e=>{if(!e.target.matches('[data-pid]'))return;const cardEl=e.target.closest('.card'),metric=window.obdData.pids.find(m=>m.id===e.target.dataset.pid);cardEl.classList.toggle('stale',!e.target.checked&&!metric.fresh);const body=new URLSearchParams({pid:e.target.dataset.pid,enabled:e.target.checked?'1':'0'});try{const r=await fetch('/obd-selection',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});if(!r.ok)throw Error(r.status)}catch(err){e.target.checked=!e.target.checked;cardEl.classList.toggle('stale',!e.target.checked&&!metric.fresh);statusEl.textContent='Не удалось изменить опрос: '+err}});
+const helpDialog=document.getElementById('helpDialog');document.querySelector('main').addEventListener('click',e=>{const b=e.target.closest('[data-help]');if(!b)return;const m=[...window.obdData.dids,...window.obdData.pids].find(x=>x.kind+' '+x.id===b.dataset.help);if(!m)return;document.getElementById('helpTitle').textContent=m.kind+' '+m.id;document.getElementById('helpText').textContent=help(m);helpDialog.showModal()});helpDialog.querySelector('.close').onclick=()=>helpDialog.close();
 update();setInterval(update,1000);
 </script></body></html>
 )rawhtml";
@@ -2913,6 +2931,7 @@ struct ObdMetricDescriptor {
 };
 
 static constexpr ObdMetricDescriptor OBD_DESCRIPTORS[] = {
+    {0x01, "Подтвержденные коды неисправностей", "шт.", 0},
     {0x04, "Расчетная нагрузка", "%", 1}, {0x05, "Температура ОЖ", "°C", 0},
     {0x06, "Краткая коррекция Bank 1", "%", 1}, {0x07, "Долгая коррекция Bank 1", "%", 1},
     {0x0A, "Давление топлива", "кПа", 0}, {0x0B, "Давление во впуске", "кПа", 0},
@@ -2959,6 +2978,73 @@ static const ObdMetricDescriptor *find_obd_descriptor(uint8_t pid)
         if (descriptor.pid == pid) return &descriptor;
     }
     return nullptr;
+}
+
+static const char *raw_obd_name(uint8_t)
+{
+    return "Стандартный параметр (raw)";
+}
+
+static const char *obd_description(uint8_t pid)
+{
+    switch (pid) {
+        case 0x01:
+            return "Число подтвержденных DTC в младших семи битах байта A (0–127). Сам PID также содержит "
+                   "состояние лампы MIL и готовность контрольных систем, но карточка показывает только счетчик DTC";
+        case 0x04: return "Расчетная нагрузка двигателя относительно доступного максимума";
+        case 0x05: return "Температура охлаждающей жидкости двигателя";
+        case 0x06: return "Краткосрочная коррекция подачи топлива первого ряда цилиндров";
+        case 0x07: return "Долгосрочная коррекция подачи топлива первого ряда цилиндров";
+        case 0x0A: return "Давление топлива относительно атмосферного давления";
+        case 0x0B: return "Абсолютное давление воздуха во впускном коллекторе";
+        case 0x0C: return "Текущая частота вращения коленчатого вала двигателя";
+        case 0x0D: return "Скорость автомобиля, которую сообщает блок управления";
+        case 0x0E: return "Угол опережения зажигания относительно верхней мертвой точки";
+        case 0x0F: return "Температура воздуха на впуске";
+        case 0x10: return "Масса воздуха, проходящая через расходомер за секунду";
+        case 0x11: return "Относительное положение дроссельной заслонки";
+        case 0x1F: return "Время работы двигателя с момента последнего запуска";
+        case 0x23: return "Давление топлива в общей топливной рампе";
+        case 0x24: return "Коэффициент избытка воздуха по датчику Bank 1 Sensor 1";
+        case 0x25: return "Коэффициент избытка воздуха по датчику Bank 1 Sensor 2";
+        case 0x26: return "Коэффициент избытка воздуха по датчику Bank 1 Sensor 3";
+        case 0x27: return "Коэффициент избытка воздуха по датчику Bank 1 Sensor 4";
+        case 0x2F: return "Расчетный остаток топлива в баке";
+        case 0x33: return "Абсолютное атмосферное давление";
+        case 0x3C: return "Температура катализатора первого ряда, датчик 1";
+        case 0x3D: return "Температура катализатора первого ряда, датчик 2";
+        case 0x42: return "Напряжение питания, измеренное блоком управления";
+        case 0x43: return "Абсолютная нагрузка двигателя с учетом текущих условий";
+        case 0x44: return "Заданное блоком управления соотношение воздуха и топлива";
+        case 0x46: return "Температура наружного воздуха по данным автомобиля";
+        case 0x49: return "Положение датчика D педали акселератора";
+        case 0x4A: return "Положение датчика E педали акселератора";
+        case 0x4B: return "Положение датчика F педали акселератора";
+        case 0x4C: return "Положение дросселя, заданное блоком управления";
+        case 0x5C: return "Температура моторного масла";
+        case 0x5E: return "Расчетный расход топлива за час";
+        case 0x61: return "Крутящий момент, запрошенный водителем";
+        case 0x62: return "Фактический крутящий момент двигателя в процентах";
+        case 0x63: return "Опорный крутящий момент двигателя";
+        case 0x64: return "Процент крутящего момента в рабочей точке 1";
+        default: return "Стандартный параметр OBD-II Mode 01 без встроенного описания";
+    }
+}
+
+static const char *did_description(uint16_t did)
+{
+    switch (did) {
+        case 0x1201: return "Обороты двигателя из фирменного диагностического ответа ECM Infiniti";
+        case 0x110E: return "Напряжение на выходе датчика наддува, а не давление в физических единицах";
+        case 0x1278: return "Напряжение на выходе датчика давления масла, а не давление в физических единицах";
+        case 0x1103: return "Напряжение бортовой сети по данным ECM";
+        case 0x1101: return "Температура охлаждающей жидкости двигателя по данным ECM";
+        case 0x111F: return "Температура моторного масла по данным ECM";
+        case 0x116B: return "Температура охлаждающей жидкости на выходе радиатора";
+        case 0x110C: return "Температура рабочей жидкости вариатора по данным TCM";
+        case 0x0E07: return "Двоичный признак наружного освещения по данным BCM";
+        default: return "Фирменный диагностический параметр Infiniti";
+    }
 }
 
 static ObdMetricValue obd_metric_value(uint8_t pid)
@@ -3346,10 +3432,13 @@ void WebManager::handle_get_obd_metrics()
         json += did;
         json += "\",\"name\":\"";
         json += descriptor.name;
+        json += "\",\"description\":\"";
+        json += did_description(descriptor.did);
         json += "\",\"unit\":\"";
         json += descriptor.unit;
         json += "\",\"precision\":";
         json += String(descriptor.precision);
+        json += ",\"decoded\":true";
         json += ",\"value\":";
         json += metric.ts == 0
             ? "null"
@@ -3373,11 +3462,15 @@ void WebManager::handle_get_obd_metrics()
         json += "{\"kind\":\"PID\",\"id\":\"";
         json += id;
         json += "\",\"name\":\"";
-        json += descriptor == nullptr ? "Стандартный параметр (raw)" : descriptor->name;
+        json += descriptor == nullptr ? raw_obd_name(pid) : descriptor->name;
+        json += "\",\"description\":\"";
+        json += obd_description(pid);
         json += "\",\"unit\":\"";
         json += descriptor == nullptr ? "raw" : descriptor->unit;
         json += "\",\"precision\":";
         json += String(descriptor == nullptr ? 0 : descriptor->precision);
+        json += ",\"decoded\":";
+        json += descriptor == nullptr ? "false" : "true";
         json += ",\"enabled\":";
         json += diagnostic_selection.pid_enabled(pid) ? "true" : "false";
         json += ",\"value\":";
