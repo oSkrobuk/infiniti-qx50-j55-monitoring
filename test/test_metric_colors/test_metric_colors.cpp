@@ -202,6 +202,12 @@ static void test_oil_pressure_without_data_is_blue(void)
     TEST_ASSERT_EQUAL_HEX16(COLOR_BLUE, metric_oil_pressure_color(0.0f, 2000.0f));
 }
 
+static void test_oil_pressure_is_green_when_engine_stopped(void)
+{
+    TEST_ASSERT_EQUAL_HEX16(COLOR_GREEN, metric_oil_pressure_color(0.1f, 0.0f));
+    TEST_ASSERT_EQUAL_HEX16(COLOR_GREEN, metric_oil_pressure_color(0.0f, 0.0f));
+}
+
 static void test_oil_pressure_uses_low_threshold_below_rpm_limit(void)
 {
     // Ниже 3000 об/мин минимум 1.45 В
@@ -256,6 +262,7 @@ int main(int, char **)
     RUN_TEST(test_battery_above_green_is_transitional);
 
     RUN_TEST(test_oil_pressure_without_data_is_blue);
+    RUN_TEST(test_oil_pressure_is_green_when_engine_stopped);
     RUN_TEST(test_oil_pressure_uses_low_threshold_below_rpm_limit);
     RUN_TEST(test_oil_pressure_uses_high_threshold_above_rpm_limit);
     RUN_TEST(test_oil_pressure_at_rpm_threshold_uses_high_limit);

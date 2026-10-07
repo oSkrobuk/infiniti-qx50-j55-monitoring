@@ -176,6 +176,7 @@ uint16_t metric_battery_color(float voltage)
 
 uint16_t metric_oil_pressure_color(float pressure, float rpm)
 {
+    if (rpm == 0.0f) return 0x07E0;
     if (pressure == 0.0f) return 0x001F;
 
     float threshold    = config.get("oil_pressure", "rpm_threshold");

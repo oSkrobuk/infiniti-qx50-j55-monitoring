@@ -2842,6 +2842,8 @@ static const char *rpm_state(float v)
 // Состояние датчика давления масла — минимум зависит от текущих оборотов
 static const char *oil_pressure_state(float v, float rpm)
 {
+    if (rpm == 0.0f) return "ok";
+
     const float threshold = config.get("oil_pressure", "rpm_threshold");
     const float min_p = (rpm < threshold)
         ? config.get("oil_pressure", "min_low")
