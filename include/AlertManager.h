@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 
 #include "CanTypes.h"
+#include "protocol_generated.h"
 
 // Максимальное количество уникальных записей в истории алертов
 static constexpr uint8_t ALERT_LOG_MAX = 16;
@@ -43,6 +44,18 @@ struct AlertLogEntry {
     uint32_t count;           // Сколько раз сработала эта проверка
 };
 
+// Переход состояния проверки для BLE-канала алертов
+struct AlertTransition {
+    uint32_t index;
+    uint32_t uptime_ms;
+    uint8_t code;
+    bool raised;
+    uint8_t metric_id;
+    int16_t value;
+};
+
+static constexpr uint8_t ALERT_EVENT_RING_SIZE = 32;
+
 // Структура конфигурации одной проверки (хранится в /checks.json).
 // Внимание: enabled задает режим повтора, а не включение проверки —
 // сама проверка выполняется всегда, отключить ее нельзя
@@ -75,7 +88,7 @@ public:
     bool init();
 
     // Вызывать раз в 200 мс: проверяет метрики, при срабатывании — алертит
-    void update(const CanMetrics &m);
+    void update(const CanMetrics &m, uint32_t stale_ms = UINT32_MAX);
 
     // Возвращает true, если сейчас активен алерт (в течение ALERT_DISPLAY_MS мс)
     bool has_active_alert() const;
@@ -112,6 +125,10 @@ public:
     // Число уникальных записей в журнале
     uint8_t log_count() const { return log_count_; }
 
+    uint32_t event_next_index() const { return event_next_index_; }
+    uint32_t event_oldest_index() const;
+    bool event_at(uint32_t index, AlertTransition &event) const;
+
     // Статические описания всех проверок — используются в Web UI
     static const CheckDef CHECK_DEFS[];
     static constexpr uint8_t CHECK_COUNT = 9;
@@ -132,6 +149,9 @@ private:
     uint32_t last_trigger_ms_[CHECK_COUNT]; // Таймер антидребезга (режим повтора, enabled=true)
     uint32_t pending_since_[CHECK_COUNT];   // millis() момента, когда условие стало истинным
     bool     pending_active_[CHECK_COUNT];  // true, пока условие проверки нарушено
+    bool     condition_active_[CHECK_COUNT]; // true после подтвержденного срабатывания
+    AlertTransition events_[ALERT_EVENT_RING_SIZE];
+    uint32_t event_next_index_;
 
     // Загрузить конфиг проверок из файла (defaults если файла нет).
     // missing — сюда пишется true, если в файле не хватает проверок или полей
@@ -155,7 +175,8 @@ private:
     // Выполнить одну проверку: idx — индекс в CHECK_DEFS / checks_
     // triggered — true если условие сейчас нарушено. Алерт поднимается, только
     // когда условие продержалось не меньше confirm_ms_
-    void try_trigger_(uint8_t idx, bool triggered);
+    void try_trigger_(uint8_t idx, bool available, bool triggered, int16_t value);
+    void append_event_(uint8_t idx, bool raised, int16_t value);
 };
 
 // Глобальный объект — доступен из main.cpp и WebManager

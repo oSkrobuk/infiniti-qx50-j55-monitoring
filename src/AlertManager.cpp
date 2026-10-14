@@ -1,9 +1,12 @@
 #include "AlertManager.h"
 
+#include <math.h>
+
 #include <LittleFS.h>
 
 #include "BuzzerController.h"
 #include "FsUtils.h"
+#include "protocol_generated.h"
 
 // Бузер объявлен в main.cpp — используем extern для доступа без циклических зависимостей
 extern BuzzerController buzzer;
@@ -108,7 +111,7 @@ static uint32_t read_timing_ms(JsonVariantConst value, uint32_t fallback, uint32
 // ─────────────────────────────────────────────────────────────────────────────
 
 AlertManager::AlertManager()
-    : log_count_(0), active_since_(0)
+    : log_count_(0), active_since_(0), event_next_index_(0)
 {
     active_code_[0]  = '\0';
     active_desc_[0]  = '\0';
@@ -117,7 +120,9 @@ AlertManager::AlertManager()
     memset(last_trigger_ms_, 0, sizeof(last_trigger_ms_));
     memset(pending_since_, 0, sizeof(pending_since_));
     memset(pending_active_, 0, sizeof(pending_active_));
+    memset(condition_active_, 0, sizeof(condition_active_));
     memset(log_, 0, sizeof(log_));
+    memset(events_, 0, sizeof(events_));
 }
 
 void AlertManager::apply_check_defaults_()
@@ -157,46 +162,61 @@ bool AlertManager::init()
 // данных: если по метрике нет кадров, условие считается ложным и отсчет
 // подтверждения в try_trigger_ обнуляется
 
-void AlertManager::update(const CanMetrics &m)
+void AlertManager::update(const CanMetrics &m, uint32_t stale_ms)
 {
+    const uint32_t now = millis();
+    const auto fresh = [now, stale_ms](uint32_t timestamp) {
+        return timestamp != 0 && now - timestamp <= stale_ms;
+    };
     // E01: температура масла ДВС выше максимума
-    try_trigger_(0, m.engine_oil_ts != 0 && m.engine_oil > checks_[0].param1);
+    try_trigger_(0, fresh(m.engine_oil_ts), m.engine_oil > checks_[0].param1,
+                 static_cast<int16_t>(roundf(m.engine_oil * 10.0f)));
 
     // E02: температура ОЖ ДВС выше максимума
-    try_trigger_(1, m.engine_coolant_ts != 0 && m.engine_coolant > checks_[1].param1);
+    try_trigger_(1, fresh(m.engine_coolant_ts), m.engine_coolant > checks_[1].param1,
+                 static_cast<int16_t>(roundf(m.engine_coolant * 10.0f)));
 
     // E03: температура ОЖ радиатора выше максимума
-    try_trigger_(2, m.radiator_coolant_ts != 0 && m.radiator_coolant > checks_[2].param1);
+    try_trigger_(2, fresh(m.radiator_coolant_ts), m.radiator_coolant > checks_[2].param1,
+                 static_cast<int16_t>(roundf(m.radiator_coolant * 10.0f)));
 
     // E04: температура масла вариатора выше максимума
-    try_trigger_(3, m.cvt_temp_ts != 0 && m.cvt_temp > checks_[3].param1);
+    try_trigger_(3, fresh(m.cvt_temp_ts), m.cvt_temp > checks_[3].param1,
+                 static_cast<int16_t>(roundf(m.cvt_temp * 10.0f)));
 
     // E05: обороты выше максимума
-    try_trigger_(4, m.engine_rpm_ts != 0 && m.engine_rpm > checks_[4].param1);
+    try_trigger_(4, fresh(m.engine_rpm_ts), m.engine_rpm > checks_[4].param1,
+                 static_cast<int16_t>(roundf(m.engine_rpm)));
 
     // E06: напряжение бортовой сети ниже минимума
-    try_trigger_(5, m.battery_voltage_ts != 0 && m.battery_voltage < checks_[5].param1);
+    try_trigger_(5, fresh(m.battery_voltage_ts), m.battery_voltage < checks_[5].param1,
+                 static_cast<int16_t>(roundf(m.battery_voltage * 100.0f)));
 
     // E07: напряжение бортовой сети выше максимума
-    try_trigger_(6, m.battery_voltage_ts != 0 && m.battery_voltage > checks_[6].param1);
+    try_trigger_(6, fresh(m.battery_voltage_ts), m.battery_voltage > checks_[6].param1,
+                 static_cast<int16_t>(roundf(m.battery_voltage * 100.0f)));
 
     // E08: давление масла (напряжение датчика) ниже нормы для текущих оборотов
     // При оборотах == 0 (двигатель заглушен) проверку не выполняем
     bool oil_pressure_low = false;
-    if (m.oil_pressure_volt_ts != 0 && m.engine_rpm_ts != 0 && m.engine_rpm != 0.0f) {
+    if (fresh(m.oil_pressure_volt_ts) && fresh(m.engine_rpm_ts) && m.engine_rpm != 0.0f) {
         float min_volt = (m.engine_rpm < checks_[7].param1)
             ? checks_[7].param2
             : checks_[7].param3;
         oil_pressure_low = m.oil_pressure_volt < min_volt;
     }
-    try_trigger_(7, oil_pressure_low);
+    const bool oil_pressure_available = fresh(m.oil_pressure_volt_ts) && fresh(m.engine_rpm_ts);
+    try_trigger_(7, oil_pressure_available, oil_pressure_low,
+                 static_cast<int16_t>(roundf(m.oil_pressure_volt * 100.0f)));
 
     // E09: разница температур масла и антифриза ДВС выше порога
     bool delta_high = false;
-    if (m.engine_oil_ts != 0 && m.engine_coolant_ts != 0) {
+    if (fresh(m.engine_oil_ts) && fresh(m.engine_coolant_ts)) {
         delta_high = (m.engine_oil - m.engine_coolant) > checks_[8].param1;
     }
-    try_trigger_(8, delta_high);
+    const float delta = m.engine_oil - m.engine_coolant;
+    try_trigger_(8, fresh(m.engine_oil_ts) && fresh(m.engine_coolant_ts), delta_high,
+                 static_cast<int16_t>(roundf(delta * 10.0f)));
 }
 
 int16_t AlertManager::find_log_index_(const char *code) const
@@ -209,13 +229,22 @@ int16_t AlertManager::find_log_index_(const char *code) const
     return -1;
 }
 
-void AlertManager::try_trigger_(uint8_t idx, bool triggered)
+void AlertManager::try_trigger_(uint8_t idx, bool available, bool triggered, int16_t value)
 {
     uint32_t now = millis();
+
+    if (!available) {
+        pending_active_[idx] = false;
+        return;
+    }
 
     if (!triggered) {
         // Условие снялось — следующий выход за диапазон начнет отсчет заново
         pending_active_[idx] = false;
+        if (condition_active_[idx]) {
+            condition_active_[idx] = false;
+            append_event_(idx, false, value);
+        }
         return;
     }
 
@@ -228,6 +257,10 @@ void AlertManager::try_trigger_(uint8_t idx, bool triggered)
     // Показание, выскочившее за диапазон на доли секунды, алертом не считаем:
     // условие должно продержаться не меньше confirm_ms_ (при нуле алертим сразу)
     if ((now - pending_since_[idx]) < confirm_ms_) return;
+
+    if (!condition_active_[idx]) {
+        condition_active_[idx] = true;
+    }
 
     // Запись журнала ищем заранее: в однократном режиме именно ее наличие,
     // а не флаг сессии, запрещает повторное срабатывание
@@ -248,6 +281,7 @@ void AlertManager::try_trigger_(uint8_t idx, bool triggered)
 
     last_trigger_ms_[idx] = now;
     active_since_          = now;
+    append_event_(idx, true, value);
     strncpy(active_code_,  CHECK_DEFS[idx].code,         sizeof(active_code_) - 1);
     strncpy(active_desc_,  CHECK_DEFS[idx].description,  sizeof(active_desc_) - 1);
     strncpy(active_dname_, CHECK_DEFS[idx].display_name, sizeof(active_dname_) - 1);
@@ -274,6 +308,42 @@ void AlertManager::try_trigger_(uint8_t idx, bool triggered)
 
     Serial.printf("[Alert] Сработала проверка %s: %s\r\n",
                   CHECK_DEFS[idx].code, CHECK_DEFS[idx].description);
+}
+
+void AlertManager::append_event_(uint8_t idx, bool raised, int16_t value)
+{
+    static constexpr uint8_t METRIC_IDS[CHECK_COUNT] = {
+        METRIC_ENGINE_OIL_TEMP,
+        METRIC_COOLANT_TEMP,
+        METRIC_RADIATOR_COOLANT_TEMP,
+        METRIC_CVT_OIL_TEMP,
+        METRIC_RPM,
+        METRIC_BATTERY_VOLTAGE,
+        METRIC_BATTERY_VOLTAGE,
+        METRIC_OIL_PRESSURE_VOLTAGE,
+        PROTOCOL_METRIC_NONE,
+    };
+    AlertTransition &event = events_[event_next_index_ % ALERT_EVENT_RING_SIZE];
+    event.index = event_next_index_++;
+    event.uptime_ms = millis();
+    event.code = idx + 1;
+    event.raised = raised;
+    event.metric_id = METRIC_IDS[idx];
+    event.value = value;
+}
+
+uint32_t AlertManager::event_oldest_index() const
+{
+    return event_next_index_ > ALERT_EVENT_RING_SIZE ? event_next_index_ - ALERT_EVENT_RING_SIZE : 0;
+}
+
+bool AlertManager::event_at(uint32_t index, AlertTransition &event) const
+{
+    if (index < event_oldest_index() || index >= event_next_index_) return false;
+    const AlertTransition &candidate = events_[index % ALERT_EVENT_RING_SIZE];
+    if (candidate.index != index) return false;
+    event = candidate;
+    return true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

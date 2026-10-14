@@ -13,6 +13,7 @@
 #include "WebManager.h"
 #include "BuzzerController.h"
 #include "AlertManager.h"
+#include "BleManager.h"
 #include "BuildInfo.h"
 #include "OtaImage.h"
 #include "ObdPidCatalog.h"
@@ -413,6 +414,9 @@ void setup()
     // Инициализация менеджера алертов (после монтирования LittleFS в config.init())
     alert_manager.init();
 
+    // BLE поднимается после LittleFS/NVS и общего состояния, но до фоновых задач
+    ble_manager.begin();
+
 #ifndef USE_MOCK_DATA
     // Инициализация CAN-шины (SN65HVD230 / WVCMCU-230)
     can_bus.on_frame(can_handle_monitor_frame);
@@ -506,7 +510,8 @@ void loop()
     static uint32_t s_last_alert_check = 0;
     if (millis() - s_last_alert_check >= 200) {
         s_last_alert_check = millis();
-        alert_manager.update(can_metrics);
+        const uint32_t stale_ms = static_cast<uint32_t>(config.get("system", "stale_ms"));
+        alert_manager.update(can_metrics, stale_ms);
     }
 
     // Обновляем дисплей не чаще 10 раз в секунду, без блокирующего delay
@@ -607,7 +612,12 @@ void loop()
         } else {
             display.clear_alert();
         }
+
+        const uint32_t stale_ms = static_cast<uint32_t>(config.get("system", "stale_ms"));
+        ble_manager.update(can_metrics, millis(), stale_ms);
     }
+
+    ble_manager.handle();
 
     state_unlock();
 #endif

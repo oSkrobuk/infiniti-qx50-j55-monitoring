@@ -788,23 +788,49 @@ static void test_init_survives_corrupted_log(void)
     TEST_ASSERT_EQUAL_UINT32(0, mock_fs_files.count(ALERTS_LOG_FILE));
 }
 
-// ── Известный пробел ─────────────────────────────────────────────────────────
-
-static void test_stale_metrics_still_trigger(void)
+static void test_ble_events_include_raise_repeat_and_clear(void)
 {
-    // Проверки смотрят только на «*_ts != 0», но не на возраст значения.
-    // Если ECU замолчал, последнее полученное значение продолжает считаться
-    // актуальным и алертит спустя часы. Тест фиксирует текущее поведение —
-    // когда протухание научатся отсекать, он должен упасть и напомнить о себе
+    AlertManager am;
+    am.update(fresh_metrics_with_oil_high());
+    mock_advance_millis(ALERT_CONFIRM_MS_DEF);
+    am.update(fresh_metrics_with_oil_high());
+
+    AlertTransition event = {};
+    TEST_ASSERT_EQUAL_UINT32(1, am.event_next_index());
+    TEST_ASSERT_TRUE(am.event_at(0, event));
+    TEST_ASSERT_TRUE(event.raised);
+    TEST_ASSERT_EQUAL_UINT8(ALERT_ENGINE_OIL_TEMP_HIGH, event.code);
+    TEST_ASSERT_EQUAL_UINT8(METRIC_ENGINE_OIL_TEMP, event.metric_id);
+    TEST_ASSERT_EQUAL_INT16(990, event.value);
+
+    mock_advance_millis(ALERT_RETRIGGER_MS_DEF);
+    am.update(fresh_metrics_with_oil_high());
+    TEST_ASSERT_EQUAL_UINT32(2, am.event_next_index());
+    TEST_ASSERT_TRUE(am.event_at(1, event));
+    TEST_ASSERT_TRUE(event.raised);
+
+    am.update(fresh_metrics());
+    TEST_ASSERT_EQUAL_UINT32(3, am.event_next_index());
+    TEST_ASSERT_TRUE(am.event_at(2, event));
+    TEST_ASSERT_FALSE(event.raised);
+}
+
+// ── Устаревшие данные ────────────────────────────────────────────────────────
+
+static void test_stale_metrics_do_not_trigger(void)
+{
     CanMetrics m = fresh_metrics();
     m.engine_oil = 99.0f;
 
     mock_advance_millis(3600000); // час без единого кадра
 
     AlertManager am;
-    update_confirmed(am, m);
+    am.update(m, 1000);
+    mock_advance_millis(ALERT_CONFIRM_MS_DEF);
+    am.update(m, 1000);
 
-    TEST_ASSERT_EQUAL_STRING("E01", am.active_code());
+    TEST_ASSERT_FALSE(am.has_active_alert());
+    TEST_ASSERT_EQUAL_UINT32(0, am.event_next_index());
 }
 
 int main(int, char **)
@@ -870,8 +896,9 @@ int main(int, char **)
     RUN_TEST(test_init_backfills_missing_checks);
     RUN_TEST(test_init_loads_existing_log);
     RUN_TEST(test_init_survives_corrupted_log);
+    RUN_TEST(test_ble_events_include_raise_repeat_and_clear);
 
-    RUN_TEST(test_stale_metrics_still_trigger);
+    RUN_TEST(test_stale_metrics_do_not_trigger);
 
     return UNITY_END();
 }

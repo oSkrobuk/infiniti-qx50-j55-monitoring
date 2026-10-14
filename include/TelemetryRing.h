@@ -8,10 +8,11 @@
 struct StoredTelemetryRecord {
     uint32_t uptime_ms;
     int16_t values[METRIC_COUNT];
+    uint8_t trip_seq;
 };
 #pragma pack(pop)
 
-static_assert(sizeof(StoredTelemetryRecord) == 20, "telemetry record must remain 20 bytes");
+static_assert(sizeof(StoredTelemetryRecord) == 21, "telemetry record must remain 21 bytes");
 
 class TelemetryRing {
 public:
@@ -31,6 +32,7 @@ public:
     uint32_t oldest_seq() const { return oldest_seq_; }
     uint32_t next_seq() const { return next_seq_; }
     uint32_t newest_seq() const { return empty() ? oldest_seq_ : next_seq_ - 1; }
+    uint32_t acked_upto() const { return acked_upto_; }
     uint32_t lost_unacked_count() const { return lost_unacked_; }
     bool empty() const { return oldest_seq_ == next_seq_; }
 
