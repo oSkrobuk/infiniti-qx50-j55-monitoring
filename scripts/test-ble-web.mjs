@@ -28,7 +28,9 @@ try {
       if (url.pathname === '/') return route.fulfill({contentType: 'text/html', body: html});
       if (url.pathname === '/ble') return route.fulfill({status: failStatus ? 500 : 200,
         contentType: 'application/json', body: JSON.stringify({name: 'QX50M_7a3f', paired,
-          ownerId: paired ? '18ed6e3fe03146a2' : '', connected: false, authenticated: false})});
+          ownerId: paired ? '18ed6e3fe03146a2' : '', connected: false, authenticated: false,
+          history: {capacity: 1800, stored: 157, unread: 10, oldestSeq: 0, nextSeq: 157,
+            ackedUpto: 147, lostUnacked: 0}, summaries: {stored: 2, unread: 1}})});
       if (url.pathname === '/ble/forget-phone') {
         posts.push(request.headers()['x-kanvex-reset']);
         assert.equal(request.method(), 'POST');
@@ -43,6 +45,12 @@ try {
     await page.waitForFunction(() => document.querySelector('#bleOwner').textContent.includes('18ed6e3fe03146a2'));
     assert.equal(await page.locator('#bleName input').count(), 0);
     assert.equal(await page.locator('#bleName').innerText(), 'QX50M_7a3f');
+    assert.equal(await page.locator('#bleBufferUsed').innerText(), '157 / 1800');
+    assert.equal(await page.locator('#bleBufferUnread').innerText(), '10');
+    assert.equal(await page.locator('#bleBufferFree').innerText(), '1643');
+    assert.match(await page.locator('#bleBufferDetail').innerText(), /Курсор подтверждения: № 147/);
+    assert.match(await page.locator('#bleBufferDetail').innerText(), /1 без подтверждения из 2/);
+    assert.equal(await page.locator('#bleBufferMeter').evaluate(el => el.value), 157);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.locator('.ble-identity').screenshot({path: `${artifacts}/ble-${width}-paired.png`});
     page.once('dialog', dialog => dialog.dismiss());

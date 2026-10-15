@@ -313,6 +313,18 @@ BlePairingStatus BleManager::pairing_status()
     status.paired = paired_;
     status.connected = connected_;
     status.authenticated = authenticated_;
+    status.history_capacity = history_.capacity();
+    status.history_stored = static_cast<uint16_t>(history_.next_seq() - history_.oldest_seq());
+    status.history_oldest_seq = history_.oldest_seq();
+    status.history_next_seq = history_.next_seq();
+    status.history_acked_upto = history_.acked_upto();
+    status.history_lost_unacked = history_.lost_unacked_count();
+    const uint32_t unread_from = std::max(history_.acked_upto(), history_.oldest_seq());
+    status.history_unread = static_cast<uint16_t>(history_.next_seq() - unread_from);
+    status.summaries_stored = summary_count_;
+    for (uint8_t i = 0; i < summary_count_; ++i) {
+        if (summaries_[i].uploaded == 0) ++status.summaries_unread;
+    }
     owner_id_(status.owner_id);
     unlock_();
     return status;
@@ -485,7 +497,10 @@ void BleManager::on_control_write(const uint8_t *data, size_t length)
             }
             uint32_t acked_seq = 0;
             memcpy(&acked_seq, data + 2, sizeof(acked_seq));
-            if (!history_awaiting_ack_ || acked_seq != history_pending_seq_) {
+            if (acked_seq < history_next_seq_ && acked_seq + 1 == history_next_seq_) {
+                // Повтор ACK после принятого ответа безопасен и не сбивает текущую пачку
+                send_status_(opcode, RESULT_OK);
+            } else if (!history_awaiting_ack_ || acked_seq != history_pending_seq_) {
                 send_status_(opcode, RESULT_BAD_ARGS);
             } else {
                 history_.ack(acked_seq);

@@ -207,8 +207,17 @@ void test_history_mtu_and_exact_retry_before_ack()
         TEST_ASSERT_TRUE(first == characteristic(KANVEX_UUID_ENTITY_HISTORY).value);
         ack(capacity - 1);
         result(OP_ACK_HISTORY, RESULT_OK);
+        ack(capacity - 1);
+        result(OP_ACK_HISTORY, RESULT_OK);
         manager.handle();
         TEST_ASSERT_EQUAL_UINT32(capacity, u32(characteristic(KANVEX_UUID_ENTITY_HISTORY).value, 4));
+        ack(capacity - 1);
+        result(OP_ACK_HISTORY, RESULT_OK);
+        const auto state = manager.pairing_status();
+        TEST_ASSERT_EQUAL_UINT16(1800, state.history_capacity);
+        TEST_ASSERT_EQUAL_UINT16(40, state.history_stored);
+        TEST_ASSERT_EQUAL_UINT16(40 - capacity, state.history_unread);
+        TEST_ASSERT_EQUAL_UINT32(capacity, state.history_acked_upto);
     }
 }
 

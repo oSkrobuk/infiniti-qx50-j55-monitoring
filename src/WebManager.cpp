@@ -217,6 +217,15 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
   .ble-identity dl { display: grid; gap: 8px; margin: 16px 0; }
   .ble-identity dt { color: var(--muted); font-size: 0.8rem; }
   .ble-identity dd { font-family: monospace; overflow-wrap: anywhere; margin-bottom: 8px; }
+  .ble-buffer { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 16px; }
+  .ble-buffer-title { color: var(--accent); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.04em; }
+  .ble-buffer-meter { width: 100%; height: 8px; margin: 12px 0 6px; accent-color: var(--accent); }
+  .ble-buffer-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .ble-buffer-stat { padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+  .ble-buffer-stat strong { display: block; color: var(--text); font: 600 1.2rem monospace;
+    font-variant-numeric: tabular-nums; }
+  .ble-buffer-stat span { color: var(--muted); font-size: 0.72rem; }
+  @media (max-width: 430px) { .ble-buffer-stats { grid-template-columns: 1fr 1fr; } }
   .ble-danger { min-height: 44px; border: 1px solid var(--red); border-radius: 8px;
     background: transparent; color: var(--red); padding: 10px 16px; cursor: pointer; }
   .ble-danger:hover { background: var(--bg); }
@@ -744,6 +753,16 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
         <dt>Соединение</dt><dd id="bleConnection">—</dd>
       </dl>
       <p>ID привязки позволяет отличить сохраненный доступ. Системное имя телефона устройству недоступно.</p>
+      <div class="ble-buffer" aria-label="Буфер поездок">
+        <div class="ble-buffer-title">БУФЕР ПОЕЗДОК</div>
+        <progress class="ble-buffer-meter" id="bleBufferMeter" max="1800" value="0"></progress>
+        <div class="ble-buffer-stats">
+          <div class="ble-buffer-stat"><strong id="bleBufferUsed">—</strong><span>записей в буфере</span></div>
+          <div class="ble-buffer-stat"><strong id="bleBufferUnread">—</strong><span>без подтверждения телефона</span></div>
+          <div class="ble-buffer-stat"><strong id="bleBufferFree">—</strong><span>свободных мест</span></div>
+        </div>
+        <p id="bleBufferDetail">Загрузка состояния буфера…</p>
+      </div>
       <p id="bleMessage" role="status" aria-live="polite"></p>
       <button type="button" class="ble-danger" id="btnForgetPhone" disabled>Удалить телефон</button>
       <p class="hint">Если телефон потерян: отзовите его доступ, затем привяжите новый в приложении Kanvex.
@@ -2223,6 +2242,23 @@ async function loadBle() {
       ? 'ID привязки: ' + (status.ownerId || 'недоступен') : 'Телефон не привязан';
     document.getElementById('bleConnection').textContent = status.authenticated
       ? 'Телефон подключен' : status.connected ? 'Проверка доступа' : 'Нет соединения';
+    const buffer = status.history || {};
+    const capacity = Number(buffer.capacity) || 0;
+    const stored = Number(buffer.stored) || 0;
+    const unread = Number(buffer.unread) || 0;
+    const meter = document.getElementById('bleBufferMeter');
+    meter.max = Math.max(1, capacity);
+    meter.value = Math.min(capacity, stored);
+    document.getElementById('bleBufferUsed').textContent = capacity ? stored + ' / ' + capacity : '—';
+    document.getElementById('bleBufferUnread').textContent = capacity ? String(unread) : '—';
+    document.getElementById('bleBufferFree').textContent = capacity ? String(Math.max(0, capacity - stored)) : '—';
+    document.getElementById('bleBufferDetail').textContent = capacity
+      ? (stored ? 'Записи № ' + buffer.oldestSeq + '–' + (buffer.nextSeq - 1) : 'Буфер пуст')
+        + '. Курсор подтверждения: № ' + buffer.ackedUpto
+        + '. Потеряно до подтверждения: ' + buffer.lostUnacked
+        + '. Сводки поездок: ' + status.summaries.unread + ' без подтверждения из '
+        + status.summaries.stored + '. Счетчики записей обнуляются после перезапуска устройства.'
+      : 'Буфер недоступен';
     button.disabled = !bleOwnerId;
   } catch (error) {
     if (bleWorking) return;
@@ -2230,6 +2266,10 @@ async function loadBle() {
     button.disabled = true;
     bleOwnerId = '';
     document.getElementById('bleOwner').textContent = 'Не удалось загрузить состояние';
+    document.getElementById('bleBufferUsed').textContent = '—';
+    document.getElementById('bleBufferUnread').textContent = '—';
+    document.getElementById('bleBufferFree').textContent = '—';
+    document.getElementById('bleBufferDetail').textContent = 'Состояние буфера недоступно';
     const message = document.getElementById('bleMessage');
     message.dataset.error = 'true';
     message.textContent = 'Состояние Bluetooth недоступно. Обновите страницу для повтора.';
@@ -3327,6 +3367,17 @@ void WebManager::handle_get_ble()
     doc["ownerId"] = status.owner_id;
     doc["connected"] = status.connected;
     doc["authenticated"] = status.authenticated;
+    JsonObject history = doc["history"].to<JsonObject>();
+    history["capacity"] = status.history_capacity;
+    history["stored"] = status.history_stored;
+    history["unread"] = status.history_unread;
+    history["oldestSeq"] = status.history_oldest_seq;
+    history["nextSeq"] = status.history_next_seq;
+    history["ackedUpto"] = status.history_acked_upto;
+    history["lostUnacked"] = status.history_lost_unacked;
+    JsonObject summaries = doc["summaries"].to<JsonObject>();
+    summaries["stored"] = status.summaries_stored;
+    summaries["unread"] = status.summaries_unread;
     String json;
     serializeJson(doc, json);
     server_.sendHeader("Cache-Control", "no-store");

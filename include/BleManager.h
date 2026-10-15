@@ -17,6 +17,15 @@ struct BlePairingStatus {
     bool paired = false;
     bool connected = false;
     bool authenticated = false;
+    uint16_t history_capacity = 0;
+    uint16_t history_stored = 0;
+    uint16_t history_unread = 0;
+    uint32_t history_oldest_seq = 0;
+    uint32_t history_next_seq = 0;
+    uint32_t history_acked_upto = 0;
+    uint32_t history_lost_unacked = 0;
+    uint8_t summaries_stored = 0;
+    uint8_t summaries_unread = 0;
 };
 
 enum class BleForgetResult { OK, NOT_PAIRED, STALE_OWNER, STORAGE_ERROR };
