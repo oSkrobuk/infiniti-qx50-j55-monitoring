@@ -74,6 +74,8 @@ private:
     void handle_post_config();
     void handle_reset();
     void handle_not_found();
+    void handle_get_ble();
+    void handle_forget_ble_phone();
 
     // Метрики: GET /live — отдельная страница живого просмотра метрик
     void handle_live_page();

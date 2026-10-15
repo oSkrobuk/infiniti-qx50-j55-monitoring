@@ -209,6 +209,11 @@ void BleManager::update(const CanMetrics &metrics, uint32_t now_ms, uint32_t sta
     const uint8_t presence = ble_metrics_from_can(metrics, now_ms, stale_ms, values);
     memcpy(current_values_, values, sizeof(values));
     current_presence_ = presence;
+    // Алерт последнего такта относится к завершающейся поездке и должен попасть
+    // в ее сводку до finish_trip_, а не после сохранения summary в NVS
+    if (engine_running_ && (presence & (1u << METRIC_RPM)) != 0 && values[METRIC_RPM] == 0) {
+        import_alerts_();
+    }
     update_trip_(now_ms, values, presence);
     import_alerts_();
 
@@ -285,6 +290,76 @@ void BleManager::on_disconnect()
     unlock_();
     refresh_advertising_(true);
     Serial.println("[BLE] Телефон отключен, реклама перезапущена");
+}
+
+bool BleManager::owner_id_(char out[17]) const
+{
+    out[0] = '\0';
+    if (!paired_) return true;
+    static constexpr char LABEL[] = "KANVEX-OWNER-ID-V1";
+    uint8_t digest[32] = {};
+    const mbedtls_md_info_t *info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    if (info == nullptr || mbedtls_md_hmac(info, token_, sizeof(token_),
+        reinterpret_cast<const uint8_t *>(LABEL), sizeof(LABEL) - 1, digest) != 0) return false;
+    for (size_t i = 0; i < 8; ++i) snprintf(out + i * 2, 3, "%02x", digest[i]);
+    return true;
+}
+
+BlePairingStatus BleManager::pairing_status()
+{
+    lock_();
+    BlePairingStatus status;
+    memcpy(status.device_name, device_name_, sizeof(device_name_));
+    status.paired = paired_;
+    status.connected = connected_;
+    status.authenticated = authenticated_;
+    owner_id_(status.owner_id);
+    unlock_();
+    return status;
+}
+
+BleForgetResult BleManager::forget_phone(const char *expected_owner_id)
+{
+    lock_();
+    if (!paired_) {
+        unlock_();
+        return BleForgetResult::NOT_PAIRED;
+    }
+    char owner[17];
+    if (!owner_id_(owner) || expected_owner_id == nullptr || strcmp(owner, expected_owner_id) != 0) {
+        unlock_();
+        return BleForgetResult::STALE_OWNER;
+    }
+    Preferences preferences;
+    if (!preferences.begin("kanvex_ble", false)) {
+        unlock_();
+        return BleForgetResult::STORAGE_ERROR;
+    }
+    const bool removed = preferences.remove("token");
+    preferences.end();
+    if (!removed) {
+        unlock_();
+        return BleForgetResult::STORAGE_ERROR;
+    }
+    send_event_(EVENT_TOKENS_CLEARED, 0);
+    paired_ = false;
+    authenticated_ = false;
+    challenge_valid_ = false;
+    memset(token_, 0, sizeof(token_));
+    memset(nonce_, 0, sizeof(nonce_));
+    live_active_ = false;
+    history_active_ = false;
+    history_awaiting_ack_ = false;
+    alert_stream_active_ = false;
+    summary_stream_active_ = false;
+    summary_pending_index_ = -1;
+    fill_device_info_();
+    const auto peers = server_->getPeerDevices();
+    unlock_();
+    // Disconnect вызывает on_disconnect, поэтому здесь мьютекс уже отпущен
+    for (const auto peer : peers) server_->disconnect(peer);
+    refresh_advertising_(true);
+    return BleForgetResult::OK;
 }
 
 void BleManager::fill_device_info_()
@@ -561,7 +636,16 @@ void BleManager::send_live_()
 
 void BleManager::send_history_()
 {
-    if (history_next_seq_ < history_.oldest_seq()) history_next_seq_ = history_.oldest_seq();
+    if (history_next_seq_ < history_.oldest_seq()) {
+        history_next_seq_ = history_.oldest_seq();
+        history_gap_before_ = true;
+        // Уже отправленная пачка могла целиком исчезнуть до ACK
+        // В этом случае формируем новую, иначе end_seq останется позади курсора
+        if (history_awaiting_ack_ && history_pending_seq_ < history_next_seq_) {
+            history_awaiting_ack_ = false;
+            history_catching_up_ = true;
+        }
+    }
     StoredTelemetryRecord first_record = {};
     if (!history_.get(history_next_seq_, first_record)) return;
 

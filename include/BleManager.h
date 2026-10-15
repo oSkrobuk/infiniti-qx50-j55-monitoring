@@ -11,6 +11,16 @@
 class NimBLECharacteristic;
 class NimBLEServer;
 
+struct BlePairingStatus {
+    char device_name[17] = {};
+    char owner_id[17] = {};
+    bool paired = false;
+    bool connected = false;
+    bool authenticated = false;
+};
+
+enum class BleForgetResult { OK, NOT_PAIRED, STALE_OWNER, STORAGE_ERROR };
+
 class BleManager {
 public:
     bool begin();
@@ -24,6 +34,8 @@ public:
 
     const char *device_name() const { return device_name_; }
     bool connected() const { return connected_; }
+    BlePairingStatus pairing_status();
+    BleForgetResult forget_phone(const char *expected_owner_id);
 
 private:
     void send_status_(uint8_t opcode, uint8_t result, uint32_t extra = 0);
@@ -48,6 +60,7 @@ private:
     bool summaries_pending_() const;
     bool verify_auth_(const uint8_t *tag);
     bool command_requires_auth_(uint8_t opcode) const;
+    bool owner_id_(char out[17]) const;
     void lock_();
     void unlock_();
 

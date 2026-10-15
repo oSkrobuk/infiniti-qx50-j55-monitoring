@@ -4,6 +4,7 @@
 #include "AlertManager.h"
 #include "CanBusManager.h"
 #include "BuildInfo.h"
+#include "BleManager.h"
 #include "DiagnosticMode.h"
 #include "DiagnosticSelection.h"
 #include "OtaSlots.h"
@@ -212,6 +213,17 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
   }
   button:active { transform: scale(0.97); }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .ble-identity { margin-top: 24px; }
+  .ble-identity dl { display: grid; gap: 8px; margin: 16px 0; }
+  .ble-identity dt { color: var(--muted); font-size: 0.8rem; }
+  .ble-identity dd { font-family: monospace; overflow-wrap: anywhere; margin-bottom: 8px; }
+  .ble-danger { min-height: 44px; border: 1px solid var(--red); border-radius: 8px;
+    background: transparent; color: var(--red); padding: 10px 16px; cursor: pointer; }
+  .ble-danger:hover { background: var(--bg); }
+  .ble-danger:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .ble-identity p { color: var(--muted); font-size: 0.85rem; line-height: 1.45; }
+  #bleMessage { margin: 12px 0; }
+  #bleMessage[data-error="true"] { color: var(--red); }
   .btn-save    { background: var(--accent); color: #000; }
   .btn-default { background: var(--border); color: var(--muted); border: 1px solid #444; }
   .btn-danger  { background: #3a1010; color: var(--red); border: 1px solid #6a1010; }
@@ -723,6 +735,20 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
       <button type="submit" class="btn-save" id="btnSaveSystem">&#10003; Сохранить параметры</button>
     </div>
     </form>
+
+    <div class="card ble-identity">
+      <div class="card-hdr"><div class="card-title">Bluetooth — Привязанный телефон</div></div>
+      <dl>
+        <dt>Имя BLE устройства · изменить нельзя</dt><dd id="bleName">Загрузка…</dd>
+        <dt>Телефон</dt><dd id="bleOwner">Загрузка…</dd>
+        <dt>Соединение</dt><dd id="bleConnection">—</dd>
+      </dl>
+      <p>ID привязки позволяет отличить сохраненный доступ. Системное имя телефона устройству недоступно.</p>
+      <p id="bleMessage" role="status" aria-live="polite"></p>
+      <button type="button" class="ble-danger" id="btnForgetPhone" disabled>Удалить телефон</button>
+      <p class="hint">Если телефон потерян: отзовите его доступ, затем привяжите новый в приложении Kanvex.
+        История и сводки на устройстве сохранятся. Удаление доступно пользователю Wi-Fi сети устройства.</p>
+    </div>
 
   </div>
 </details>
@@ -2175,9 +2201,70 @@ function resetCheckCard(code) {
 
 // ── Init ───────────────────────────────────────────────────────────────────
 
+let bleOwnerId = '';
+let bleWorking = false;
+let bleLoadFailed = false;
+async function loadBle() {
+  if (bleWorking) return;
+  const button = document.getElementById('btnForgetPhone');
+  try {
+    const response = await fetch('/ble', {cache: 'no-store'});
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const status = await response.json();
+    if (bleWorking) return;
+    if (bleLoadFailed) {
+      document.getElementById('bleMessage').textContent = '';
+      document.getElementById('bleMessage').dataset.error = 'false';
+      bleLoadFailed = false;
+    }
+    bleOwnerId = status.paired ? status.ownerId : '';
+    document.getElementById('bleName').textContent = status.name || 'BLE недоступен';
+    document.getElementById('bleOwner').textContent = status.paired
+      ? 'ID привязки: ' + (status.ownerId || 'недоступен') : 'Телефон не привязан';
+    document.getElementById('bleConnection').textContent = status.authenticated
+      ? 'Телефон подключен' : status.connected ? 'Проверка доступа' : 'Нет соединения';
+    button.disabled = !bleOwnerId;
+  } catch (error) {
+    if (bleWorking) return;
+    bleLoadFailed = true;
+    button.disabled = true;
+    bleOwnerId = '';
+    document.getElementById('bleOwner').textContent = 'Не удалось загрузить состояние';
+    const message = document.getElementById('bleMessage');
+    message.dataset.error = 'true';
+    message.textContent = 'Состояние Bluetooth недоступно. Обновите страницу для повтора.';
+  }
+}
+document.getElementById('btnForgetPhone').addEventListener('click', async () => {
+  if (bleWorking || !bleOwnerId) return;
+  if (!confirm('Удалить привязку телефона ' + bleOwnerId + '?\nСтарый телефон потеряет доступ. '
+    + 'История и сводки сохранятся. После удаления привяжите новый телефон в Kanvex.')) return;
+  bleWorking = true;
+  const button = document.getElementById('btnForgetPhone');
+  const message = document.getElementById('bleMessage');
+  button.disabled = true;
+  message.dataset.error = 'false';
+  message.textContent = 'Удаление привязки…';
+  try {
+    const response = await fetch('/ble/forget-phone', {method: 'POST', headers: {'X-Kanvex-Reset': bleOwnerId}});
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    message.textContent = 'Телефон удален. Можно привязать новый телефон в приложении Kanvex.';
+  } catch (error) {
+    message.dataset.error = 'true';
+    message.textContent = error.message === 'HTTP 409'
+      ? 'Привязка изменилась. Проверьте актуальный ID перед удалением.'
+      : 'Не удалось подтвердить удаление. Проверьте состояние и повторите попытку.';
+  } finally {
+    bleWorking = false;
+    await loadBle();
+  }
+});
+
 loadConfig();
 loadWifi();
 loadChecks();
+loadBle();
+setInterval(() => { if (!document.hidden && document.getElementById('sectSystem').open) loadBle(); }, 5000);
 // Автопроверке нужна версия с устройства, поэтому она идет через then, а не
 // await: загрузка страницы этого не ждет, и обе функции глушат свои ошибки сами
 loadVersion().then(autoCheckUpdates);
@@ -3221,11 +3308,48 @@ void WebManager::begin()
 
     server_.onNotFound([this]() { handle_not_found(); });
 
-    const char *headers[] = {"Content-Length", "Content-Type"};
-    server_.collectHeaders(headers, 2);
+    server_.on("/ble", HTTP_GET, [this]() { handle_get_ble(); });
+    server_.on("/ble/forget-phone", HTTP_POST, [this]() { handle_forget_ble_phone(); });
+
+    const char *headers[] = {"Content-Length", "Content-Type", "X-Kanvex-Reset"};
+    server_.collectHeaders(headers, 3);
 
     server_.begin();
     Serial.println("[Web] HTTP сервер запущен на порту 80");
+}
+
+void WebManager::handle_get_ble()
+{
+    const auto status = ble_manager.pairing_status();
+    JsonDocument doc;
+    doc["name"] = status.device_name;
+    doc["paired"] = status.paired;
+    doc["ownerId"] = status.owner_id;
+    doc["connected"] = status.connected;
+    doc["authenticated"] = status.authenticated;
+    String json;
+    serializeJson(doc, json);
+    server_.sendHeader("Cache-Control", "no-store");
+    server_.send(200, "application/json", json);
+}
+
+void WebManager::handle_forget_ble_phone()
+{
+    // Нестандартный заголовок требует CORS preflight от чужого сайта
+    // CORS не разрешен, поэтому скрытая HTML-форма не сможет удалить привязку
+    const String owner = server_.header("X-Kanvex-Reset");
+    if (owner.length() != 16) {
+        server_.send(400, "application/json", "{\"error\":\"confirmation_required\"}");
+        return;
+    }
+    const auto result = ble_manager.forget_phone(owner.c_str());
+    if (result == BleForgetResult::STALE_OWNER) {
+        server_.send(409, "application/json", "{\"error\":\"binding_changed\"}");
+    } else if (result == BleForgetResult::STORAGE_ERROR) {
+        server_.send(500, "application/json", "{\"error\":\"storage_failed\"}");
+    } else {
+        server_.send(200, "application/json", "{\"ok\":true}");
+    }
 }
 
 void WebManager::handle()

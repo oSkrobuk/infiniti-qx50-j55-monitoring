@@ -101,6 +101,15 @@ platformio test -e native -f test_alert_manager  # one suite
 platformio test -e native -vvv                   # verbose output
 ```
 
+The BLE manager has a separate host environment with radio/NVS/RTOS stubs and
+OpenSSL HMAC (`libssl-dev` on Linux): `platformio test -e native-ble`.
+It runs the actual `BleManager.cpp`, including claim/auth, MTU-dependent history,
+ACK/retry, overflow recovery and summary persistence. Set `KANVEX_BLE_FIXTURES` to
+an existing directory plus a JSON filename to export its actual wire frames.
+From `~/kanvex/mobile`, `bash tools/check-qx50m-contract.sh` regenerates and compares
+these bytes with the shared fixture consumed by Android and iOS native tests.
+Hardware radio behavior still requires a physical phone and controller.
+
 A Linux host compiler such as `g++` must be available in the WSL `PATH`.
 
 ### Known Test Exception

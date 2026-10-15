@@ -80,6 +80,12 @@ jobs:
       - name: Run tests
         run: pio test -e native
 
+      - name: Install BLE test crypto dependency
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+
+      - name: Test QX50M BLE manager
+        run: pio test -e native-ble
+
   build:
     name: ${{ matrix.env }}
     # Ни одна прошивка не собирается, пока тесты не прошли
