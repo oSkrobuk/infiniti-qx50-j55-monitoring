@@ -5,7 +5,7 @@
 
 void test_schema_matches_generated_contract()
 {
-    uint8_t schema[PROTOCOL_SIZE_METRIC_SCHEMA_HEADER + sizeof(METRIC_DESCRIPTORS)] = {};
+    uint8_t schema[sizeof(METRIC_SCHEMA_GOLDEN)] = {};
     const uint16_t size = ble_encode_metric_schema(schema, sizeof(schema));
     TEST_ASSERT_EQUAL_UINT16(sizeof(METRIC_SCHEMA_GOLDEN), size);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(METRIC_SCHEMA_GOLDEN, schema, size);
@@ -22,7 +22,7 @@ void test_can_metrics_are_scaled_and_stale_values_are_absent()
     metrics.battery_voltage_ts = 100;
     int16_t values[METRIC_COUNT] = {};
 
-    const uint8_t presence = ble_metrics_from_can(metrics, 1000, 500, values);
+    const uint32_t presence = ble_metrics_from_can(metrics, 1000, 500, values);
 
     TEST_ASSERT_EQUAL_HEX8((1 << METRIC_COOLANT_TEMP) | (1 << METRIC_RPM), presence);
     TEST_ASSERT_EQUAL_INT16(912, values[METRIC_COOLANT_TEMP]);
@@ -35,8 +35,8 @@ void test_metric_values_use_presence_bitmap()
     int16_t values[METRIC_COUNT] = {};
     values[METRIC_ENGINE_OIL_TEMP] = 987;
     values[METRIC_BATTERY_VOLTAGE] = 1420;
-    uint8_t encoded[1 + METRIC_COUNT * sizeof(int16_t)] = {};
-    const uint8_t presence = (1 << METRIC_ENGINE_OIL_TEMP) | (1 << METRIC_BATTERY_VOLTAGE);
+    uint8_t encoded[(METRIC_COUNT + 7u) / 8u + METRIC_COUNT * sizeof(int16_t)] = {};
+    const uint32_t presence = (1u << METRIC_ENGINE_OIL_TEMP) | (1u << METRIC_BATTERY_VOLTAGE);
 
     TEST_ASSERT_EQUAL_UINT8(sizeof(encoded),
                             ble_encode_metric_values(values, presence, encoded, sizeof(encoded)));

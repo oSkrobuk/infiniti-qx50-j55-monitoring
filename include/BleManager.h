@@ -57,11 +57,11 @@ private:
     void send_summary_();
     void fill_device_info_();
     void refresh_advertising_(bool force = false);
-    void update_trip_(uint32_t now_ms, const int16_t values[METRIC_COUNT], uint8_t presence);
+    void update_trip_(uint32_t now_ms, const int16_t values[METRIC_COUNT], uint32_t presence);
     void start_trip_(uint32_t now_ms);
     void finish_trip_(uint32_t now_ms);
     void reset_trip_stats_();
-    void accumulate_trip_stats_(const int16_t values[METRIC_COUNT], uint8_t presence);
+    void accumulate_trip_stats_(const int16_t values[METRIC_COUNT], uint32_t presence);
     uint8_t trip_seq_for_record_(uint32_t seq) const;
     void import_alerts_();
     bool load_summaries_();
@@ -78,6 +78,7 @@ private:
     NimBLECharacteristic *device_info_characteristic_ = nullptr;
     NimBLECharacteristic *status_characteristic_ = nullptr;
     NimBLECharacteristic *history_characteristic_ = nullptr;
+    NimBLECharacteristic *history_state_characteristic_ = nullptr;
     NimBLECharacteristic *live_characteristic_ = nullptr;
     NimBLECharacteristic *alerts_characteristic_ = nullptr;
     NimBLECharacteristic *summary_characteristic_ = nullptr;
@@ -89,6 +90,11 @@ private:
     uint32_t live_next_ms_ = 0;
     uint32_t history_next_seq_ = 0;
     uint32_t history_pending_seq_ = 0;
+    uint32_t history_transfer_id_ = 0;
+    uint32_t history_snapshot_end_seq_ = 0;
+    uint32_t history_accepted_seq_ = UINT32_MAX;
+    uint16_t history_pending_size_ = 0;
+    uint8_t history_pending_data_[514] = {};
     uint32_t history_last_send_ms_ = 0;
     uint32_t advertising_refresh_ms_ = 0;
     uint32_t alert_cursor_ = 0;
@@ -101,7 +107,7 @@ private:
     int32_t trip_max_[METRIC_COUNT] = {};
     int64_t trip_sum_[METRIC_COUNT] = {};
     uint32_t trip_count_[METRIC_COUNT] = {};
-    uint8_t current_presence_ = 0;
+    uint32_t current_presence_ = 0;
     uint8_t token_[PROTOCOL_TOKEN_SIZE] = {};
     uint8_t nonce_[PROTOCOL_AUTH_NONCE_SIZE] = {};
     bool connected_ = false;
@@ -111,6 +117,7 @@ private:
     bool time_synced_ = false;
     bool live_active_ = false;
     bool history_active_ = false;
+    bool history_open_ = false;
     bool history_follow_ = false;
     bool history_awaiting_ack_ = false;
     bool history_pending_caught_up_ = false;

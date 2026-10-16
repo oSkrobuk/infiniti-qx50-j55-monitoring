@@ -26,12 +26,13 @@ static constexpr char UUID_ALERTS[] = "f0a0b106-9c4e-4b7a-9d1e-2f6c8a3b0001";
 static constexpr char UUID_SUMMARY[] = "f0a0b107-9c4e-4b7a-9d1e-2f6c8a3b0001";
 static constexpr char UUID_METRIC_SCHEMA[] = "f0a0b108-9c4e-4b7a-9d1e-2f6c8a3b0001";
 static constexpr char UUID_AUTH_CHALLENGE[] = "f0a0b109-9c4e-4b7a-9d1e-2f6c8a3b0001";
+static constexpr char UUID_HISTORY_STATE[] = "f0a0b10a-9c4e-4b7a-9d1e-2f6c8a3b0001";
 static constexpr uint16_t HISTORY_CAPACITY = 1800;
 static constexpr uint32_t SAMPLE_INTERVAL_MS = 1000;
 static constexpr uint32_t HISTORY_RETRY_MS = 5000;
-static constexpr uint32_t HISTORY_FLUSH_MS = 10000;
+static constexpr uint32_t HISTORY_FLUSH_MS = 5000;
 static constexpr uint8_t LIVE_PERIOD_25MS = 40;
-static constexpr char AUTH_PREFIX[] = "KANVEX-AUTH-V5";
+static constexpr char AUTH_PREFIX[] = "KANVEX-AUTH-V6";
 static constexpr uint16_t ADV_INTERVAL_UNITS = 160;
 static constexpr uint32_t ADV_REFRESH_MS = 500;
 static constexpr uint8_t ADV_FLAG_ENGINE_RUNNING = 1 << 0;
@@ -177,7 +178,7 @@ bool BleManager::begin()
     device_info_characteristic_->setCallbacks(new DeviceInfoCallbacks());
 
     NimBLECharacteristic *schema = service->createCharacteristic(UUID_METRIC_SCHEMA, NIMBLE_PROPERTY::READ);
-    uint8_t schema_data[PROTOCOL_SIZE_METRIC_SCHEMA_HEADER + sizeof(METRIC_DESCRIPTORS)] = {};
+    uint8_t schema_data[sizeof(METRIC_SCHEMA_GOLDEN)] = {};
     const uint16_t schema_size = ble_encode_metric_schema(schema_data, sizeof(schema_data));
     schema->setValue(schema_data, schema_size);
 
@@ -189,6 +190,7 @@ bool BleManager::begin()
 
     status_characteristic_ = service->createCharacteristic(UUID_STATUS, NIMBLE_PROPERTY::NOTIFY);
     history_characteristic_ = service->createCharacteristic(UUID_HISTORY, NIMBLE_PROPERTY::NOTIFY);
+    history_state_characteristic_ = service->createCharacteristic(UUID_HISTORY_STATE, NIMBLE_PROPERTY::READ);
     live_characteristic_ = service->createCharacteristic(UUID_LIVE, NIMBLE_PROPERTY::NOTIFY);
     alerts_characteristic_ = service->createCharacteristic(UUID_ALERTS, NIMBLE_PROPERTY::NOTIFY);
     summary_characteristic_ = service->createCharacteristic(UUID_SUMMARY, NIMBLE_PROPERTY::NOTIFY);
@@ -206,7 +208,7 @@ void BleManager::update(const CanMetrics &metrics, uint32_t now_ms, uint32_t sta
 {
     lock_();
     int16_t values[METRIC_COUNT] = {};
-    const uint8_t presence = ble_metrics_from_can(metrics, now_ms, stale_ms, values);
+    const uint32_t presence = ble_metrics_from_can(metrics, now_ms, stale_ms, values);
     memcpy(current_values_, values, sizeof(values));
     current_presence_ = presence;
     // Алерт последнего такта относится к завершающейся поездке и должен попасть
@@ -266,6 +268,7 @@ void BleManager::on_connect()
     live_active_ = false;
     history_active_ = false;
     history_awaiting_ack_ = false;
+    history_open_ = false;
     alert_stream_active_ = false;
     alert_cursor_ = alert_next_index_;
     summary_stream_active_ = false;
@@ -284,6 +287,7 @@ void BleManager::on_disconnect()
     live_active_ = false;
     history_active_ = false;
     history_awaiting_ack_ = false;
+    history_open_ = false;
     alert_stream_active_ = false;
     summary_stream_active_ = false;
     summary_pending_index_ = -1;
@@ -467,59 +471,101 @@ void BleManager::on_control_write(const uint8_t *data, size_t length)
                 send_status_(opcode, saved ? RESULT_OK : RESULT_BUSY);
             }
             break;
-        case OP_SUBSCRIBE_HISTORY: {
+        case OP_OPEN_HISTORY: {
             if (length != 7 || data[1] != BLE_HISTORY_LEVEL_TRIP || (data[2] & ~BLE_SUBSCRIBE_FLAG_FOLLOW)) {
                 send_status_(opcode, RESULT_BAD_ARGS);
+                break;
+            }
+            if (history_record_capacity_() == 0) {
+                send_status_(opcode, RESULT_MTU_TOO_SMALL);
                 break;
             }
             uint32_t from_seq = 0;
             memcpy(&from_seq, data + 3, sizeof(from_seq));
             history_follow_ = (data[2] & BLE_SUBSCRIBE_FLAG_FOLLOW) != 0;
-            history_next_seq_ = from_seq == BLE_FROM_SEQ_ONLY_NEW ? history_.next_seq() : from_seq;
-            history_active_ = true;
+            history_snapshot_end_seq_ = history_.next_seq();
+            const uint32_t oldest = history_.oldest_seq();
+            history_next_seq_ = from_seq == BLE_FROM_SEQ_ONLY_NEW ? history_snapshot_end_seq_
+                : std::min(std::max(from_seq, oldest), history_snapshot_end_seq_);
+            ++history_transfer_id_;
+            if (history_transfer_id_ == 0) ++history_transfer_id_;
+            history_open_ = true;
+            history_active_ = false;
             history_awaiting_ack_ = false;
-            history_gap_before_ = false;
-            history_catching_up_ = history_next_seq_ < history_.next_seq();
+            history_pending_size_ = 0;
+            history_accepted_seq_ = UINT32_MAX;
+            history_gap_before_ = from_seq < oldest;
+            history_catching_up_ = history_next_seq_ < history_snapshot_end_seq_;
             history_last_send_ms_ = millis();
-            if (history_next_seq_ < history_.oldest_seq()) {
-                const uint32_t oldest = history_.oldest_seq();
-                history_gap_before_ = true;
-                send_status_(opcode, RESULT_RECORDS_ERASED, oldest << 8);
+            BleHistoryStateFrame state = {};
+            state.transfer_id = history_transfer_id_;
+            state.boot_counter = boot_counter_;
+            state.oldest_seq = oldest;
+            state.snapshot_end_seq = history_snapshot_end_seq_;
+            state.start_seq = history_next_seq_;
+            state.available_count = history_snapshot_end_seq_ - history_next_seq_;
+            state.max_batch_records = history_record_capacity_();
+            state.flags = (history_follow_ ? 1u : 0u) | (history_gap_before_ ? 2u : 0u);
+            history_state_characteristic_->setValue(reinterpret_cast<uint8_t *>(&state), sizeof(state));
+            send_status_(opcode, RESULT_OK);
+            break;
+        }
+        case OP_START_HISTORY: {
+            uint32_t transfer_id = 0;
+            if (length == 5) memcpy(&transfer_id, data + 1, sizeof(transfer_id));
+            if (length != 5 || !history_open_ || transfer_id != history_transfer_id_) {
+                send_status_(opcode, RESULT_STALE_TRANSFER);
             } else {
+                history_active_ = true;
                 send_status_(opcode, RESULT_OK);
             }
             break;
         }
         case OP_ACK_HISTORY: {
-            if (length != 6 || data[1] != BLE_HISTORY_LEVEL_TRIP) {
+            if (length != 9) {
                 send_status_(opcode, RESULT_BAD_ARGS);
                 break;
             }
+            uint32_t transfer_id = 0;
             uint32_t acked_seq = 0;
-            memcpy(&acked_seq, data + 2, sizeof(acked_seq));
-            if (acked_seq < history_next_seq_ && acked_seq + 1 == history_next_seq_) {
-                // Повтор ACK после принятого ответа безопасен и не сбивает текущую пачку
+            memcpy(&transfer_id, data + 1, sizeof(transfer_id));
+            memcpy(&acked_seq, data + 5, sizeof(acked_seq));
+            if (!history_open_ || transfer_id != history_transfer_id_) {
+                send_status_(opcode, RESULT_STALE_TRANSFER);
+            } else if (acked_seq == history_accepted_seq_) {
                 send_status_(opcode, RESULT_OK);
             } else if (!history_awaiting_ack_ || acked_seq != history_pending_seq_) {
-                send_status_(opcode, RESULT_BAD_ARGS);
+                Serial.printf("[BLE] ACK seq %lu отклонен, ожидается %lu\r\n",
+                              static_cast<unsigned long>(acked_seq),
+                              static_cast<unsigned long>(history_pending_seq_));
+                send_status_(opcode, RESULT_ACK_MISMATCH);
             } else {
                 history_.ack(acked_seq);
+                history_accepted_seq_ = acked_seq;
                 history_next_seq_ = acked_seq + 1;
                 history_awaiting_ack_ = false;
+                history_pending_size_ = 0;
                 history_gap_before_ = false;
                 if (history_pending_caught_up_) history_catching_up_ = false;
-                if (!history_follow_ && history_next_seq_ >= history_.next_seq()) history_active_ = false;
+                if (!history_follow_ && history_next_seq_ >= history_snapshot_end_seq_) history_active_ = false;
                 send_status_(opcode, RESULT_OK);
             }
             break;
         }
         case OP_UNSUBSCRIBE_HISTORY:
-            if (length != 2 || data[1] != BLE_HISTORY_LEVEL_TRIP) {
+            if (length != 5) {
                 send_status_(opcode, RESULT_BAD_ARGS);
             } else {
-                history_active_ = false;
-                history_awaiting_ack_ = false;
-                send_status_(opcode, RESULT_OK);
+                uint32_t transfer_id = 0;
+                memcpy(&transfer_id, data + 1, sizeof(transfer_id));
+                if (transfer_id != history_transfer_id_) {
+                    send_status_(opcode, RESULT_STALE_TRANSFER);
+                } else {
+                    history_active_ = false;
+                    history_open_ = false;
+                    history_awaiting_ack_ = false;
+                    send_status_(opcode, RESULT_OK);
+                }
             }
             break;
         case OP_LIVE_START:
@@ -632,7 +678,8 @@ void BleManager::send_event_(uint8_t event, uint32_t detail)
 
 void BleManager::send_live_()
 {
-    uint8_t data[PROTOCOL_SIZE_LIVE_HEADER + 1 + METRIC_COUNT * sizeof(int16_t)] = {};
+    uint8_t data[PROTOCOL_SIZE_LIVE_HEADER + (METRIC_COUNT + 7u) / 8u +
+                 METRIC_COUNT * sizeof(int16_t)] = {};
     BleLiveHeader header = {};
     header.uptime_ms = millis();
     header.boot_counter = boot_counter_;
@@ -651,24 +698,24 @@ void BleManager::send_live_()
 
 void BleManager::send_history_()
 {
+    if (history_awaiting_ack_) {
+        history_characteristic_->setValue(history_pending_data_, history_pending_size_);
+        history_characteristic_->notify();
+        history_last_send_ms_ = millis();
+        return;
+    }
     if (history_next_seq_ < history_.oldest_seq()) {
         history_next_seq_ = history_.oldest_seq();
         history_gap_before_ = true;
-        // Уже отправленная пачка могла целиком исчезнуть до ACK
-        // В этом случае формируем новую, иначе end_seq останется позади курсора
-        if (history_awaiting_ack_ && history_pending_seq_ < history_next_seq_) {
-            history_awaiting_ack_ = false;
-            history_catching_up_ = true;
-        }
+        history_catching_up_ = true;
     }
     StoredTelemetryRecord first_record = {};
     if (!history_.get(history_next_seq_, first_record)) return;
 
-    static constexpr size_t RECORD_SIZE = 2 + 1 + METRIC_COUNT * sizeof(int16_t);
     const uint8_t record_capacity = history_record_capacity_();
     if (record_capacity == 0) return;
 
-    uint8_t data[PROTOCOL_SIZE_HISTORY_HEADER + 26 * RECORD_SIZE] = {};
+    uint8_t data[sizeof(history_pending_data_)] = {};
     BleHistoryHeader header = {};
     header.level = BLE_HISTORY_LEVEL_TRIP;
     header.frame_format = FRAME_FORMAT_SCHEMA;
@@ -681,9 +728,9 @@ void BleManager::send_history_()
     header.schema_id[0] = static_cast<uint8_t>(schema_id);
     header.schema_id[1] = static_cast<uint8_t>(schema_id >> 8);
     header.schema_id[2] = static_cast<uint8_t>(schema_id >> 16);
+    header.transfer_id = history_transfer_id_;
     size_t encoded_size = sizeof(header);
-    const uint32_t end_seq = history_awaiting_ack_
-        ? history_pending_seq_ + 1 : history_.next_seq();
+    const uint32_t end_seq = history_follow_ ? history_.next_seq() : history_snapshot_end_seq_;
     uint32_t seq = history_next_seq_;
     uint32_t previous_uptime_ms = first_record.uptime_ms;
     for (; header.count < record_capacity && seq < end_seq; ++seq) {
@@ -694,9 +741,9 @@ void BleManager::send_history_()
         const uint16_t delta_ms = static_cast<uint16_t>(delta);
         memcpy(data + encoded_size, &delta_ms, sizeof(delta_ms));
         encoded_size += sizeof(delta_ms);
-        uint8_t presence = 0;
+        uint32_t presence = 0;
         for (uint8_t i = 0; i < METRIC_COUNT; ++i) {
-            if (record.values[i] != static_cast<int16_t>(PROTOCOL_NO_VALUE_SIGNED)) presence |= 1 << i;
+            if (record.values[i] != static_cast<int16_t>(PROTOCOL_NO_VALUE_SIGNED)) presence |= 1u << i;
         }
         ble_encode_metric_values(record.values, presence, data + encoded_size,
                                  sizeof(data) - encoded_size);
@@ -705,13 +752,13 @@ void BleManager::send_history_()
         ++header.count;
     }
     if (header.count == 0) return;
-    if (!history_awaiting_ack_) {
-        history_pending_seq_ = seq - 1;
-        history_pending_caught_up_ = history_pending_seq_ + 1 >= history_.next_seq();
-    }
+    history_pending_seq_ = seq - 1;
+    history_pending_caught_up_ = history_pending_seq_ + 1 >= history_snapshot_end_seq_;
     if (history_pending_caught_up_) header.flags |= BLE_HISTORY_FLAG_CAUGHT_UP;
     memcpy(data, &header, sizeof(header));
-    history_characteristic_->setValue(data, encoded_size);
+    memcpy(history_pending_data_, data, encoded_size);
+    history_pending_size_ = static_cast<uint16_t>(encoded_size);
+    history_characteristic_->setValue(history_pending_data_, history_pending_size_);
     history_characteristic_->notify();
     history_awaiting_ack_ = true;
     history_last_send_ms_ = millis();
@@ -719,14 +766,15 @@ void BleManager::send_history_()
 
 uint8_t BleManager::history_record_capacity_()
 {
-    static constexpr size_t RECORD_SIZE = 2 + 1 + METRIC_COUNT * sizeof(int16_t);
+    const size_t record_size = 2 + ble_metric_values_size();
     uint16_t mtu = 23;
     const std::vector<uint16_t> peers = server_->getPeerDevices();
     if (!peers.empty()) mtu = server_->getPeerMTU(peers[0]);
     const size_t payload = mtu > 3 ? mtu - 3 : 0;
     size_t count = payload > PROTOCOL_SIZE_HISTORY_HEADER
-        ? (payload - PROTOCOL_SIZE_HISTORY_HEADER) / RECORD_SIZE : 0;
-    if (count > 26) count = 26;
+        ? (payload - PROTOCOL_SIZE_HISTORY_HEADER) / record_size : 0;
+    const size_t buffer_count = (sizeof(history_pending_data_) - PROTOCOL_SIZE_HISTORY_HEADER) / record_size;
+    if (count > buffer_count) count = buffer_count;
     return static_cast<uint8_t>(count);
 }
 
@@ -837,7 +885,7 @@ void BleManager::refresh_advertising_(bool force)
     last_advertising_trip_seq_ = trip_seq_;
 }
 
-void BleManager::update_trip_(uint32_t now_ms, const int16_t values[METRIC_COUNT], uint8_t presence)
+void BleManager::update_trip_(uint32_t now_ms, const int16_t values[METRIC_COUNT], uint32_t presence)
 {
     const uint8_t rpm_bit = static_cast<uint8_t>(1u << METRIC_RPM);
     if ((presence & rpm_bit) == 0) return;
@@ -911,7 +959,7 @@ void BleManager::reset_trip_stats_()
     }
 }
 
-void BleManager::accumulate_trip_stats_(const int16_t values[METRIC_COUNT], uint8_t presence)
+void BleManager::accumulate_trip_stats_(const int16_t values[METRIC_COUNT], uint32_t presence)
 {
     for (uint8_t metric = 0; metric < METRIC_COUNT; ++metric) {
         if ((presence & (1u << metric)) == 0) continue;

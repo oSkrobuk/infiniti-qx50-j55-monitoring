@@ -58,6 +58,18 @@ struct BleHistoryHeader {
     uint32_t boot_counter;
     uint8_t trip_seq;
     uint8_t schema_id[3];
+    uint32_t transfer_id;
+};
+
+struct BleHistoryStateFrame {
+    uint32_t transfer_id;
+    uint32_t boot_counter;
+    uint32_t oldest_seq;
+    uint32_t snapshot_end_seq;
+    uint32_t start_seq;
+    uint32_t available_count;
+    uint16_t max_batch_records;
+    uint16_t flags;
 };
 
 struct BleLiveHeader {
@@ -108,17 +120,18 @@ struct BleAdvStatusData {
 static_assert(sizeof(BleDeviceInfoFrame) == PROTOCOL_SIZE_DEVICE_INFO, "размер device_info");
 static_assert(sizeof(BleStatusFrame) == PROTOCOL_SIZE_STATUS, "размер status");
 static_assert(sizeof(BleHistoryHeader) == PROTOCOL_SIZE_HISTORY_HEADER, "размер history");
+static_assert(sizeof(BleHistoryStateFrame) == PROTOCOL_SIZE_HISTORY_STATE, "размер history_state");
 static_assert(sizeof(BleLiveHeader) == PROTOCOL_SIZE_LIVE_HEADER, "размер live");
 static_assert(sizeof(BleAuthChallengeFrame) == PROTOCOL_SIZE_AUTH_CHALLENGE, "размер challenge");
 static_assert(sizeof(BleAlertFrame) == PROTOCOL_SIZE_ALERT, "размер alert");
-static_assert(sizeof(BleSummaryFrame) == 72, "размер summary");
+static_assert(sizeof(BleSummaryFrame) == 24 + METRIC_COUNT * 3 * sizeof(int16_t), "размер summary");
 static_assert(sizeof(BleAdvStatusData) == PROTOCOL_SIZE_SCAN_STATUS, "размер advertising status");
 
 uint32_t ble_metric_schema_id();
 uint8_t ble_metric_values_size();
 uint16_t ble_encode_metric_schema(uint8_t *out, size_t capacity);
-uint8_t ble_encode_metric_values(const int16_t values[METRIC_COUNT], uint8_t presence,
+uint8_t ble_encode_metric_values(const int16_t values[METRIC_COUNT], uint32_t presence,
                                  uint8_t *out, size_t capacity);
-uint8_t ble_metrics_from_can(const CanMetrics &metrics, uint32_t now_ms, uint32_t stale_ms,
+uint32_t ble_metrics_from_can(const CanMetrics &metrics, uint32_t now_ms, uint32_t stale_ms,
                              int16_t values[METRIC_COUNT]);
 

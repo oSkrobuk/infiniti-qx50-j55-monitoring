@@ -12,7 +12,8 @@ struct StoredTelemetryRecord {
 };
 #pragma pack(pop)
 
-static_assert(sizeof(StoredTelemetryRecord) == 21, "telemetry record must remain 21 bytes");
+static_assert(sizeof(StoredTelemetryRecord) == 5 + METRIC_COUNT * sizeof(int16_t),
+              "размер записи телеметрии");
 
 class TelemetryRing {
 public:

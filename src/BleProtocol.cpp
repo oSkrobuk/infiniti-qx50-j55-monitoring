@@ -19,25 +19,11 @@ static int16_t scaled_value(float value, float scale)
     return static_cast<int16_t>(scaled);
 }
 
-static void write_u24(uint8_t out[3], uint32_t value)
-{
-    out[0] = static_cast<uint8_t>(value);
-    out[1] = static_cast<uint8_t>(value >> 8);
-    out[2] = static_cast<uint8_t>(value >> 16);
-}
-
 } // namespace
 
 uint32_t ble_metric_schema_id()
 {
-    uint32_t hash = 2166136261u;
-    const uint8_t *bytes = reinterpret_cast<const uint8_t *>(METRIC_DESCRIPTORS);
-    for (size_t i = 0; i < sizeof(METRIC_DESCRIPTORS); ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    hash &= 0x00FFFFFFu;
-    return hash == 0 ? 1 : hash;
+    return METRIC_SCHEMA_ID;
 }
 
 uint8_t ble_metric_values_size()
@@ -47,38 +33,33 @@ uint8_t ble_metric_values_size()
 
 uint16_t ble_encode_metric_schema(uint8_t *out, size_t capacity)
 {
-    const uint16_t size = PROTOCOL_SIZE_METRIC_SCHEMA_HEADER + sizeof(METRIC_DESCRIPTORS);
+    const uint16_t size = sizeof(METRIC_SCHEMA_GOLDEN);
     if (out == nullptr || capacity < size) return 0;
 
-    memset(out, 0, size);
-    out[0] = METRIC_SCHEMA_FORMAT;
-    out[1] = METRIC_COUNT;
-    write_u24(out + 2, ble_metric_schema_id());
-    out[5] = ble_metric_values_size();
-    memcpy(out + PROTOCOL_SIZE_METRIC_SCHEMA_HEADER, METRIC_DESCRIPTORS,
-           sizeof(METRIC_DESCRIPTORS));
+    memcpy(out, METRIC_SCHEMA_GOLDEN, size);
     return size;
 }
 
-uint8_t ble_encode_metric_values(const int16_t values[METRIC_COUNT], uint8_t presence,
+uint8_t ble_encode_metric_values(const int16_t values[METRIC_COUNT], uint32_t presence,
                                  uint8_t *out, size_t capacity)
 {
     const uint8_t size = ble_metric_values_size();
     if (values == nullptr || out == nullptr || capacity < size) return 0;
 
     memset(out, 0, size);
-    out[0] = presence;
-    memcpy(out + 1, values, METRIC_COUNT * sizeof(int16_t));
+    const uint8_t bitmap_size = (METRIC_COUNT + 7u) / 8u;
+    for (uint8_t i = 0; i < bitmap_size; ++i) out[i] = static_cast<uint8_t>(presence >> (8u * i));
+    memcpy(out + bitmap_size, values, METRIC_COUNT * sizeof(int16_t));
     return size;
 }
 
-uint8_t ble_metrics_from_can(const CanMetrics &metrics, uint32_t now_ms, uint32_t stale_ms,
+uint32_t ble_metrics_from_can(const CanMetrics &metrics, uint32_t now_ms, uint32_t stale_ms,
                              int16_t values[METRIC_COUNT])
 {
     for (uint8_t i = 0; i < METRIC_COUNT; ++i) {
         values[i] = static_cast<int16_t>(PROTOCOL_NO_VALUE_SIGNED);
     }
-    uint8_t presence = 0;
+    uint32_t presence = 0;
 
     if (is_fresh(metrics.engine_coolant_ts, now_ms, stale_ms)) {
         values[0] = scaled_value(metrics.engine_coolant, 10.0f);

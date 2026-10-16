@@ -88,7 +88,7 @@ static void claim(BleManager &manager)
 
 static std::vector<uint8_t> proof(const std::vector<uint8_t> &challenge)
 {
-    const std::string prefix = "KANVEX-AUTH-V5";
+    const std::string prefix = "KANVEX-AUTH-V6";
     std::vector<uint8_t> message(prefix.begin(), prefix.end());
     message.insert(message.end(), challenge.begin(), challenge.end());
     unsigned char digest[32];
@@ -114,12 +114,18 @@ static void subscribe(uint32_t from)
     auto body = std::vector<uint8_t>{0, 1};
     const auto seq = number(from, 4);
     body.insert(body.end(), seq.begin(), seq.end());
-    command(OP_SUBSCRIBE_HISTORY, body);
+    command(OP_OPEN_HISTORY, body);
+    result(OP_OPEN_HISTORY, RESULT_OK);
+    const auto state = characteristic(KANVEX_UUID_ENTITY_HISTORY_STATE).read();
+    TEST_ASSERT_EQUAL_UINT(PROTOCOL_SIZE_HISTORY_STATE, state.size());
+    TEST_ASSERT_EQUAL_UINT32(7, u32(state, 4));
+    command(OP_START_HISTORY, number(u32(state, 0), 4));
+    result(OP_START_HISTORY, RESULT_OK);
 }
 
 static void ack(uint32_t seq)
 {
-    auto body = std::vector<uint8_t>{0};
+    auto body = number(u32(characteristic(KANVEX_UUID_ENTITY_HISTORY_STATE).value, 0), 4);
     const auto bytes = number(seq, 4);
     body.insert(body.end(), bytes.begin(), bytes.end());
     command(OP_ACK_HISTORY, body);
@@ -138,7 +144,7 @@ void test_qx50m_discovery_and_auth_contract()
     TEST_ASSERT_EQUAL_HEX8(0xFF, advertising.response.manufacturer[0]);
     TEST_ASSERT_EQUAL_HEX8(0xFF, advertising.response.manufacturer[1]);
     TEST_ASSERT_EQUAL_UINT8(PROTOCOL_STATUS_VERSION, advertising.response.manufacturer[2]);
-    TEST_ASSERT_EQUAL_UINT(9, NimBLEDevice::server.service.characteristics.size());
+    TEST_ASSERT_EQUAL_UINT(10, NimBLEDevice::server.service.characteristics.size());
     TEST_ASSERT_EQUAL_UINT(NIMBLE_PROPERTY::WRITE, characteristic(KANVEX_UUID_ENTITY_CONTROL).properties);
     TEST_ASSERT_EQUAL_UINT(NIMBLE_PROPERTY::NOTIFY, characteristic(KANVEX_UUID_ENTITY_HISTORY).properties);
     manager.on_connect();
@@ -163,8 +169,8 @@ void test_qx50m_discovery_and_auth_contract()
     result(OP_AUTH, RESULT_CHALLENGE_REQUIRED);
     const auto challenge = characteristic(KANVEX_UUID_ENTITY_AUTH_CHALLENGE).read();
     const auto tag = proof(challenge);
-    const uint8_t golden[] = {0xb3, 0x28, 0x62, 0x05, 0xdd, 0xdd, 0x35, 0xc6,
-                              0x8f, 0x94, 0xa1, 0x0d, 0x11, 0xa5, 0x4b, 0x95};
+    const uint8_t golden[] = {0x73, 0x9a, 0xa6, 0x3d, 0xf6, 0x56, 0xa0, 0x6d,
+                              0x5c, 0xa9, 0x67, 0x0c, 0xc7, 0x98, 0x1d, 0x21};
     TEST_ASSERT_EQUAL_HEX8_ARRAY(golden, tag.data(), sizeof(golden));
     command(OP_AUTH, tag);
     result(OP_AUTH, RESULT_OK);
@@ -194,14 +200,14 @@ void test_history_mtu_and_exact_retry_before_ack()
         mock_mtu = mtu;
         for (uint32_t i = 1; i <= 40; ++i) sample(manager, i * 1000);
         subscribe(0);
-        result(OP_SUBSCRIBE_HISTORY, RESULT_OK);
+        result(OP_START_HISTORY, RESULT_OK);
         manager.handle();
         const auto first = characteristic(KANVEX_UUID_ENTITY_HISTORY).value;
         const uint8_t capacity = (mtu - 3 - PROTOCOL_SIZE_HISTORY_HEADER) / 19;
         TEST_ASSERT_EQUAL_UINT8(capacity, first[2]);
         TEST_ASSERT_LESS_OR_EQUAL_UINT(mtu - 3, first.size());
         ack(capacity);
-        result(OP_ACK_HISTORY, RESULT_BAD_ARGS);
+        result(OP_ACK_HISTORY, RESULT_ACK_MISMATCH);
         mock_advance_millis(5000);
         manager.handle();
         TEST_ASSERT_TRUE(first == characteristic(KANVEX_UUID_ENTITY_HISTORY).value);
@@ -230,14 +236,54 @@ void test_history_overwrite_while_waiting_for_ack_recovers_with_gap()
     sample(manager, 1000);
     subscribe(0);
     manager.handle();
+    const auto first = characteristic(KANVEX_UUID_ENTITY_HISTORY).value;
     TEST_ASSERT_EQUAL_UINT32(0, u32(characteristic(KANVEX_UUID_ENTITY_HISTORY).value, 4));
     for (uint32_t i = 2; i <= 1810; ++i) sample(manager, i * 1000);
+    manager.handle();
+    TEST_ASSERT_TRUE(first == characteristic(KANVEX_UUID_ENTITY_HISTORY).value);
+    ack(0);
+    result(OP_ACK_HISTORY, RESULT_OK);
     manager.handle();
     const auto &batch = characteristic(KANVEX_UUID_ENTITY_HISTORY).value;
     TEST_ASSERT_EQUAL_UINT32(10, u32(batch, 4));
     TEST_ASSERT_TRUE((batch[3] & BLE_HISTORY_FLAG_GAP_BEFORE) != 0);
     ack(10 + batch[2] - 1);
     result(OP_ACK_HISTORY, RESULT_OK);
+}
+
+void test_backlog_drains_after_reconnect_from_committed_cursor()
+{
+    reset();
+    BleManager manager;
+    TEST_ASSERT_TRUE(manager.begin());
+    claim(manager);
+    mock_mtu = 185;
+    for (uint32_t i = 1; i <= 300; ++i) sample(manager, i * 1000);
+    subscribe(0);
+    uint32_t next = 0;
+    uint32_t batches = 0;
+    while (next < 300) {
+        manager.handle();
+        const auto &batch = characteristic(KANVEX_UUID_ENTITY_HISTORY).value;
+        TEST_ASSERT_EQUAL_UINT32(next, u32(batch, 4));
+        TEST_ASSERT_GREATER_THAN_UINT8(0, batch[2]);
+        next += batch[2];
+        ack(next - 1);
+        result(OP_ACK_HISTORY, RESULT_OK);
+        ++batches;
+        if (batches == 10) {
+            manager.on_disconnect();
+            manager.on_connect();
+            command(OP_AUTH, proof(characteristic(KANVEX_UUID_ENTITY_AUTH_CHALLENGE).read()));
+            result(OP_AUTH, RESULT_OK);
+            subscribe(next);
+            const auto state = characteristic(KANVEX_UUID_ENTITY_HISTORY_STATE).read();
+            TEST_ASSERT_EQUAL_UINT32(300 - next, u32(state, 20));
+        }
+        TEST_ASSERT_LESS_THAN_UINT32(100, batches);
+    }
+    TEST_ASSERT_EQUAL_UINT32(300, next);
+    TEST_ASSERT_EQUAL_UINT32(300, manager.pairing_status().history_acked_upto);
 }
 
 void test_unacknowledged_summary_survives_controller_reboot()
@@ -288,6 +334,7 @@ void test_qx50m_frames_for_mobile_decoders_and_reconnect()
     for (uint32_t i = 1; i <= 3; ++i) sample(manager, i * 1000);
     s_fixtures["deviceInfo"] = characteristic(KANVEX_UUID_ENTITY_DEVICE_INFO).read();
     subscribe(0);
+    s_fixtures["historyState"] = characteristic(KANVEX_UUID_ENTITY_HISTORY_STATE).read();
     manager.handle();
     s_fixtures["history"] = characteristic(KANVEX_UUID_ENTITY_HISTORY).value;
     ack(2);
@@ -434,6 +481,7 @@ int main(int, char **)
     RUN_TEST(test_pair_claim_does_not_succeed_if_nvs_write_fails);
     RUN_TEST(test_history_mtu_and_exact_retry_before_ack);
     RUN_TEST(test_history_overwrite_while_waiting_for_ack_recovers_with_gap);
+    RUN_TEST(test_backlog_drains_after_reconnect_from_committed_cursor);
     RUN_TEST(test_unacknowledged_summary_survives_controller_reboot);
     RUN_TEST(test_qx50m_frames_for_mobile_decoders_and_reconnect);
     RUN_TEST(test_forget_phone_revokes_old_token_and_keeps_telemetry);
