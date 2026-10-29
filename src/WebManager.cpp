@@ -294,6 +294,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  #settingsFileName { flex: 1 1 100%; }
   .btn-ota-upload {
     background: #1565c0;
     color: #fff;
@@ -1090,6 +1091,27 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
   </div>
 </details>
 
+<!-- Цветовые пороги и проверки сохраняются отдельно от системных параметров -->
+<details class="sect" id="sectSettingsBackup">
+  <summary>
+    <span class="sect-title">&#128190; 7. Цвета и алерты</span>
+    <span class="sect-chevron">&#9660;</span>
+  </summary>
+  <div class="sect-body">
+    <div class="card">
+      <div class="card-title">Экспорт и импорт</div>
+      <p class="wifi-note">Сохраните цветовые пороги и настройки проверок в JSON-файл, чтобы восстановить их после обновления. Системные параметры и Wi-Fi не копируются.</p>
+      <div class="ota-row">
+        <button type="button" class="btn-ota-upload" id="btnExportSettings">&#8595; Скачать JSON</button>
+        <label class="btn-ota-label" for="settingsFile">&#128194; Выбрать JSON</label>
+        <input type="file" id="settingsFile" accept=".json,application/json" style="display:none">
+        <span class="ota-filename" id="settingsFileName">файл не выбран</span>
+        <button type="button" class="btn-ota-upload" id="btnImportSettings" disabled>Импортировать</button>
+      </div>
+    </div>
+  </div>
+</details>
+
 <!-- Окно о новой прошивке — показывается только после успешной автопроверки -->
 <div class="modal" id="updModal">
   <div class="modal-card">
@@ -1628,6 +1650,146 @@ document.getElementById('btnClearAlerts').addEventListener('click', async () => 
 // Открываем секцию с историей при загрузке (для удобства навигации)
 document.getElementById('sectAlerts').addEventListener('toggle', function() {
   if (this.open) loadAlerts();
+});
+
+// ── Экспорт и импорт цветов и алертов ───────────────────────────────────────
+
+const COLOR_FIELDS = {
+  oil: ['min', 'target', 'max'], coolant: ['min', 'target', 'max'],
+  radiator: ['min', 'target', 'max'], transmission: ['min', 'target', 'max'],
+  rpm: ['green_start', 'green_end', 'red_start'],
+  oil_pressure: ['rpm_threshold', 'min_low', 'min_high'],
+  boost: ['blue_max', 'green_min'],
+  battery: ['red_low', 'green_min', 'green_max', 'red_high'],
+  poll_time: ['green_max', 'red_min']
+};
+
+function colorSettings(source) {
+  if (!source || typeof source !== 'object' || Array.isArray(source))
+    throw new Error('нет цветовых настроек');
+  const colors = {};
+  for (const [section, fields] of Object.entries(COLOR_FIELDS)) {
+    const values = source[section];
+    if (!values || typeof values !== 'object' || Array.isArray(values))
+      throw new Error('нет секции ' + section);
+    colors[section] = {};
+    for (const field of fields) {
+      const value = values[field];
+      if (typeof value !== 'number' || !Number.isFinite(value))
+        throw new Error('неверное значение ' + section + '.' + field);
+      colors[section][field] = value;
+    }
+  }
+  return colors;
+}
+
+function alertSettings(source) {
+  if (!source || typeof source !== 'object' || Array.isArray(source))
+    throw new Error('нет настроек алертов');
+  const timing = source.timing;
+  if (!timing || !Number.isInteger(timing.confirm_ms) ||
+      !Number.isInteger(timing.retrigger_ms) ||
+      timing.confirm_ms < 0 || timing.confirm_ms > 60000 ||
+      timing.retrigger_ms < 1000 || timing.retrigger_ms > 3600000)
+    throw new Error('неверные интервалы алертов');
+  const alerts = {timing: {confirm_ms: timing.confirm_ms, retrigger_ms: timing.retrigger_ms}};
+  for (const def of CHECK_DEFS) {
+    const item = source[def.code];
+    if (!item || typeof item !== 'object' || Array.isArray(item) ||
+        typeof item.enabled !== 'boolean' ||
+        !['param1', 'param2', 'param3'].every(key =>
+          typeof item[key] === 'number' && Number.isFinite(item[key])))
+      throw new Error('неверная проверка ' + def.code);
+    alerts[def.code] = {
+      enabled: item.enabled, param1: item.param1,
+      param2: item.param2, param3: item.param3
+    };
+  }
+  return alerts;
+}
+
+async function settingsRequest(path, method, data) {
+  const response = await fetch(path, {
+    method,
+    headers: method === 'POST' ? {'Content-Type': 'application/json'} : {},
+    body: method === 'POST' ? JSON.stringify(data) : undefined,
+    cache: 'no-store'
+  });
+  if (!response.ok) throw new Error(path + ': HTTP ' + response.status);
+  return response.json();
+}
+
+document.getElementById('btnExportSettings').addEventListener('click', async () => {
+  const button = document.getElementById('btnExportSettings');
+  button.disabled = true;
+  try {
+    const [configData, checksData] = await Promise.all([
+      settingsRequest('/config', 'GET'), settingsRequest('/checks', 'GET')
+    ]);
+    const documentData = {
+      format: 'kanvex-colors-alerts', version: 1,
+      colors: colorSettings(configData), alerts: alertSettings(checksData)
+    };
+    const blob = new Blob([JSON.stringify(documentData, null, 2) + '\n'],
+                          {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'kanvex-colors-alerts.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast('Файл цветов и алертов сохранен', 'ok');
+  } catch (error) {
+    showToast('Ошибка экспорта: ' + error.message, 'err');
+  } finally {
+    button.disabled = false;
+  }
+});
+
+const settingsFile = document.getElementById('settingsFile');
+settingsFile.addEventListener('change', () => {
+  const file = settingsFile.files[0];
+  document.getElementById('settingsFileName').textContent = file ? file.name : 'файл не выбран';
+  document.getElementById('btnImportSettings').disabled = !file;
+});
+
+document.getElementById('btnImportSettings').addEventListener('click', async () => {
+  const file = settingsFile.files[0];
+  if (!file) return;
+  const button = document.getElementById('btnImportSettings');
+  button.disabled = true;
+  try {
+    if (file.size > 16384) throw new Error('файл больше 16 КБ');
+    const data = JSON.parse(await file.text());
+    if (data.format !== 'kanvex-colors-alerts' || data.version !== 1)
+      throw new Error('неподдерживаемый формат файла');
+    const colors = colorSettings(data.colors);
+    const alerts = alertSettings(data.alerts);
+    if (!confirm('Заменить текущие цвета и настройки алертов значениями из файла?')) return;
+    const [oldConfig, oldChecks] = await Promise.all([
+      settingsRequest('/config', 'GET'), settingsRequest('/checks', 'GET')
+    ]);
+    try {
+      await settingsRequest('/config', 'POST', colors);
+      await settingsRequest('/checks', 'POST', alerts);
+    } catch (error) {
+      try {
+        await settingsRequest('/config', 'POST', colorSettings(oldConfig));
+        await settingsRequest('/checks', 'POST', alertSettings(oldChecks));
+      } catch (rollbackError) {
+        throw new Error(error.message + '; восстановление не удалось: ' + rollbackError.message);
+      }
+      throw error;
+    }
+    await Promise.all([loadConfig(), loadChecks()]);
+    showToast('Цвета и алерты импортированы', 'ok');
+  } catch (error) {
+    showToast('Ошибка импорта: ' + error.message, 'err');
+  } finally {
+    button.disabled = false;
+  }
 });
 
 // ── OTA ────────────────────────────────────────────────────────────────────

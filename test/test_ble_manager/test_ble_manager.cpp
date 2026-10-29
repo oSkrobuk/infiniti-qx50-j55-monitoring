@@ -144,7 +144,11 @@ void test_qx50m_discovery_and_auth_contract()
     TEST_ASSERT_EQUAL_HEX8(0xFF, advertising.response.manufacturer[0]);
     TEST_ASSERT_EQUAL_HEX8(0xFF, advertising.response.manufacturer[1]);
     TEST_ASSERT_EQUAL_UINT8(PROTOCOL_STATUS_VERSION, advertising.response.manufacturer[2]);
-    TEST_ASSERT_EQUAL_UINT(10, NimBLEDevice::server.service.characteristics.size());
+    TEST_ASSERT_EQUAL_UINT(11, NimBLEDevice::server.service.characteristics.size());
+    const auto rules = characteristic(KANVEX_UUID_ENTITY_METRIC_COLOR_RULES).read();
+    TEST_ASSERT_EQUAL_UINT(74, rules.size());
+    TEST_ASSERT_EQUAL_UINT8(1, rules[0]);
+    TEST_ASSERT_EQUAL_UINT8(METRIC_COUNT, rules[1]);
     TEST_ASSERT_EQUAL_UINT(NIMBLE_PROPERTY::WRITE, characteristic(KANVEX_UUID_ENTITY_CONTROL).properties);
     TEST_ASSERT_EQUAL_UINT(NIMBLE_PROPERTY::NOTIFY, characteristic(KANVEX_UUID_ENTITY_HISTORY).properties);
     manager.on_connect();
@@ -325,6 +329,7 @@ void test_qx50m_frames_for_mobile_decoders_and_reconnect()
     TEST_ASSERT_TRUE(manager.begin());
     claim(manager);
     s_fixtures["schema"] = characteristic(KANVEX_UUID_ENTITY_METRIC_SCHEMA).read();
+    s_fixtures["colorRules"] = characteristic(KANVEX_UUID_ENTITY_METRIC_COLOR_RULES).read();
     const auto owner = manager.pairing_status();
     s_fixtures["ownerId"] = std::vector<uint8_t>(owner.owner_id, owner.owner_id + 16);
     s_fixtures["advertisement"] = NimBLEDevice::advertising.response.manufacturer;

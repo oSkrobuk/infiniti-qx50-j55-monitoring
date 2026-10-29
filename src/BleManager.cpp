@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits.h>
+#include <math.h>
 #include <string.h>
 #include <vector>
 
@@ -12,6 +13,7 @@
 #include <mbedtls/md.h>
 
 #include "AlertManager.h"
+#include "ConfigManager.h"
 #include "Version.h"
 
 namespace {
@@ -27,6 +29,7 @@ static constexpr char UUID_SUMMARY[] = "f0a0b107-9c4e-4b7a-9d1e-2f6c8a3b0001";
 static constexpr char UUID_METRIC_SCHEMA[] = "f0a0b108-9c4e-4b7a-9d1e-2f6c8a3b0001";
 static constexpr char UUID_AUTH_CHALLENGE[] = "f0a0b109-9c4e-4b7a-9d1e-2f6c8a3b0001";
 static constexpr char UUID_HISTORY_STATE[] = "f0a0b10a-9c4e-4b7a-9d1e-2f6c8a3b0001";
+static constexpr char UUID_METRIC_COLOR_RULES[] = "f0a0b10b-9c4e-4b7a-9d1e-2f6c8a3b0001";
 static constexpr uint16_t HISTORY_CAPACITY = 1800;
 static constexpr uint32_t SAMPLE_INTERVAL_MS = 1000;
 static constexpr uint32_t HISTORY_RETRY_MS = 5000;
@@ -59,6 +62,61 @@ class DeviceInfoCallbacks : public NimBLECharacteristicCallbacks {
     void onRead(NimBLECharacteristic *) override
     {
         if (s_manager != nullptr) s_manager->on_device_info_read();
+    }
+};
+
+// Пороги в единицах соответствующей метрики; для давления первый параметр — RPM
+static void append_rule(uint8_t *data, size_t &length, uint8_t id, uint8_t kind,
+                        const float *values, uint8_t count, const float *scales)
+{
+    data[length++] = id;
+    data[length++] = kind;
+    data[length++] = count;
+    for (uint8_t index = 0; index < count; ++index) {
+        const int16_t value = static_cast<int16_t>(lroundf(values[index] * scales[index]));
+        data[length++] = static_cast<uint8_t>(value);
+        data[length++] = static_cast<uint8_t>(value >> 8);
+    }
+}
+
+static size_t encode_metric_color_rules(uint8_t *data)
+{
+    size_t length = 0;
+    data[length++] = 1;
+    data[length++] = METRIC_COUNT;
+    const float temperature_scale[] = {10.0f, 10.0f, 10.0f};
+    const char *temperature_groups[] = {"coolant", "oil", "transmission", "radiator"};
+    const uint8_t temperature_ids[] = {0, 1, 2, 7};
+    for (uint8_t index = 0; index < 4; ++index) {
+        const char *group = temperature_groups[index];
+        const float values[] = {config.get(group, "min"), config.get(group, "target"),
+                                config.get(group, "max")};
+        append_rule(data, length, temperature_ids[index], 1, values, 3, temperature_scale);
+    }
+    const float rpm_values[] = {config.get("rpm", "green_start"), config.get("rpm", "green_end"),
+                                config.get("rpm", "red_start")};
+    const float rpm_scale[] = {1.0f, 1.0f, 1.0f};
+    append_rule(data, length, 3, 2, rpm_values, 3, rpm_scale);
+    const float boost_values[] = {config.get("boost", "blue_max"), config.get("boost", "green_min")};
+    const float voltage_scale[] = {100.0f, 100.0f, 100.0f, 100.0f};
+    append_rule(data, length, 4, 3, boost_values, 2, voltage_scale);
+    const float pressure_values[] = {config.get("oil_pressure", "rpm_threshold"),
+                                     config.get("oil_pressure", "min_low"),
+                                     config.get("oil_pressure", "min_high")};
+    const float pressure_scale[] = {1.0f, 100.0f, 100.0f};
+    append_rule(data, length, 5, 4, pressure_values, 3, pressure_scale);
+    const float battery_values[] = {config.get("battery", "red_low"), config.get("battery", "green_min"),
+                                    config.get("battery", "green_max"), config.get("battery", "red_high")};
+    append_rule(data, length, 6, 5, battery_values, 4, voltage_scale);
+    return length;
+}
+
+class MetricColorRulesCallbacks : public NimBLECharacteristicCallbacks {
+    void onRead(NimBLECharacteristic *characteristic) override
+    {
+        uint8_t data[2 + METRIC_COUNT * (3 + 4 * sizeof(int16_t))] = {};
+        const size_t length = encode_metric_color_rules(data);
+        characteristic->setValue(data, length);
     }
 };
 
@@ -181,6 +239,9 @@ bool BleManager::begin()
     uint8_t schema_data[sizeof(METRIC_SCHEMA_GOLDEN)] = {};
     const uint16_t schema_size = ble_encode_metric_schema(schema_data, sizeof(schema_data));
     schema->setValue(schema_data, schema_size);
+
+    NimBLECharacteristic *color_rules = service->createCharacteristic(UUID_METRIC_COLOR_RULES, NIMBLE_PROPERTY::READ);
+    color_rules->setCallbacks(new MetricColorRulesCallbacks());
 
     challenge_characteristic_ = service->createCharacteristic(UUID_AUTH_CHALLENGE, NIMBLE_PROPERTY::READ);
     challenge_characteristic_->setCallbacks(new ChallengeCallbacks());
