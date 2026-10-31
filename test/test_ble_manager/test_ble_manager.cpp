@@ -106,6 +106,8 @@ static void sample(BleManager &manager, uint32_t at, float rpm = 1750)
     metrics.engine_rpm_ts = at;
     metrics.engine_coolant = 91.2f;
     metrics.engine_coolant_ts = at;
+    metrics.vehicle_speed = 72.0f;
+    metrics.vehicle_speed_ts = at;
     manager.update(metrics, at, 500);
 }
 
@@ -146,7 +148,7 @@ void test_qx50m_discovery_and_auth_contract()
     TEST_ASSERT_EQUAL_UINT8(PROTOCOL_STATUS_VERSION, advertising.response.manufacturer[2]);
     TEST_ASSERT_EQUAL_UINT(11, NimBLEDevice::server.service.characteristics.size());
     const auto rules = characteristic(KANVEX_UUID_ENTITY_METRIC_COLOR_RULES).read();
-    TEST_ASSERT_EQUAL_UINT(74, rules.size());
+    TEST_ASSERT_EQUAL_UINT(77, rules.size());
     TEST_ASSERT_EQUAL_UINT8(1, rules[0]);
     TEST_ASSERT_EQUAL_UINT8(METRIC_COUNT, rules[1]);
     TEST_ASSERT_EQUAL_UINT(NIMBLE_PROPERTY::WRITE, characteristic(KANVEX_UUID_ENTITY_CONTROL).properties);
@@ -207,7 +209,8 @@ void test_history_mtu_and_exact_retry_before_ack()
         result(OP_START_HISTORY, RESULT_OK);
         manager.handle();
         const auto first = characteristic(KANVEX_UUID_ENTITY_HISTORY).value;
-        const uint8_t capacity = (mtu - 3 - PROTOCOL_SIZE_HISTORY_HEADER) / 19;
+        const uint8_t capacity = (mtu - 3 - PROTOCOL_SIZE_HISTORY_HEADER) /
+                                 (2 + ble_metric_values_size());
         TEST_ASSERT_EQUAL_UINT8(capacity, first[2]);
         TEST_ASSERT_LESS_OR_EQUAL_UINT(mtu - 3, first.size());
         ack(capacity);
@@ -363,7 +366,8 @@ void test_qx50m_frames_for_mobile_decoders_and_reconnect()
     command(OP_FETCH_SUMMARIES, {1});
     manager.handle();
     s_fixtures["summary"] = characteristic(KANVEX_UUID_ENTITY_SUMMARY).value;
-    TEST_ASSERT_EQUAL_UINT(72, s_fixtures["summary"].size());
+    TEST_ASSERT_EQUAL_UINT(PROTOCOL_SIZE_SUMMARY_HEADER + METRIC_COUNT * 3 * sizeof(int16_t),
+                           s_fixtures["summary"].size());
     TEST_ASSERT_EQUAL_UINT8(1 << (2 - 1), s_fixtures["summary"][6]);
     auto summary_ack = number(7, 4);
     summary_ack.push_back(0);

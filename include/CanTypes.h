@@ -51,6 +51,9 @@ struct CanMetrics {
     uint32_t engine_rpm_ts;        // Время последнего обновления оборотов двигателя
     MetricSource engine_rpm_source;
 
+    float    vehicle_speed;       // Скорость автомобиля, км/ч (OBD-II PID 0x0D)
+    uint32_t vehicle_speed_ts;    // Время последнего обновления скорости
+
     float    turbo_boost_volt;     // Датчик усиления турбины
     uint32_t turbo_boost_volt_ts;  // Время последнего обновления датчика усиления турбины
 
@@ -82,5 +85,5 @@ struct CanMetrics {
 extern CanMetrics can_metrics;
 
 // Декодировать известные CAN-фреймы Infiniti QX50 J55 и обновить can_metrics
-// (обороты, температуры, наддув, давление масла, напряжение бортовой сети)
+// (обороты, скорость, температуры, наддув, давление масла, напряжение бортовой сети)
 void can_parse_known_frames(const CanFrame &frame);

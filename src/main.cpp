@@ -198,6 +198,8 @@ static ObdPollPlan s_obd_poll_plan(obd_pid_catalog, s_obd_poll_list, OBD_POLL_CO
                                    OBD_POLL_INTERVAL_MS, DEFAULT_OBD_REQUEST_SPACING_MS);
 static bool s_diagnostic_session_open = false;
 static uint32_t s_obd_discovery_sent_ms = 0;
+static uint32_t s_last_speed_poll_ms = 0;
+static constexpr uint32_t SPEED_POLL_INTERVAL_MS = 500;
 
 // Принять ответы штатного мониторинга и завершить ISO-TP обмен с блоком света
 static void can_handle_monitor_frame(const CanFrame &frame)
@@ -309,6 +311,15 @@ static void poll_handle()
         }
 
         s_poll_idx = (s_poll_idx + 1) % POLL_COUNT;
+    }
+
+    // Скорость читается по стандартному OBD PID между основными UDS-запросами
+    const uint32_t since_primary = now - s_last_poll_ms.load(std::memory_order_relaxed);
+    const uint32_t obd_spacing = DEFAULT_OBD_REQUEST_SPACING_MS;
+    if (now - s_last_speed_poll_ms >= SPEED_POLL_INTERVAL_MS &&
+        since_primary >= obd_spacing && since_primary + obd_spacing <= poll_interval_ms &&
+        obd_send_request(0x0D)) {
+        s_last_speed_poll_ms = now;
     }
 }
 
@@ -568,6 +579,8 @@ void loop()
             can_metrics.cvt_temp_ts          = ts;
             can_metrics.engine_rpm           = rpm;
             can_metrics.engine_rpm_ts        = ts;
+            can_metrics.vehicle_speed       = fmaxf(0.0f, 65.0f + sinf(t * 0.7f) * 45.0f);
+            can_metrics.vehicle_speed_ts    = ts;
             can_metrics.battery_voltage      = battery_voltage;
             can_metrics.battery_voltage_ts   = ts;
             can_metrics.oil_pressure_volt    = oil_pressure;

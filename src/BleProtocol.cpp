@@ -93,6 +93,10 @@ uint32_t ble_metrics_from_can(const CanMetrics &metrics, uint32_t now_ms, uint32
         values[7] = scaled_value(metrics.radiator_coolant, 10.0f);
         presence |= 1 << 7;
     }
+    if (is_fresh(metrics.vehicle_speed_ts, now_ms, stale_ms)) {
+        values[METRIC_VEHICLE_SPEED] = scaled_value(metrics.vehicle_speed, 1.0f);
+        presence |= 1 << METRIC_VEHICLE_SPEED;
+    }
     return presence;
 }
 

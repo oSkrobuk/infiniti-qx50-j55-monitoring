@@ -20,13 +20,17 @@ void test_can_metrics_are_scaled_and_stale_values_are_absent()
     metrics.engine_rpm_ts = 900;
     metrics.battery_voltage = 14.24f;
     metrics.battery_voltage_ts = 100;
+    metrics.vehicle_speed = 72.0f;
+    metrics.vehicle_speed_ts = 900;
     int16_t values[METRIC_COUNT] = {};
 
     const uint32_t presence = ble_metrics_from_can(metrics, 1000, 500, values);
 
-    TEST_ASSERT_EQUAL_HEX8((1 << METRIC_COOLANT_TEMP) | (1 << METRIC_RPM), presence);
+    TEST_ASSERT_EQUAL_HEX16((1 << METRIC_COOLANT_TEMP) | (1 << METRIC_RPM) |
+                            (1 << METRIC_VEHICLE_SPEED), presence);
     TEST_ASSERT_EQUAL_INT16(912, values[METRIC_COOLANT_TEMP]);
     TEST_ASSERT_EQUAL_INT16(1750, values[METRIC_RPM]);
+    TEST_ASSERT_EQUAL_INT16(72, values[METRIC_VEHICLE_SPEED]);
     TEST_ASSERT_EQUAL_INT16(PROTOCOL_NO_VALUE_SIGNED, values[METRIC_BATTERY_VOLTAGE]);
 }
 
@@ -41,8 +45,9 @@ void test_metric_values_use_presence_bitmap()
     TEST_ASSERT_EQUAL_UINT8(sizeof(encoded),
                             ble_encode_metric_values(values, presence, encoded, sizeof(encoded)));
     TEST_ASSERT_EQUAL_HEX8(presence, encoded[0]);
-    TEST_ASSERT_EQUAL_HEX8(0xDB, encoded[3]);
-    TEST_ASSERT_EQUAL_HEX8(0x03, encoded[4]);
+    TEST_ASSERT_EQUAL_HEX8(0, encoded[1]);
+    TEST_ASSERT_EQUAL_HEX8(0xDB, encoded[4]);
+    TEST_ASSERT_EQUAL_HEX8(0x03, encoded[5]);
 }
 
 int main(int, char **)

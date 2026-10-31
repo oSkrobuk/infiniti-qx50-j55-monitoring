@@ -48,7 +48,11 @@ void can_parse_known_frames(const CanFrame &frame)
                         can_metrics.engine_rpm_ts = now;
                         can_metrics.engine_rpm_source = MetricSource::OBD2;
                         return;
-                    case 0x0D: obd_value = d[3]; break;
+                    case 0x0D:
+                        can_metrics.vehicle_speed = static_cast<float>(d[3]);
+                        can_metrics.vehicle_speed_ts = now;
+                        obd_value = d[3];
+                        break;
                     case 0x0E: obd_value = d[3] / 2.0f - 64.0f; break;
                     case 0x0F: obd_value = static_cast<float>(d[3]) - 40.0f; break;
                     case 0x10:

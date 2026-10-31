@@ -255,6 +255,10 @@ static void test_one_did_does_not_touch_others(void)
 
 static void test_obd_updates_shared_metrics_and_source(void)
 {
+    can_parse_known_frames(make_obd_frame(0x0D, 72));
+    TEST_ASSERT_EQUAL_FLOAT(72.0f, can_metrics.vehicle_speed);
+    TEST_ASSERT_EQUAL_UINT32(TEST_NOW_MS, can_metrics.vehicle_speed_ts);
+
     can_parse_known_frames(make_obd_frame(0x05, 130));
     TEST_ASSERT_EQUAL_FLOAT(90.0f, can_metrics.engine_coolant);
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MetricSource::OBD2),

@@ -108,6 +108,7 @@ static size_t encode_metric_color_rules(uint8_t *data)
     const float battery_values[] = {config.get("battery", "red_low"), config.get("battery", "green_min"),
                                     config.get("battery", "green_max"), config.get("battery", "red_high")};
     append_rule(data, length, 6, 5, battery_values, 4, voltage_scale);
+    append_rule(data, length, METRIC_VEHICLE_SPEED, 6, nullptr, 0, nullptr);
     return length;
 }
 
