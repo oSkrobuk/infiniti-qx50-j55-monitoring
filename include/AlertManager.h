@@ -152,6 +152,8 @@ private:
     bool     condition_active_[CHECK_COUNT]; // true после подтвержденного срабатывания
     AlertTransition events_[ALERT_EVENT_RING_SIZE];
     uint32_t event_next_index_;
+    uint32_t battery_rpm_ready_since_;
+    bool battery_rpm_ready_;
 
     // Загрузить конфиг проверок из файла (defaults если файла нет).
     // missing — сюда пишется true, если в файле не хватает проверок или полей

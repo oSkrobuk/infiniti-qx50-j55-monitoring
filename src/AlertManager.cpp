@@ -111,7 +111,8 @@ static uint32_t read_timing_ms(JsonVariantConst value, uint32_t fallback, uint32
 // ─────────────────────────────────────────────────────────────────────────────
 
 AlertManager::AlertManager()
-    : log_count_(0), active_since_(0), event_next_index_(0)
+    : log_count_(0), active_since_(0), event_next_index_(0),
+      battery_rpm_ready_since_(0), battery_rpm_ready_(false)
 {
     active_code_[0]  = '\0';
     active_desc_[0]  = '\0';
@@ -188,12 +189,23 @@ void AlertManager::update(const CanMetrics &m, uint32_t stale_ms)
     try_trigger_(4, fresh(m.engine_rpm_ts), m.engine_rpm > checks_[4].param1,
                  static_cast<int16_t>(roundf(m.engine_rpm)));
 
+    // Напряжение проверяем после полной секунды свежих оборотов не ниже 500
+    // Любое низкое или устаревшее показание начинает отсчет заново
+    if (!fresh(m.engine_rpm_ts) || m.engine_rpm < 500.0f) {
+        battery_rpm_ready_ = false;
+    } else if (!battery_rpm_ready_) {
+        battery_rpm_ready_since_ = now;
+        battery_rpm_ready_ = true;
+    }
+    const bool battery_check_available = fresh(m.battery_voltage_ts) && battery_rpm_ready_
+        && now - battery_rpm_ready_since_ >= 1000;
+
     // E06: напряжение бортовой сети ниже минимума
-    try_trigger_(5, fresh(m.battery_voltage_ts), m.battery_voltage < checks_[5].param1,
+    try_trigger_(5, battery_check_available, m.battery_voltage < checks_[5].param1,
                  static_cast<int16_t>(roundf(m.battery_voltage * 100.0f)));
 
     // E07: напряжение бортовой сети выше максимума
-    try_trigger_(6, fresh(m.battery_voltage_ts), m.battery_voltage > checks_[6].param1,
+    try_trigger_(6, battery_check_available, m.battery_voltage > checks_[6].param1,
                  static_cast<int16_t>(roundf(m.battery_voltage * 100.0f)));
 
     // E08: давление масла (напряжение датчика) ниже нормы для текущих оборотов

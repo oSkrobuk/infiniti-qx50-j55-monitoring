@@ -394,6 +394,8 @@ static void test_battery_low_triggers_e06(void)
 
     AlertManager am;
     update_confirmed(am, m);
+    mock_advance_millis(ALERT_CONFIRM_MS_DEF);
+    am.update(m);
 
     TEST_ASSERT_EQUAL_STRING("E06", am.active_code());
 }
@@ -405,8 +407,38 @@ static void test_battery_high_triggers_e07(void)
 
     AlertManager am;
     update_confirmed(am, m);
+    mock_advance_millis(ALERT_CONFIRM_MS_DEF);
+    am.update(m);
 
     TEST_ASSERT_EQUAL_STRING("E07", am.active_code());
+}
+
+static void test_battery_check_waits_for_one_second_above_500_rpm(void)
+{
+    CanMetrics m = fresh_metrics();
+    m.battery_voltage = 11.0f;
+    AlertManager am;
+
+    m.engine_rpm = 499.0f;
+    am.update(m);
+    mock_advance_millis(800);
+    m.engine_rpm = 800.0f;
+    am.update(m);
+    mock_advance_millis(800);
+    am.update(m);
+    TEST_ASSERT_EQUAL_UINT8(0, am.log_count());
+
+    m.engine_rpm = 499.0f;
+    am.update(m);
+    mock_advance_millis(200);
+    m.engine_rpm = 500.0f;
+    am.update(m);
+    mock_advance_millis(1000);
+    am.update(m);
+    TEST_ASSERT_EQUAL_UINT8(0, am.log_count());
+    mock_advance_millis(ALERT_CONFIRM_MS_DEF);
+    am.update(m);
+    TEST_ASSERT_EQUAL_STRING("E06", am.active_code());
 }
 
 // ── E08: порог давления масла зависит от оборотов ────────────────────────────
@@ -659,6 +691,8 @@ static void test_log_records_distinct_codes(void)
 
     AlertManager am;
     update_confirmed(am, m);
+    mock_advance_millis(ALERT_CONFIRM_MS_DEF);
+    am.update(m);
 
     TEST_ASSERT_EQUAL_UINT8(2, am.log_count());
 }
@@ -863,6 +897,7 @@ int main(int, char **)
     RUN_TEST(test_rpm_overspeed_triggers_e05);
     RUN_TEST(test_battery_low_triggers_e06);
     RUN_TEST(test_battery_high_triggers_e07);
+    RUN_TEST(test_battery_check_waits_for_one_second_above_500_rpm);
 
     RUN_TEST(test_oil_pressure_low_below_rpm_threshold);
     RUN_TEST(test_oil_pressure_ok_below_rpm_threshold);
